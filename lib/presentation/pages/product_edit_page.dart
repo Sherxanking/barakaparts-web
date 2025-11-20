@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../data/models/product_model.dart';
 import '../../data/models/department_model.dart';
-import '../../data/models/part_model.dart';
 import '../../data/services/hive_box_service.dart';
 import '../../data/services/product_service.dart';
 import '../../data/services/department_service.dart';
@@ -77,8 +76,17 @@ class _ProductEditPageState extends State<ProductEditPage> {
       return;
     }
 
-    // Mahsulotni yangilash
-    widget.product.name = _nameController.text.trim();
+    // FIX: Qismlarni yangilash - 0 qiymatli qismlarni olib tashlash
+    final cleanedParts = Map<String, int>.from(_productParts)
+      ..removeWhere((key, value) => value <= 0); // 0 yoki manfiy qiymatlarni olib tashlash
+    
+    // FIX: Yangi Product yaratish - service mavjud productni topib yangilaydi
+    final updatedProduct = Product(
+      id: widget.product.id,
+      name: _nameController.text.trim(), // FIX: Controller dan olish
+      departmentId: _selectedDepartmentId!, // FIX: State dan olish
+      parts: cleanedParts, // Tozalangan map
+    );
     
     // Bo'lim o'zgarishini boshqarish
     if (widget.product.departmentId != _selectedDepartmentId) {
@@ -88,19 +96,16 @@ class _ProductEditPageState extends State<ProductEditPage> {
         widget.product.id,
       );
       // Yangi bo'limga qo'shish
-      widget.product.departmentId = _selectedDepartmentId!;
       await _departmentService.assignProductToDepartment(
         _selectedDepartmentId!,
         widget.product.id,
       );
     }
     
-    // Qismlarni yangilash
-    widget.product.parts = Map<String, int>.from(_productParts);
-    
     // Hive'ga saqlash
     // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _productService.updateProduct(widget.product);
+    // Service mavjud productni topib, uning fieldlarini yangilaydi
+    final success = await _productService.updateProduct(updatedProduct);
     
     if (mounted) {
       if (success) {
@@ -134,6 +139,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
       return;
     }
     
+    // FIX: Yangi map yaratish - concurrent modification muammosini oldini olish
     Map<String, int> tempParts = Map<String, int>.from(_productParts);
     // Har bir qism uchun miqdor kiritish maydoni controllerlari
     final Map<String, TextEditingController> controllers = {};
@@ -146,6 +152,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
       );
     }
 
+    // FIX: Dialog yopilganda controllerlarni tozalash uchun future ni saqlash
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -243,37 +250,16 @@ class _ProductEditPageState extends State<ProductEditPage> {
               actions: [
                 TextButton(
                   onPressed: () {
-                    // Controllerlarni tozalash
-                    // FIX: disposed check olib tashlandi - faqat try-catch ishlatish
-                    for (final controller in controllers.values) {
-                      try {
-                        controller.dispose();
-                      } catch (e) {
-                        // Controller allaqachon dispose qilingan yoki xatolik
-                      }
-                    }
-                    Navigator.pop(dialogContext);
+                    // FIX: Dialog yopish - controllerlarni keyinroq tozalash
+                    Navigator.pop(dialogContext, null);
                   },
                   child: Text(l10n?.cancel ?? 'Cancel'),
                 ),
                 TextButton(
                   onPressed: () {
-                    // Ma'lumotlarni saqlash
-                    if (mounted) {
-                      setState(() {
-                        _productParts = Map<String, int>.from(tempParts);
-                      });
-                    }
-                    // Controllerlarni tozalash
-                    // FIX: disposed check olib tashlandi - faqat try-catch ishlatish
-                    for (final controller in controllers.values) {
-                      try {
-                        controller.dispose();
-                      } catch (e) {
-                        // Controller allaqachon dispose qilingan yoki xatolik
-                      }
-                    }
-                    Navigator.pop(dialogContext);
+                    // FIX: Ma'lumotlarni saqlash - yangi map yaratish (concurrent modification oldini olish)
+                    final savedParts = Map<String, int>.from(tempParts);
+                    Navigator.pop(dialogContext, savedParts);
                   },
                   child: Text(l10n?.save ?? 'Save'),
                 ),
@@ -282,7 +268,34 @@ class _ProductEditPageState extends State<ProductEditPage> {
           },
         );
       },
-    );
+    ).then((savedParts) {
+      // FIX: Dialog yopilgandan keyin controllerlarni tozalash va state ni yangilash
+      // Bu concurrent modification muammosini oldini oladi
+      if (mounted) {
+        if (savedParts != null) {
+          setState(() {
+            _productParts = Map<String, int>.from(savedParts as Map<String, int>);
+          });
+        }
+      }
+      // FIX: Controllerlarni tozalash - dialog to'liq yopilguncha kutish
+      // Bu '_dependents.isEmpty' xatoligini oldini oladi
+      // Dialog widgetlari to'liq dispose bo'lishi uchun kechikish qo'shish
+      Future.delayed(const Duration(milliseconds: 300), () {
+        for (final controller in controllers.values) {
+          try {
+            // TextField dan ajratish uchun avval text ni tozalash
+            // Bu controller ni TextField dan ajratadi
+            controller.clear();
+            // Keyin dispose qilish
+            controller.dispose();
+          } catch (e) {
+            // Controller allaqachon dispose qilingan yoki xatolik
+            // Bu holatda hech narsa qilmaymiz
+          }
+        }
+      });
+    });
   }
 
   /// Mahsulotdan qismni olib tashlash

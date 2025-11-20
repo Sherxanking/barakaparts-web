@@ -47,14 +47,20 @@ class _ProductsPageState extends State<ProductsPage> {
   Map<String, int> selectedParts = {};
   SortOption? _selectedSortOption;
 
+  // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
+  late final VoidCallback _searchListener;
+
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {}));
+    _searchListener = () => setState(() {});
+    _searchController.addListener(_searchListener);
   }
 
   @override
   void dispose() {
+    // FIX: Listener ni olib tashlash dispose dan oldin
+    _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _searchController.dispose();
     super.dispose();

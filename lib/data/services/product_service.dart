@@ -44,10 +44,26 @@ class ProductService {
   }
 
   /// Product yangilash
-  /// FIX: Xatolikni tutish va xavfsiz yangilash
-  Future<bool> updateProduct(Product product) async {
+  /// FIX: Hive boxdan mavjud productni topib, uni yangilash
+  /// Yangi Product yaratilganda u Hive boxda mavjud emas, shuning uchun
+  /// mavjud productni topib, uning fieldlarini yangilash kerak
+  Future<bool> updateProduct(Product updatedProduct) async {
     try {
-      await product.save();
+      // FIX: Hive boxdan mavjud productni topish
+      final existingProduct = getProductById(updatedProduct.id);
+      if (existingProduct == null) {
+        return false; // Product topilmadi
+      }
+      
+      // FIX: Mavjud productning fieldlarini yangilash
+      existingProduct.name = updatedProduct.name;
+      existingProduct.departmentId = updatedProduct.departmentId;
+      // FIX: Parts map ni tozalash - 0 qiymatli qismlarni olib tashlash
+      existingProduct.parts = Map<String, int>.from(updatedProduct.parts)
+        ..removeWhere((key, value) => value <= 0);
+      
+      // FIX: Hive'ga saqlash
+      await existingProduct.save();
       return true;
     } catch (e) {
       return false;

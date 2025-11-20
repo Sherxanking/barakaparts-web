@@ -48,14 +48,20 @@ class _PartsPageState extends State<PartsPage> {
   File? _selectedImage; // Tanlangan rasm (add/edit uchun)
   String? _currentEditImagePath; // Tahrirlash uchun hozirgi rasm yo'li
 
+  // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
+  late final VoidCallback _searchListener;
+
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {}));
+    _searchListener = () => setState(() {});
+    _searchController.addListener(_searchListener);
   }
 
   @override
   void dispose() {
+    // FIX: Listener ni olib tashlash dispose dan oldin
+    _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _quantityController.dispose();
     _minQuantityController.dispose();
