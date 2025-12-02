@@ -13,10 +13,14 @@
 /// - Qidiruv, filtrlash, tartiblash
 /// - Real-time yangilanishlar
 /// - Stock management va order completion
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'core/config/env_config.dart';
+import 'infrastructure/datasources/supabase_client.dart';
+import 'core/services/auth_state_service.dart';
 
 import 'data/models/department_model.dart';
 import 'data/models/product_model.dart';
@@ -24,7 +28,7 @@ import 'data/models/part_model.dart';
 import 'data/models/order_model.dart';
 import 'data/services/language_service.dart';
 import 'l10n/app_localizations.dart';
-import 'presentation/pages/home_page.dart';
+import 'presentation/pages/splash_page.dart';
 
 /// Dastur kirish nuqtasi
 /// 
@@ -38,42 +42,90 @@ import 'presentation/pages/home_page.dart';
 void main() async {
   // Flutter binding ni ishga tushirish (async operatsiyalar uchun zarur)
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Hive ni initialize qilish (local storage uchun)
-  await Hive.initFlutter();
 
-  // Adapterlarni ro'yxatdan o'tkazish
-  // Har bir model uchun unique typeId ishlatiladi:
-  // - Department: 0
-  // - PartModel: 1
-  // - Product: 2
-  // - Order: 3
-  if (!Hive.isAdapterRegistered(0)) {
-    Hive.registerAdapter(DepartmentAdapter());
-  }
-  if (!Hive.isAdapterRegistered(1)) {
-    Hive.registerAdapter(PartModelAdapter());
-  }
-  if (!Hive.isAdapterRegistered(2)) {
-    Hive.registerAdapter(ProductAdapter());
-  }
-  if (!Hive.isAdapterRegistered(3)) {
-    Hive.registerAdapter(OrderAdapter());
-  }
-
-  // Barcha boxlarni ochish (ma'lumotlar bazasi fayllari)
-  // Boxlar ochilgunga qadar ularga kirish mumkin emas
-  await Hive.openBox<Department>('departmentsBox');
-  await Hive.openBox<PartModel>('partsBox');
-  await Hive.openBox<Product>('productsBox');
-  await Hive.openBox<Order>('ordersBox');
-
-  // Default ma'lumotlarni yuklash (agar boxlar bo'sh bo'lsa)
-  // Bu MVP uchun test ma'lumotlari
-  await _initializeDefaultData();
-
-  // Dasturni ishga tushirish
+  // PERFORMANCE FIX: Start app immediately, initialize in background
+  // WHY: Prevents blocking UI thread, app opens faster
   runApp(const MyApp());
+
+  // Initialize critical services in background (non-blocking)
+  // WHY: App can show splash screen while initialization happens
+  _initializeServicesInBackground();
+}
+
+/// Initialize services in background (non-blocking)
+/// WHY: App starts immediately, initialization happens asynchronously
+Future<void> _initializeServicesInBackground() async {
+  try {
+    // 1. Environment variables yuklash (.env fayldan)
+    try {
+      await EnvConfig.load();
+      debugPrint('✅ Environment variables loaded');
+    } catch (e) {
+      debugPrint('⚠️ .env fayl yuklanmadi: $e');
+      debugPrint('📱 App default sozlamalar bilan ishlaydi');
+    }
+
+    // 2. Supabase ni initialize qilish (faqat ANON key!)
+    // PERFORMANCE: Initialize with timeout to prevent hanging
+    try {
+      await AppSupabaseClient.initialize().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('⚠️ Supabase initialization timeout');
+          throw TimeoutException('Supabase initialization timeout');
+        },
+      );
+      debugPrint('✅ Supabase initialized successfully (ANON key)');
+      
+      // Initialize global auth state service
+      // WHY: Sets up global listener for auth state changes (critical for OAuth redirects)
+      await AuthStateService().initialize();
+      debugPrint('✅ Auth state service initialized');
+    } catch (e) {
+      debugPrint('⚠️ Supabase initialization failed: $e');
+      debugPrint('📱 App offline mode da ishlaydi (Hive cache)');
+      // Supabase bo'lmasa ham app ishlashi kerak (offline mode)
+    }
+    
+    // 3. Hive ni initialize qilish (local storage uchun)
+    // PERFORMANCE: Initialize Hive in parallel with Supabase if possible
+    await Hive.initFlutter();
+
+    // 4. Adapterlarni ro'yxatdan o'tkazish
+    // Har bir model uchun unique typeId ishlatiladi:
+    // - Department: 0
+    // - PartModel: 1
+    // - Product: 2
+    // - Order: 3
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(DepartmentAdapter());
+    }
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(PartModelAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(ProductAdapter());
+    }
+    if (!Hive.isAdapterRegistered(3)) {
+      Hive.registerAdapter(OrderAdapter());
+    }
+
+    // 5. Barcha boxlarni ochish (ma'lumotlar bazasi fayllari)
+    // PERFORMANCE: Open boxes in parallel where possible
+    await Future.wait([
+      Hive.openBox<Department>('departmentsBox'),
+      Hive.openBox<PartModel>('partsBox'),
+      Hive.openBox<Product>('productsBox'),
+      Hive.openBox<Order>('ordersBox'),
+    ]);
+
+    // 6. Default ma'lumotlarni yuklash (agar boxlar bo'sh bo'lsa)
+    // PERFORMANCE: This is non-critical, can happen after app starts
+    _initializeDefaultData(); // Don't await - let it run in background
+  } catch (e) {
+    debugPrint('❌ Background initialization error: $e');
+    // Don't crash app - continue with offline mode
+  }
 }
 
 /// Default ma'lumotlarni yuklash
@@ -229,7 +281,6 @@ class MyApp extends StatefulWidget {
 /// FIX: Async initState muammosini hal qilish - FutureBuilder yoki mounted check
 class MyAppState extends State<MyApp> {
   Locale _locale = const Locale('en');
-  bool _isLocaleLoaded = false;
 
   @override
   void initState() {
@@ -245,7 +296,6 @@ class MyAppState extends State<MyApp> {
     if (mounted) {
       setState(() {
         _locale = locale;
-        _isLocaleLoaded = true;
       });
     }
   }
@@ -255,6 +305,12 @@ class MyAppState extends State<MyApp> {
     setState(() {
       _locale = newLocale;
     });
+  }
+
+  /// Initial route - Splash page handles auth guard
+  /// WHY: Splash page checks session and navigates appropriately, preventing crashes
+  Widget _getInitialRoute() {
+    return const SplashPage();
   }
 
   @override
@@ -279,7 +335,7 @@ class MyAppState extends State<MyApp> {
         Locale('ru', ''), // Russian
         Locale('en', ''), // English
       ],
-      home: const HomePage(), // Asosiy sahifa
+      home: _getInitialRoute(), // SplashPage handles auth guard
     );
   }
 }

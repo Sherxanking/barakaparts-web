@@ -5,11 +5,20 @@
 /// - View app information
 /// 
 /// The language change is saved to SharedPreferences and persists across app restarts.
+/// Settings Page - App settings and logout
+/// 
+/// WHY: Updated to use new auth/login_page path and removed duplicate imports
+
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../data/services/language_service.dart';
 import '../../main.dart';
 import '../pages/home_page.dart';
+import 'auth/login_page.dart';
+import '../../core/services/auth_state_service.dart';
+import '../../infrastructure/datasources/supabase_user_datasource.dart';
+import '../../infrastructure/repositories/user_repository_impl.dart';
+import '../../domain/repositories/user_repository.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -21,11 +30,63 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   String? _selectedLanguage;
   bool _isLoading = true;
+  late final UserRepository _userRepository;
 
   @override
   void initState() {
     super.initState();
+    _userRepository = UserRepositoryImpl(
+      datasource: SupabaseUserDatasource(),
+    );
     _loadCurrentLanguage();
+  }
+
+  /// Logout qilish
+  Future<void> _handleLogout() async {
+    // Tasdiqlash dialogi
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Chiqish'),
+        content: const Text('Haqiqatan ham chiqmoqchimisiz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Bekor qilish'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Chiqish', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
+    // Logout qilish
+    final result = await _userRepository.signOut();
+    
+    result.fold(
+      (failure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logout xatolik: ${failure.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      },
+      (_) {
+        // FIX: Use global auth state service for logout
+        // WHY: Ensures consistent auth state across app
+        AuthStateService().signOut();
+        // Navigate to login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false, // Barcha oldingi sahifalarni o'chirish
+        );
+      },
+    );
   }
 
   /// Load the currently saved language preference
@@ -158,6 +219,19 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Logout Section
+                Card(
+                  elevation: 2,
+                  child: ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.red),
+                    title: const Text(
+                      'Chiqish',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: _handleLogout,
                   ),
                 ),
               ],
