@@ -15,6 +15,8 @@ import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../../data/services/image_service.dart';
 import '../../infrastructure/datasources/supabase_client.dart';
+import '../../core/services/auth_state_service.dart';
+import '../../domain/entities/user.dart' as domain;
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
@@ -64,6 +66,33 @@ class _PartsPageState extends State<PartsPage> {
     _searchController.addListener(_searchListener);
     _loadParts();
     _listenToParts();
+  }
+
+  /// Get current user from auth state service
+  /// WHY: Centralized way to get current user for role checking
+  domain.User? get _currentUser {
+    return AuthStateService().currentUser;
+  }
+
+  /// Check if current user can create parts
+  /// WHY: Only managers and boss can create parts
+  bool get _canCreateParts {
+    final user = _currentUser;
+    return user != null && user.canCreateParts();
+  }
+
+  /// Check if current user can edit parts
+  /// WHY: Only managers and boss can edit parts
+  bool get _canEditParts {
+    final user = _currentUser;
+    return user != null && user.canEditParts();
+  }
+
+  /// Check if current user can delete parts
+  /// WHY: Only boss can delete parts
+  bool get _canDeleteParts {
+    final user = _currentUser;
+    return user != null && user.canDeleteParts();
   }
 
   /// Parts ni yuklash (Supabase dan)
@@ -204,8 +233,18 @@ class _PartsPageState extends State<PartsPage> {
 
   /// Yangi qism qo'shish
   /// WHY: Added comprehensive error handling, validation, and mounted checks to prevent crashes
+  /// RBAC: Only managers and boss can create parts
   Future<void> _addPart() async {
     if (!mounted) return;
+    
+    // RBAC: Check permission before creating part
+    if (!_canCreateParts) {
+      _showSnackBar(
+        'Permission denied: Only managers and boss can create parts',
+        Colors.red,
+      );
+      return;
+    }
     
     try {
       // Validate input
@@ -282,7 +321,14 @@ class _PartsPageState extends State<PartsPage> {
         (failure) {
           debugPrint('❌ Part creation failed: ${failure.message}');
           if (mounted) {
-            _showSnackBar('Failed to add part: ${failure.message}', Colors.red);
+            // RBAC: Show specific error message for permission errors
+            String errorMessage = failure.message;
+            if (failure.message.toLowerCase().contains('permission') ||
+                failure.message.toLowerCase().contains('policy') ||
+                failure.message.toLowerCase().contains('forbidden')) {
+              errorMessage = 'Permission denied: Only managers and boss can create parts';
+            }
+            _showSnackBar('Failed to add part: $errorMessage', Colors.red);
           }
         },
         (createdPart) {
@@ -305,7 +351,19 @@ class _PartsPageState extends State<PartsPage> {
   }
 
   /// Qismni o'chirish
+  /// RBAC: Only boss can delete parts
   Future<void> _deletePart(Part part) async {
+    if (!mounted) return;
+    
+    // RBAC: Check permission before deleting part
+    if (!_canDeleteParts) {
+      _showSnackBar(
+        'Permission denied: Only boss can delete parts',
+        Colors.red,
+      );
+      return;
+    }
+    
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -338,8 +396,14 @@ class _PartsPageState extends State<PartsPage> {
       result.fold(
             (failure) {
           if (mounted) {
-            _showSnackBar(
-                'Failed to delete part: ${failure.message}', Colors.red);
+            // RBAC: Show specific error message for permission errors
+            String errorMessage = failure.message;
+            if (failure.message.toLowerCase().contains('permission') ||
+                failure.message.toLowerCase().contains('policy') ||
+                failure.message.toLowerCase().contains('forbidden')) {
+              errorMessage = 'Permission denied: Only boss can delete parts';
+            }
+            _showSnackBar('Failed to delete part: $errorMessage', Colors.red);
           }
         },
             (_) {
@@ -352,14 +416,24 @@ class _PartsPageState extends State<PartsPage> {
   }
 
   /// Qismni tahrirlash
+  /// RBAC: Only managers and boss can edit parts
   Future<void> _editPart(Part part) async {
+    if (!mounted) return;
+    
+    // RBAC: Check permission before editing part
+    if (!_canEditParts) {
+      _showSnackBar(
+        'Permission denied: Only managers and boss can edit parts',
+        Colors.red,
+      );
+      return;
+    }
+    
     _nameController.text = part.name;
     _quantityController.text = part.quantity.toString();
     _minQuantityController.text = part.minQuantity.toString();
     _currentEditImagePath = part.imagePath;
     _selectedImage = null;
-
-    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -433,12 +507,25 @@ class _PartsPageState extends State<PartsPage> {
               ),
               TextButton(
                 onPressed: () async {
-                  if (_nameController.text
-                      .trim()
-                      .isEmpty) {
+                  // RBAC: Check permission before updating
+                  if (!_canEditParts) {
+                    Navigator.pop(context);
+                    _showSnackBar(
+                      'Permission denied: Only managers and boss can edit parts',
+                      Colors.red,
+                    );
+                    return;
+                  }
+                  
+                  final nameRaw = _nameController.text.trim();
+                  if (nameRaw.isEmpty) {
                     _showSnackBar('Please enter a part name', Colors.red);
                     return;
                   }
+
+                  // RBAC: Auto-capitalize first letter of part name
+                  final name = nameRaw[0].toUpperCase() + 
+                      (nameRaw.length > 1 ? nameRaw.substring(1) : '');
 
                   // Eski rasmini o'chirish (agar yangi rasm tanlangan bo'lsa)
                   if (_selectedImage != null && part.imagePath != null) {
@@ -458,7 +545,7 @@ class _PartsPageState extends State<PartsPage> {
                   }
 
                   final updatedPart = part.copyWith(
-                    name: _nameController.text.trim(),
+                    name: name, // Use capitalized name
                     quantity: (int.tryParse(_quantityController.text) ??
                         part.quantity).clamp(0, double.infinity).toInt(),
                     minQuantity: (int.tryParse(_minQuantityController.text) ??
@@ -472,8 +559,14 @@ class _PartsPageState extends State<PartsPage> {
                   result.fold(
                         (failure) {
                       if (mounted) {
-                        _showSnackBar(
-                            'Failed to update part: ${failure.message}',
+                        // RBAC: Show specific error message for permission errors
+                        String errorMessage = failure.message;
+                        if (failure.message.toLowerCase().contains('permission') ||
+                            failure.message.toLowerCase().contains('policy') ||
+                            failure.message.toLowerCase().contains('forbidden')) {
+                          errorMessage = 'Permission denied: Only managers and boss can edit parts';
+                        }
+                        _showSnackBar('Failed to update part: $errorMessage',
                             Colors.red);
                       }
                     },
@@ -1016,7 +1109,7 @@ class _PartsPageState extends State<PartsPage> {
                           color: isLowStock ? Colors.red.shade50 : null,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
-                            onTap: () => _editPart(part),
+                            onTap: _canEditParts ? () => _editPart(part) : null,
                             child: Padding(
                               padding: const EdgeInsets.all(12),
                               child: Row(
@@ -1210,39 +1303,55 @@ class _PartsPageState extends State<PartsPage> {
                                       ],
                                     ),
                                   ),
-                                  // 3-dots menu for actions
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_vert),
-                                    onSelected: (value) {
-                                      if (value == 'edit') {
-                                        _editPart(part);
-                                      } else if (value == 'delete') {
-                                        _deletePart(part);
-                                      }
-                                    },
-                                    itemBuilder: (context) => [
-                                      PopupMenuItem(
-                                        value: 'edit',
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.edit, size: 20, color: Colors.blue),
-                                            const SizedBox(width: 8),
-                                            Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
-                                          ],
-                                        ),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'delete',
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.delete, size: 20, color: Colors.red),
-                                            const SizedBox(width: 8),
-                                            Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                  // 3-dots menu for actions (RBAC: Only show if user has permissions)
+                                  if (_canEditParts || _canDeleteParts)
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert),
+                                      onSelected: (value) {
+                                        if (value == 'edit') {
+                                          _editPart(part);
+                                        } else if (value == 'delete') {
+                                          _deletePart(part);
+                                        }
+                                      },
+                                      itemBuilder: (context) {
+                                        final items = <PopupMenuItem<String>>[];
+                                        
+                                        // RBAC: Only show edit if user can edit
+                                        if (_canEditParts) {
+                                          items.add(
+                                            PopupMenuItem(
+                                              value: 'edit',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.edit, size: 20, color: Colors.blue),
+                                                  const SizedBox(width: 8),
+                                                  Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        
+                                        // RBAC: Only show delete if user can delete
+                                        if (_canDeleteParts) {
+                                          items.add(
+                                            PopupMenuItem(
+                                              value: 'delete',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.delete, size: 20, color: Colors.red),
+                                                  const SizedBox(width: 8),
+                                                  Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        
+                                        return items;
+                                      },
+                                    ),
                                 ],
                               ),
                             ),
@@ -1257,7 +1366,8 @@ class _PartsPageState extends State<PartsPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: _canCreateParts
+          ? FloatingActionButton.extended(
         onPressed: () {
           _nameController.clear();
           _quantityController.clear();
@@ -1346,7 +1456,8 @@ class _PartsPageState extends State<PartsPage> {
         },
         icon: const Icon(Icons.add),
         label: const Text('Add Part'),
-      ),
+      )
+          : null,
     );
   }
 
