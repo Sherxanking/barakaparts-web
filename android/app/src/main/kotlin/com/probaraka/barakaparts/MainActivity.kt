@@ -1,0 +1,11 @@
+package com.probaraka.barakaparts
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
+
+
+
+
+
+
