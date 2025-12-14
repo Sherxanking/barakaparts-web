@@ -13,6 +13,7 @@
 /// - Qidiruv, filtrlash, tartiblash
 /// - Real-time yangilanishlar
 /// - Stock management va order completion
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -23,8 +24,12 @@ import 'data/models/product_model.dart';
 import 'data/models/part_model.dart';
 import 'data/models/order_model.dart';
 import 'data/services/language_service.dart';
+import 'core/config/env_config.dart';
+import 'infrastructure/datasources/supabase_client.dart';
+import 'core/services/auth_state_service.dart';
+import 'core/di/service_locator.dart';
 import 'l10n/app_localizations.dart';
-import 'presentation/pages/home_page.dart';
+import 'presentation/pages/splash_page.dart';
 
 /// Dastur kirish nuqtasi
 /// 
@@ -63,17 +68,68 @@ void main() async {
 
   // Barcha boxlarni ochish (ma'lumotlar bazasi fayllari)
   // Boxlar ochilgunga qadar ularga kirish mumkin emas
-  await Hive.openBox<Department>('departmentsBox');
-  await Hive.openBox<PartModel>('partsBox');
-  await Hive.openBox<Product>('productsBox');
-  await Hive.openBox<Order>('ordersBox');
+  await Future.wait([
+    Hive.openBox<Department>('departmentsBox'),
+    Hive.openBox<PartModel>('partsBox'),
+    Hive.openBox<Product>('productsBox'),
+    Hive.openBox<Order>('ordersBox'),
+    // Cache boxes for repositories
+    Hive.openBox<Map>('partsCache'),
+    Hive.openBox<Map>('productsCache'),
+  ]);
+
+  // Initialize services (cache initialization)
+  await ServiceLocator.instance.init();
+
+  // Initialize Supabase and services in background
+  _initializeServicesInBackground();
 
   // Default ma'lumotlarni yuklash (agar boxlar bo'sh bo'lsa)
   // Bu MVP uchun test ma'lumotlari
-  await _initializeDefaultData();
+  _initializeDefaultData(); // Don't await - let it run in background
 
   // Dasturni ishga tushirish
   runApp(const MyApp());
+}
+
+/// Initialize services in background (non-blocking)
+/// WHY: Supabase va boshqa servislar background'da initialize qilinadi
+Future<void> _initializeServicesInBackground() async {
+  try {
+    // 1. Environment variables yuklash (.env fayldan)
+    try {
+      await EnvConfig.load();
+      debugPrint('✅ Environment variables loaded');
+    } catch (e) {
+      debugPrint('⚠️ .env fayl yuklanmadi: $e');
+      debugPrint('📱 App default sozlamalar bilan ishlaydi');
+    }
+
+    // 2. Supabase ni initialize qilish (faqat ANON key!)
+    // PERFORMANCE: Initialize with timeout to prevent hanging
+    try {
+      await AppSupabaseClient.initialize().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('⚠️ Supabase initialization timeout');
+          throw TimeoutException('Supabase initialization timeout');
+        },
+      );
+      debugPrint('✅ Supabase initialized successfully (ANON key)');
+      
+      // Initialize global auth state service
+      // WHY: Sets up global listener for auth state changes (critical for OAuth redirects)
+      await AuthStateService().initialize();
+      debugPrint('✅ Auth state service initialized');
+    } catch (e) {
+      debugPrint('⚠️ Supabase initialization failed: $e');
+      debugPrint('📱 App offline mode da ishlaydi (Hive cache)');
+      // Supabase bo'lmasa ham app ishlashi kerak (offline mode)
+    }
+  } catch (e) {
+    debugPrint('❌ Background initialization error: $e');
+    // Don't crash app - continue with offline mode
+  }
 }
 
 /// Default ma'lumotlarni yuklash
@@ -279,7 +335,7 @@ class MyAppState extends State<MyApp> {
         Locale('ru', ''), // Russian
         Locale('en', ''), // English
       ],
-      home: const HomePage(), // Asosiy sahifa
+      home: const SplashPage(), // Splash handles auth guard
     );
   }
 }

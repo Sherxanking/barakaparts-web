@@ -1118,7 +1118,7 @@ class _PartsPageState extends State<PartsPage> {
         },
         icon: const Icon(Icons.add),
         label: const Text('Add Part'),
-      ),
+      ) ,
     );
   }
 
