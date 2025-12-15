@@ -237,3 +237,6 @@ END $$;
 -- ✅ Default value 'worker' o'rnatildi
 -- ✅ boss@test.com va manager@test.com to'g'ri role ga ega bo'ladi
 
+
+
+

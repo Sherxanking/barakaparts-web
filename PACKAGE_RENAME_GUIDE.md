@@ -289,3 +289,6 @@ Agar muammo bo'lsa:
 
 
 
+
+
+

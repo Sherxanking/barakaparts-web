@@ -43,3 +43,6 @@ Siz Supabase Dashboard'da `FINAL_COMPLETE_FIX.sql` ni bajarishingiz kerak.
 
 **Tasdiqlash:** SQL migration bajarildimi? [Yes/No]
 
+
+
+

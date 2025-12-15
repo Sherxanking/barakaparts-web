@@ -39,3 +39,6 @@ DROP POLICY IF EXISTS "Managers and boss can delete parts" ON public.parts;
 -- Endi FINAL_COMPLETE_FIX.sql ni bajarishingiz mumkin
 -- ============================================
 
+
+
+

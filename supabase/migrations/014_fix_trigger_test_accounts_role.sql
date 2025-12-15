@@ -130,3 +130,6 @@ END $$;
 -- ✅ Mavjud test accountlar yangilandi
 -- ✅ Yangi test accountlar to'g'ri role bilan yaratiladi
 
+
+
+

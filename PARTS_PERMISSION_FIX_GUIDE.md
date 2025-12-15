@@ -165,3 +165,6 @@ WHERE id = auth.uid();
    - Flutter app'ni to'xtatib, qayta ishga tushiring
    - Login qilib, qayta urinib ko'ring
 
+
+
+

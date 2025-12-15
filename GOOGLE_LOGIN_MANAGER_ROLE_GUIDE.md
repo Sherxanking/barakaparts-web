@@ -128,3 +128,6 @@ Agar bittasi ham to'g'ri bo'lsa, user Google user deb hisoblanadi va 'manager' r
 - Metadata'da role bo'lsa, u ishlatiladi
 - Google userlar avtomatik 'manager' role bilan yaratiladi
 
+
+
+

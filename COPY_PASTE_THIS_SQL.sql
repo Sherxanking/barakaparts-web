@@ -78,3 +78,6 @@ WHERE id = '48ac9358-b302-4b01-9706-0c1600497a1c';
 
 -- Natija: role = 'boss' bo'lishi kerak
 
+
+
+

@@ -194,3 +194,6 @@ END $$;
 -- 3. Manager va Boss parts yaratishi mumkin
 -- ============================================
 
+
+
+

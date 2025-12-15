@@ -14,8 +14,10 @@ import '../../infrastructure/datasources/supabase_product_datasource.dart';
 import '../../infrastructure/datasources/supabase_order_datasource.dart';
 import '../../infrastructure/cache/hive_part_cache.dart';
 import '../../infrastructure/cache/hive_product_cache.dart';
+import '../../infrastructure/cache/hive_order_cache.dart';
 import '../../infrastructure/repositories/part_repository_impl.dart';
 import '../../infrastructure/repositories/product_repository_impl.dart';
+import '../../infrastructure/repositories/order_repository_impl.dart';
 import '../../application/services/audit_service.dart';
 
 class ServiceLocator {
@@ -35,6 +37,7 @@ class ServiceLocator {
   // Cache
   late final HivePartCache _partCache = HivePartCache();
   late final HiveProductCache _productCache = HiveProductCache();
+  late final HiveOrderCache _orderCache = HiveOrderCache();
   
   // Repositories
   late final PartRepository _partRepository = PartRepositoryImpl(
@@ -47,9 +50,10 @@ class ServiceLocator {
     cache: _productCache,
   );
   
-  // Services
-  // TODO: Add other repositories and services as they are implemented
-  // late final OrderRepository _orderRepository = OrderRepositoryImpl(...);
+  late final OrderRepository _orderRepository = OrderRepositoryImpl(
+    supabaseDatasource: _orderDatasource,
+    cache: _orderCache,
+  );
   // late final DepartmentRepository _departmentRepository = DepartmentRepositoryImpl(...);
   // late final UserRepository _userRepository = UserRepositoryImpl(...);
   // late final LogRepository _logRepository = LogRepositoryImpl(...);
@@ -59,9 +63,7 @@ class ServiceLocator {
   // Getters
   PartRepository get partRepository => _partRepository;
   ProductRepository get productRepository => _productRepository;
-  
-  // TODO: Add getters for other repositories and services
-  // OrderRepository get orderRepository => _orderRepository;
+  OrderRepository get orderRepository => _orderRepository;
   // DepartmentRepository get departmentRepository => _departmentRepository;
   // UserRepository get userRepository => _userRepository;
   // LogRepository get logRepository => _logRepository;
@@ -71,7 +73,7 @@ class ServiceLocator {
   Future<void> init() async {
     await _partCache.init();
     await _productCache.init();
-    // TODO: Initialize other caches
+    await _orderCache.init();
   }
 }
 

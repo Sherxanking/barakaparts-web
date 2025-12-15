@@ -121,6 +121,10 @@ Future<void> _initializeServicesInBackground() async {
       // WHY: Sets up global listener for auth state changes (critical for OAuth redirects)
       await AuthStateService().initialize();
       debugPrint('✅ Auth state service initialized');
+      
+      // Initialize realtime streams for products and orders
+      // WHY: Keep Hive cache synced with Supabase in real-time
+      _initializeRealtimeStreams();
     } catch (e) {
       debugPrint('⚠️ Supabase initialization failed: $e');
       debugPrint('📱 App offline mode da ishlaydi (Hive cache)');
@@ -129,6 +133,80 @@ Future<void> _initializeServicesInBackground() async {
   } catch (e) {
     debugPrint('❌ Background initialization error: $e');
     // Don't crash app - continue with offline mode
+  }
+}
+
+/// Initialize realtime streams for products and orders
+/// WHY: Keep Hive cache synced with Supabase in real-time across all devices
+void _initializeRealtimeStreams() {
+  try {
+    final productRepository = ServiceLocator.instance.productRepository;
+    final partRepository = ServiceLocator.instance.partRepository;
+    
+    // Products stream - updates Hive cache automatically
+    productRepository.watchProducts().listen(
+      (result) {
+        result.fold(
+          (failure) {
+            debugPrint('⚠️ Products stream error: ${failure.message}');
+          },
+          (products) {
+            debugPrint('✅ Products realtime update: ${products.length} products');
+            // Cache is automatically updated by repository
+          },
+        );
+      },
+      onError: (error) {
+        debugPrint('❌ Products stream error: $error');
+      },
+      cancelOnError: false, // Keep listening even on errors
+    );
+    debugPrint('✅ Products realtime stream initialized');
+    
+    // Parts stream - updates Hive cache automatically
+    partRepository.watchParts().listen(
+      (result) {
+        result.fold(
+          (failure) {
+            debugPrint('⚠️ Parts stream error: ${failure.message}');
+          },
+          (parts) {
+            debugPrint('✅ Parts realtime update: ${parts.length} parts');
+            // Cache is automatically updated by repository
+          },
+        );
+      },
+      onError: (error) {
+        debugPrint('❌ Parts stream error: $error');
+      },
+      cancelOnError: false, // Keep listening even on errors
+    );
+    debugPrint('✅ Parts realtime stream initialized');
+    
+    // Orders stream - updates Hive cache automatically
+    final orderRepository = ServiceLocator.instance.orderRepository;
+    orderRepository.watchOrders().listen(
+      (result) {
+        result.fold(
+          (failure) {
+            debugPrint('⚠️ Orders stream error: ${failure.message}');
+          },
+          (orders) {
+            debugPrint('✅ Orders realtime update: ${orders.length} orders');
+            // Cache is automatically updated by repository
+          },
+        );
+      },
+      onError: (error) {
+        debugPrint('❌ Orders stream error: $error');
+      },
+      cancelOnError: false, // Keep listening even on errors
+    );
+    debugPrint('✅ Orders realtime stream initialized');
+    
+  } catch (e) {
+    debugPrint('⚠️ Failed to initialize realtime streams: $e');
+    // Don't crash app - continue without realtime sync
   }
 }
 

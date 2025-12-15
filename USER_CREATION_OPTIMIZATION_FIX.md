@@ -201,3 +201,6 @@ Barcha 3 ta muammo hal qilindi:
 
 **Ilova endi tez va to'g'ri ishlaydi!** 🚀
 
+
+
+

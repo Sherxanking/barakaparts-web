@@ -188,3 +188,6 @@ WHERE LOWER(email) = 'boss@test.com';
    WHERE tgname = 'on_auth_user_created';
    ```
 
+
+
+

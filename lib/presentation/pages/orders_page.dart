@@ -372,11 +372,11 @@ class _OrdersPageState extends State<OrdersPage> {
                         label: 'All',
                         selected: _selectedStatusFilter == null,
                         onSelected: (selected) {
-                          setState(() {
+              setState(() {
                             _selectedStatusFilter = selected ? null : _selectedStatusFilter;
-                          });
-                        },
-                      ),
+              });
+            },
+          ),
                       const SizedBox(width: 8),
                       FilterChipWidget(
                         label: 'Pending',
@@ -528,18 +528,18 @@ class _OrdersPageState extends State<OrdersPage> {
                                   const SizedBox(height: 16),
                                   
                                   // Quantity selector
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
                                       const Text('Quantity: ', style: TextStyle(fontSize: 16)),
-                                      IconButton(
+              IconButton(
                                         icon: const Icon(Icons.remove_circle_outline),
-                                        onPressed: () {
-                                          if (quantity > 1) {
-                                            setState(() => quantity--);
-                                          }
-                                        },
-                                      ),
+                onPressed: () {
+                  if (quantity > 1) {
+                    setState(() => quantity--);
+                  }
+                },
+              ),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 16),
                                         child: Text(
@@ -550,14 +550,14 @@ class _OrdersPageState extends State<OrdersPage> {
                                           ),
                                         ),
                                       ),
-                                      IconButton(
+              IconButton(
                                         icon: const Icon(Icons.add_circle_outline),
-                                        onPressed: () {
-                                          setState(() => quantity++);
-                                        },
-                                      ),
-                                    ],
-                                  ),
+                onPressed: () {
+                  setState(() => quantity++);
+                },
+              ),
+            ],
+          ),
                                   const SizedBox(height: 16),
                                   
                                   // Create order button

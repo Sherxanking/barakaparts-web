@@ -154,3 +154,6 @@ Policies Count: 4
 3. Test qadamlarni bajarish
 4. Natijani tasdiqlash
 
+
+
+

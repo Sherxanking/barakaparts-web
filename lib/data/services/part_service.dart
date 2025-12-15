@@ -3,11 +3,18 @@
 /// Bu service part CRUD operatsiyalarini, qidiruv, filtrlash 
 /// va tartiblash funksiyalarini boshqaradi. Shuningdek, 
 /// stock management funksiyalarini ham boshqaradi.
+import 'package:flutter/foundation.dart';
 import '../models/part_model.dart';
 import 'hive_box_service.dart';
+import '../../domain/entities/part.dart';
+import '../../core/di/service_locator.dart';
+import '../../core/utils/either.dart';
 
 class PartService {
   final HiveBoxService _boxService = HiveBoxService();
+  
+  // Repository for Supabase sync
+  final _partRepository = ServiceLocator.instance.partRepository;
 
   /// Barcha partlarni olish
   /// FIX: Xavfsiz box kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
@@ -34,71 +41,217 @@ class PartService {
   }
 
   /// Part qo'shish
-  /// FIX: Xatolikni tutish va xavfsiz qo'shish
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   Future<bool> addPart(PartModel part) async {
     try {
-      await _boxService.partsBox.add(part);
-      return true;
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      final domainPart = Part(
+        id: part.id,
+        name: part.name,
+        quantity: part.quantity,
+        minQuantity: part.minQuantity,
+        imagePath: part.imagePath,
+        createdAt: DateTime.now(),
+      );
+      
+      final result = await _partRepository.createPart(domainPart);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to create part in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            _boxService.partsBox.add(part);
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (createdPart) {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            _boxService.partsBox.add(part);
+            debugPrint('✅ Part created in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Part created in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
-      // Xatolik bo'lsa false qaytarish
+      debugPrint('❌ Error in addPart: $e');
       return false;
     }
   }
 
   /// Part yangilash
-  /// FIX: Xatolikni tutish va xavfsiz yangilash
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   Future<bool> updatePart(PartModel part) async {
     try {
-      await part.save();
-      return true;
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      final domainPart = Part(
+        id: part.id,
+        name: part.name,
+        quantity: part.quantity,
+        minQuantity: part.minQuantity,
+        imagePath: part.imagePath,
+        createdAt: DateTime.now(),
+      );
+      
+      final result = await _partRepository.updatePart(domainPart);
+      
+      return result.fold(
+        (failure) async {
+          debugPrint('❌ Failed to update part in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            await part.save();
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (updatedPart) async {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            await part.save();
+            debugPrint('✅ Part updated in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Part updated in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
-      // Xatolik bo'lsa false qaytarish
+      debugPrint('❌ Error in updatePart: $e');
       return false;
     }
   }
 
   /// Part o'chirish
-  /// FIX: Index tekshiruvi va xatolikni tutish
+  /// FIX: Index tekshiruvi va Supabase'ga ham o'chirish
   Future<bool> deletePart(int index) async {
     try {
-      if (index >= 0 && index < _boxService.partsBox.length) {
-        await _boxService.partsBox.deleteAt(index);
-        return true;
+      if (index < 0 || index >= _boxService.partsBox.length) {
+        return false;
       }
-      return false;
+      
+      final part = _boxService.partsBox.getAt(index);
+      if (part == null) return false;
+      
+      final partId = part.id;
+      
+      // 1. Supabase'dan o'chirish (realtime sync uchun)
+      final result = await _partRepository.deletePart(partId);
+      
+      return result.fold(
+        (failure) async {
+          debugPrint('❌ Failed to delete part in Supabase: ${failure.message}');
+          // Supabase'dan o'chirish xato bo'lsa ham Hive'dan o'chirishga harakat qilamiz
+          try {
+            await _boxService.partsBox.deleteAt(index);
+            return true; // Hive'dan o'chirildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (_) async {
+          // 2. Hive'dan ham o'chirish (offline cache uchun)
+          try {
+            await _boxService.partsBox.deleteAt(index);
+            debugPrint('✅ Part deleted from both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Part deleted from Supabase but failed to delete from Hive: $e');
+            return true; // Supabase'dan o'chirildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
-      // Xatolik bo'lsa false qaytarish
+      debugPrint('❌ Error in deletePart: $e');
       return false;
     }
   }
 
   /// Part miqdorini oshirish
-  /// FIX: Xatolikni tutish va xavfsiz yangilash
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   Future<bool> increaseQuantity(String partId, int amount) async {
     try {
       final part = getPartById(partId);
-      if (part != null) {
-        part.quantity += amount;
-        await part.save();
-        return true;
-      }
-      return false;
+      if (part == null) return false;
+      
+      part.quantity += amount;
+      
+      // Supabase'ga ham yangilash
+      final domainPart = Part(
+        id: part.id,
+        name: part.name,
+        quantity: part.quantity,
+        minQuantity: part.minQuantity,
+        imagePath: part.imagePath,
+        createdAt: DateTime.now(),
+      );
+      
+      final result = await _partRepository.updatePart(domainPart);
+      
+      return result.fold(
+        (failure) async {
+          // Supabase xato bo'lsa ham Hive'ga yozish
+          try {
+            await part.save();
+            return true;
+          } catch (e) {
+            return false;
+          }
+        },
+        (_) async {
+          await part.save();
+          return true;
+        },
+      );
     } catch (e) {
       return false;
     }
   }
 
   /// Part miqdorini kamaytirish
-  /// FIX: Xatolikni tutish va xavfsiz yangilash
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   Future<bool> decreaseQuantity(String partId, int amount) async {
     try {
       final part = getPartById(partId);
-      if (part != null) {
-        part.quantity = (part.quantity - amount).clamp(0, double.infinity).toInt();
-        await part.save();
-        return true;
-      }
-      return false;
+      if (part == null) return false;
+      
+      part.quantity = (part.quantity - amount).clamp(0, double.infinity).toInt();
+      
+      // Supabase'ga ham yangilash
+      final domainPart = Part(
+        id: part.id,
+        name: part.name,
+        quantity: part.quantity,
+        minQuantity: part.minQuantity,
+        imagePath: part.imagePath,
+        createdAt: DateTime.now(),
+      );
+      
+      final result = await _partRepository.updatePart(domainPart);
+      
+      return result.fold(
+        (failure) async {
+          // Supabase xato bo'lsa ham Hive'ga yozish
+          try {
+            await part.save();
+            return true;
+          } catch (e) {
+            return false;
+          }
+        },
+        (_) async {
+          await part.save();
+          return true;
+        },
+      );
     } catch (e) {
       return false;
     }

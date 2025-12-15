@@ -223,3 +223,6 @@ WHERE LOWER(email) = 'boss@test.com';
 -- Agar natija bo'sh bo'lsa yoki role 'boss' emas bo'lsa:
 -- Yuqoridagi STEP 2'ni qayta ishga tushiring
 
+
+
+

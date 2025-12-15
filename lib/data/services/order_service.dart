@@ -2,20 +2,27 @@
 /// 
 /// Bu service order CRUD operatsiyalarini, qidiruv, filtrlash, 
 /// tartiblash va order completion (stock reduction) funksiyalarini boshqaradi.
-import '../models/order_model.dart';
+import 'package:flutter/foundation.dart';
+import '../models/order_model.dart' as data;
 import '../models/product_model.dart';
 import 'hive_box_service.dart';
 import 'product_service.dart';
 import 'part_service.dart';
+import '../../domain/entities/order.dart' as domain;
+import '../../core/di/service_locator.dart';
+import '../../core/utils/either.dart';
 
 class OrderService {
   final HiveBoxService _boxService = HiveBoxService();
   final ProductService _productService = ProductService();
   final PartService _partService = PartService();
+  
+  // Repository for Supabase sync
+  final _orderRepository = ServiceLocator.instance.orderRepository;
 
   /// Barcha orderlarni olish
   /// FIX: Xavfsiz box kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
-  List<Order> getAllOrders() {
+  List<data.Order> getAllOrders() {
     try {
       return _boxService.ordersBox.values.toList();
     } catch (e) {
@@ -25,7 +32,7 @@ class OrderService {
   }
 
   /// ID bo'yicha order topish
-  Order? getOrderById(String id) {
+  data.Order? getOrderById(String id) {
     // Hive boxda ID key emas, shuning uchun barcha elementlarni qidirish kerak
     try {
       return _boxService.ordersBox.values.firstWhere(
@@ -38,19 +45,72 @@ class OrderService {
   }
 
   /// Order qo'shish
-  /// FIX: Xatolikni tutish va xavfsiz qo'shish
-  Future<bool> addOrder(Order order) async {
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  Future<bool> addOrder(data.Order order) async {
     try {
-      await _boxService.ordersBox.add(order);
-      return true;
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      // NOTE: Order model'da productId yo'q, faqat productName bor
+      // Domain Order'da productId kerak, shuning uchun productName'dan productId topamiz
+      String? productId;
+      try {
+        // ProductName bo'yicha product topish
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        debugPrint('⚠️ Could not find product ID for ${order.productName}: $e');
+        // Product topilmasa, productName'ni productId sifatida ishlatamiz
+        // (Bu ideal emas, lekin Supabase'ga yozish uchun zarur)
+        productId = order.productName; // Temporary fallback
+      }
+      
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id, // Fallback to order.id if product not found
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: order.status,
+        createdAt: order.createdAt,
+      );
+      
+      final result = await _orderRepository.createOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to create order in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            _boxService.ordersBox.add(order);
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (createdOrder) {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            _boxService.ordersBox.add(order);
+            debugPrint('✅ Order created in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order created in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Error in addOrder: $e');
       return false;
     }
   }
 
   /// Order yangilash
   /// FIX: Xatolikni tutish va xavfsiz yangilash
-  Future<bool> updateOrder(Order order) async {
+  Future<bool> updateOrder(data.Order order) async {
     try {
       await order.save();
       return true;
@@ -60,16 +120,46 @@ class OrderService {
   }
 
   /// Order o'chirish - ID bo'yicha
-  /// FIX: Xatolikni tutish va xavfsiz o'chirish
+  /// FIX: Hive va Supabase'dan o'chirish (realtime sync uchun)
   Future<bool> deleteOrderById(String orderId) async {
     try {
-      final order = getOrderById(orderId);
-      if (order != null) {
-        await order.delete();
-        return true;
-      }
-      return false;
+      // 1. Supabase'dan o'chirish (realtime sync uchun)
+      final result = await _orderRepository.deleteOrder(orderId);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to delete order in Supabase: ${failure.message}');
+          // Supabase'dan o'chirish xato bo'lsa ham Hive'dan o'chirishga harakat qilamiz
+          try {
+            final order = getOrderById(orderId);
+            if (order != null) {
+              order.delete();
+              return true; // Hive'dan o'chirildi, lekin sync yo'q
+            }
+            return false;
+          } catch (e) {
+            return false;
+          }
+        },
+        (_) {
+          // 2. Hive'dan ham o'chirish (offline cache uchun)
+          try {
+            final order = getOrderById(orderId);
+            if (order != null) {
+              order.delete();
+              debugPrint('✅ Order deleted from both Supabase and Hive');
+              return true;
+            }
+            debugPrint('⚠️ Order deleted from Supabase but not found in Hive');
+            return true; // Supabase'dan o'chirildi, bu asosiy
+          } catch (e) {
+            debugPrint('⚠️ Order deleted from Supabase but failed to delete from Hive: $e');
+            return true; // Supabase'dan o'chirildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Error in deleteOrderById: $e');
       return false;
     }
   }
@@ -83,17 +173,75 @@ class OrderService {
   }
 
   /// Order statusini yangilash
-  Future<void> updateOrderStatus(String orderId, String status) async {
-    final order = getOrderById(orderId);
-    if (order != null) {
-      order.status = status;
-      await order.save();
+  /// FIX: Supabase'ga ham yozish (realtime sync uchun)
+  Future<bool> updateOrderStatus(String orderId, String status) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: status,
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to update order status in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            order.status = status;
+            order.save();
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (updatedOrder) {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            order.status = status;
+            order.save();
+            debugPrint('✅ Order status updated in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order status updated in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in updateOrderStatus: $e');
+      return false;
     }
   }
 
   /// Order completion - stock reduction bilan
   /// Bu funksiya order complete bo'lganda partlarning miqdorini kamaytiradi
-  Future<bool> completeOrder(Order order) async {
+  Future<bool> completeOrder(data.Order order) async {
     if (order.status == 'completed') {
       return false; // Already completed
     }
@@ -175,7 +323,7 @@ class OrderService {
   }
 
   /// Qidiruv - product nomi yoki status bo'yicha
-  List<Order> searchOrders(String query) {
+  List<data.Order> searchOrders(String query) {
     if (query.isEmpty) return getAllOrders();
     
     final lowerQuery = query.toLowerCase();
@@ -186,24 +334,24 @@ class OrderService {
   }
 
   /// Status bo'yicha filtrlash
-  List<Order> filterByStatus(String? status) {
+  List<data.Order> filterByStatus(String? status) {
     if (status == null || status.isEmpty) return getAllOrders();
     return getAllOrders().where((order) => order.status == status).toList();
   }
 
   /// Department bo'yicha filtrlash
-  List<Order> filterByDepartment(String? departmentId) {
+  List<data.Order> filterByDepartment(String? departmentId) {
     if (departmentId == null || departmentId.isEmpty) return getAllOrders();
     return getAllOrders().where((order) => order.departmentId == departmentId).toList();
   }
 
   /// Qidiruv va filtrlash birga
-  List<Order> searchAndFilterOrders({
+  List<data.Order> searchAndFilterOrders({
     String? query,
     String? status,
     String? departmentId,
   }) {
-    List<Order> orders = getAllOrders();
+    List<data.Order> orders = getAllOrders();
 
     // Status bo'yicha filtrlash
     if (status != null && status.isNotEmpty) {
@@ -228,11 +376,11 @@ class OrderService {
   }
 
   /// Tartiblash - sana, status yoki product nomi bo'yicha
-  List<Order> sortOrders(List<Order> orders, {
+  List<data.Order> sortOrders(List<data.Order> orders, {
     bool byDate = true,
     bool ascending = false, // Default: newest first
   }) {
-    final sorted = List<Order>.from(orders);
+    final sorted = List<data.Order>.from(orders);
     sorted.sort((a, b) {
       if (byDate) {
         final comparison = a.createdAt.compareTo(b.createdAt);

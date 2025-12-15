@@ -785,12 +785,13 @@ class SupabaseUserDatasource {
           errorStr.contains('new row violates')) {
         final finalRole = role ?? _getRoleForTestAccount(email) ?? 'worker';
         return Left<Failure, domain.User>(ServerFailure(
-          'Database permission error. Trigger may not be working.\n\n'
-          'Please run migration 015_fix_role_for_dashboard_users.sql\n\n'
-          'Or manually add user:\n'
-          'INSERT INTO users (id, name, email, role)\n'
-          'VALUES (\'$userId\', \'$name\', \'$email\', \'$finalRole\')\n'
-          'ON CONFLICT (id) DO NOTHING;'
+          'Database permission error. RLS policies not configured correctly.\n\n'
+          'Please run SIMPLE_FIX.sql in Supabase SQL Editor:\n\n'
+          '1. Go to Supabase Dashboard → SQL Editor\n'
+          '2. Open SIMPLE_FIX.sql file\n'
+          '3. Copy and paste ALL SQL code\n'
+          '4. Click RUN button\n'
+          '5. Restart the app and try login again'
         ));
       }
       

@@ -97,3 +97,6 @@ AND column_name = 'updated_at';
 
 **Endi:** Migratsiya xatosiz ishlaydi! 🎉
 
+
+
+

@@ -144,3 +144,6 @@ WHERE id = '48ac9358-b302-4b01-9706-0c1600497a1c';
    
    Kamida 5 ta policy bo'lishi kerak.
 
+
+
+

@@ -311,3 +311,6 @@ END $$;
 -- ✅ Trigger yaratildi/yangilandi
 -- ✅ Endi boss@test.com bilan login ishlashi kerak
 
+
+
+

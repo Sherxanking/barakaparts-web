@@ -232,3 +232,6 @@ ON CONFLICT (id) DO NOTHING;
 
 **Endi:** Login qilganda user avtomatik yaratiladi yoki topiladi! 🎉
 
+
+
+

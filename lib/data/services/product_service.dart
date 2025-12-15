@@ -2,15 +2,22 @@
 /// 
 /// Bu service product CRUD operatsiyalarini, department bo'yicha 
 /// filtrlash, qidiruv va tartiblash funksiyalarini boshqaradi.
-import '../models/product_model.dart';
+import 'package:flutter/foundation.dart';
+import '../models/product_model.dart' as data;
 import 'hive_box_service.dart';
+import '../../domain/entities/product.dart' as domain;
+import '../../core/di/service_locator.dart';
+import '../../core/utils/either.dart';
 
 class ProductService {
   final HiveBoxService _boxService = HiveBoxService();
+  
+  // Repository for Supabase sync
+  final _productRepository = ServiceLocator.instance.productRepository;
 
   /// Barcha productlarni olish
   /// FIX: Xavfsiz box kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
-  List<Product> getAllProducts() {
+  List<data.Product> getAllProducts() {
     try {
       return _boxService.productsBox.values.toList();
     } catch (e) {
@@ -20,7 +27,7 @@ class ProductService {
   }
 
   /// ID bo'yicha product topish
-  Product? getProductById(String id) {
+  data.Product? getProductById(String id) {
     // Hive boxda ID key emas, shuning uchun barcha elementlarni qidirish kerak
     try {
       return _boxService.productsBox.values.firstWhere(
@@ -33,21 +40,52 @@ class ProductService {
   }
 
   /// Product qo'shish
-  /// FIX: Xatolikni tutish va xavfsiz qo'shish
-  Future<bool> addProduct(Product product) async {
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  Future<bool> addProduct(data.Product product) async {
     try {
-      await _boxService.productsBox.add(product);
-      return true;
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      final domainProduct = domain.Product(
+        id: product.id,
+        name: product.name,
+        departmentId: product.departmentId,
+        partsRequired: product.parts,
+        createdAt: DateTime.now(),
+      );
+      
+      final result = await _productRepository.createProduct(domainProduct);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to create product in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            _boxService.productsBox.add(product);
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (createdProduct) {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            _boxService.productsBox.add(product);
+            debugPrint('✅ Product created in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Product created in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Error in addProduct: $e');
       return false;
     }
   }
 
   /// Product yangilash
-  /// FIX: Hive boxdan mavjud productni topib, uni yangilash
-  /// Yangi Product yaratilganda u Hive boxda mavjud emas, shuning uchun
-  /// mavjud productni topib, uning fieldlarini yangilash kerak
-  Future<bool> updateProduct(Product updatedProduct) async {
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  Future<bool> updateProduct(data.Product updatedProduct) async {
     try {
       // FIX: Hive boxdan mavjud productni topish
       final existingProduct = getProductById(updatedProduct.id);
@@ -55,44 +93,108 @@ class ProductService {
         return false; // Product topilmadi
       }
       
-      // FIX: Mavjud productning fieldlarini yangilash
-      existingProduct.name = updatedProduct.name;
-      existingProduct.departmentId = updatedProduct.departmentId;
-      // FIX: Parts map ni tozalash - 0 qiymatli qismlarni olib tashlash
-      existingProduct.parts = Map<String, int>.from(updatedProduct.parts)
-        ..removeWhere((key, value) => value <= 0);
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      final domainProduct = domain.Product(
+        id: updatedProduct.id,
+        name: updatedProduct.name,
+        departmentId: updatedProduct.departmentId,
+        partsRequired: updatedProduct.parts,
+        createdAt: DateTime.now(),
+      );
       
-      // FIX: Hive'ga saqlash
-      await existingProduct.save();
-      return true;
+      final result = await _productRepository.updateProduct(domainProduct);
+      
+      return result.fold(
+        (failure) async {
+          debugPrint('❌ Failed to update product in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            existingProduct.name = updatedProduct.name;
+            existingProduct.departmentId = updatedProduct.departmentId;
+            existingProduct.parts = Map<String, int>.from(updatedProduct.parts)
+              ..removeWhere((key, value) => value <= 0);
+            await existingProduct.save();
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (updated) async {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            existingProduct.name = updatedProduct.name;
+            existingProduct.departmentId = updatedProduct.departmentId;
+            existingProduct.parts = Map<String, int>.from(updatedProduct.parts)
+              ..removeWhere((key, value) => value <= 0);
+            await existingProduct.save();
+            debugPrint('✅ Product updated in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Product updated in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Error in updateProduct: $e');
       return false;
     }
   }
 
   /// Product o'chirish
-  /// FIX: Index tekshiruvi va xatolikni tutish
+  /// FIX: Index tekshiruvi va Supabase'ga ham o'chirish
   Future<bool> deleteProduct(int index) async {
     try {
-      if (index >= 0 && index < _boxService.productsBox.length) {
-        await _boxService.productsBox.deleteAt(index);
-        return true;
+      if (index < 0 || index >= _boxService.productsBox.length) {
+        return false;
       }
-      return false;
+      
+      final product = _boxService.productsBox.getAt(index);
+      if (product == null) return false;
+      
+      final productId = product.id;
+      
+      // 1. Supabase'dan o'chirish (realtime sync uchun)
+      final result = await _productRepository.deleteProduct(productId);
+      
+      return result.fold(
+        (failure) async {
+          debugPrint('❌ Failed to delete product in Supabase: ${failure.message}');
+          // Supabase'dan o'chirish xato bo'lsa ham Hive'dan o'chirishga harakat qilamiz
+          try {
+            await _boxService.productsBox.deleteAt(index);
+            return true; // Hive'dan o'chirildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (_) async {
+          // 2. Hive'dan ham o'chirish (offline cache uchun)
+          try {
+            await _boxService.productsBox.deleteAt(index);
+            debugPrint('✅ Product deleted from both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Product deleted from Supabase but failed to delete from Hive: $e');
+            return true; // Supabase'dan o'chirildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Error in deleteProduct: $e');
       return false;
     }
   }
 
   /// Department bo'yicha productlarni filtrlash
-  List<Product> getProductsByDepartment(String departmentId) {
+  List<data.Product> getProductsByDepartment(String departmentId) {
     return getAllProducts().where((product) {
       return product.departmentId == departmentId;
     }).toList();
   }
 
   /// Qidiruv - nom bo'yicha
-  List<Product> searchProducts(String query) {
+  List<data.Product> searchProducts(String query) {
     if (query.isEmpty) return getAllProducts();
     
     final lowerQuery = query.toLowerCase();
@@ -102,11 +204,11 @@ class ProductService {
   }
 
   /// Qidiruv va filtrlash birga
-  List<Product> searchAndFilterProducts({
+  List<data.Product> searchAndFilterProducts({
     String? query,
     String? departmentId,
   }) {
-    List<Product> products = getAllProducts();
+    List<data.Product> products = getAllProducts();
 
     // Department bo'yicha filtrlash
     if (departmentId != null && departmentId.isNotEmpty) {
@@ -125,8 +227,8 @@ class ProductService {
   }
 
   /// Tartiblash - nom bo'yicha
-  List<Product> sortProducts(List<Product> products, bool ascending) {
-    final sorted = List<Product>.from(products);
+  List<data.Product> sortProducts(List<data.Product> products, bool ascending) {
+    final sorted = List<data.Product>.from(products);
     sorted.sort((a, b) {
       final comparison = a.name.compareTo(b.name);
       return ascending ? comparison : -comparison;

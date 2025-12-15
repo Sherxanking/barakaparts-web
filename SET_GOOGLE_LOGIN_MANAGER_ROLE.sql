@@ -169,3 +169,6 @@ END $$;
 --
 -- ENDI: Google orqali sign qilganda manager roli bilan kiriladi!
 
+
+
+

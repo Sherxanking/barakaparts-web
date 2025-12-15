@@ -214,3 +214,6 @@ END $$;
 -- ✅ RLS policies tekshirildi va yaratildi
 -- ✅ Endi boss@test.com bilan login ishlashi kerak
 
+
+
+

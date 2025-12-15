@@ -3,12 +3,14 @@
 /// Combines Supabase (source of truth) with Hive cache (offline support).
 
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../../domain/entities/part.dart';
 import '../../domain/repositories/part_repository.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../datasources/supabase_part_datasource.dart';
 import '../cache/hive_part_cache.dart';
+import '../../data/models/part_model.dart';
 
 class PartRepositoryImpl implements PartRepository {
   final SupabasePartDatasource _supabaseDatasource;
@@ -144,11 +146,42 @@ class PartRepositoryImpl implements PartRepository {
         // Log cache error but don't fail the stream
         debugPrint('⚠️ Cache update error: $e');
       });
+      
+      // FIX: Also update partsBox for UI sync
+      _updatePartsBox(parts).catchError((e) {
+        debugPrint('⚠️ PartsBox update error: $e');
+      });
+      
       return Right<Failure, List<Part>>(parts);
     }).handleError((error, stackTrace) {
       // Return error as Left
       return Left<Failure, List<Part>>(ServerFailure('Stream error: $error'));
     });
+  }
+  
+  /// Update partsBox with domain parts
+  Future<void> _updatePartsBox(List<Part> parts) async {
+    try {
+      if (!Hive.isBoxOpen('partsBox')) {
+        await Hive.openBox<PartModel>('partsBox');
+      }
+      final box = Hive.box<PartModel>('partsBox');
+      await box.clear();
+      
+      for (var part in parts) {
+        final partModel = PartModel(
+          id: part.id,
+          name: part.name,
+          quantity: part.quantity,
+          minQuantity: part.minQuantity ?? 3,
+          imagePath: part.imagePath,
+          status: 'available',
+        );
+        await box.add(partModel);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error updating partsBox: $e');
+    }
   }
 
   @override

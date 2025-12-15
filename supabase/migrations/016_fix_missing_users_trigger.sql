@@ -148,3 +148,6 @@ END $$;
 -- ✅ Barcha userlar endi public.users da mavjud
 -- ✅ Trigger endi ishlaydi va yangi userlar avtomatik yaratiladi
 
+
+
+

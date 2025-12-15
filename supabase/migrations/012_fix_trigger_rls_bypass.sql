@@ -118,3 +118,6 @@ END $$;
 -- ✅ Role metadata'dan olinadi (default: 'worker')
 -- ✅ ON CONFLICT bilan xavfsiz (agar allaqachon mavjud bo'lsa, yangilanadi)
 
+
+
+

@@ -190,3 +190,6 @@ END $$;
 --
 -- ENDI: User o'z ma'lumotlarini o'qiy oladi!
 
+
+
+

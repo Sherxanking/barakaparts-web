@@ -204,3 +204,6 @@ Muammo tuzatilgandan keyin:
 - `supabase/migrations/012_fix_trigger_rls_bypass.sql` - Trigger fix
 - `lib/infrastructure/datasources/supabase_user_datasource.dart` - Error handling
 
+
+
+

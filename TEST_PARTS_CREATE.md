@@ -103,3 +103,6 @@ ORDER BY policyname;
 
 Agar "No" bo'lsa, debug query natijalarini yuboring.
 
+
+
+

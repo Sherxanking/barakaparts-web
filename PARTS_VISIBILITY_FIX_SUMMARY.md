@@ -202,3 +202,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS parts;
 
 
 
+
+
+

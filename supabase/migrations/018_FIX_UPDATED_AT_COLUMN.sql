@@ -113,3 +113,6 @@ $$;
 -- ✅ Trigger function yangilandi (updated_at olib tashlandi)
 -- ✅ Endi xatolik bo'lmaydi
 
+
+
+

@@ -111,3 +111,6 @@ Migration'dan keyin:
 
 **Endi:** App ishlaydi, "permission denied" xatosi yo'q! 🎉
 
+
+
+

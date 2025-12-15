@@ -69,86 +69,155 @@ class _PartsPageState extends State<PartsPage> {
     super.dispose();
   }
 
+  /// Hive box ochilganligini tekshirish
+  bool _isPartsBoxOpen() {
+    try {
+      return Hive.isBoxOpen('partsBox');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Part ID bo'yicha Hive box index topish
+  /// FIX: Filtered list index emas, real Hive index qaytaradi
+  int? _findHiveIndexById(String partId) {
+    try {
+      if (!_isPartsBoxOpen()) {
+        return null;
+      }
+      final box = _boxService.partsBox;
+      for (int i = 0; i < box.length; i++) {
+        final part = box.getAt(i);
+        if (part != null && part.id == partId) {
+          return i;
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Kam qolgan qismlarni olish (minQuantity dan kam)
   List<PartModel> _getLowStockParts() {
-    return _partService.getAllParts().where((part) {
-      return part.quantity < part.minQuantity;
-    }).toList();
+    try {
+      return _partService.getAllParts().where((part) {
+        return part.quantity < part.minQuantity;
+      }).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   /// Filtrlangan va tartiblangan partlarni olish
+  /// FIX: Xavfsiz Hive kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
   List<PartModel> _getFilteredParts() {
-    List<PartModel> parts = _partService.searchParts(_searchController.text);
+    try {
+      if (!_isPartsBoxOpen()) {
+        return [];
+      }
+      
+      List<PartModel> parts = _partService.searchParts(_searchController.text);
 
-    // Low stock filter - minQuantity ga asoslangan
-    if (_showLowStockOnly) {
-      parts = parts.where((part) => part.quantity < part.minQuantity).toList();
+      // Low stock filter - minQuantity ga asoslangan
+      if (_showLowStockOnly) {
+        parts = parts.where((part) => part.quantity < part.minQuantity).toList();
+      }
+
+      // Tartiblash
+      if (_selectedSortOption != null) {
+        final byName = _selectedSortOption == SortOption.nameAsc || 
+                       _selectedSortOption == SortOption.nameDesc;
+        parts = _partService.sortParts(
+          parts,
+          byName: byName,
+          ascending: _selectedSortOption!.ascending,
+        );
+      }
+
+      return parts;
+    } catch (e) {
+      return [];
     }
-
-    // Tartiblash
-    if (_selectedSortOption != null) {
-      final byName = _selectedSortOption == SortOption.nameAsc || 
-                     _selectedSortOption == SortOption.nameDesc;
-      parts = _partService.sortParts(
-        parts,
-        byName: byName,
-        ascending: _selectedSortOption!.ascending,
-      );
-    }
-
-    return parts;
   }
 
   /// Yangi qism qo'shish
+  /// FIX: Xavfsiz Hive kirish va mounted tekshiruvi
   Future<void> _addPart() async {
+    if (!mounted) return;
+    
     if (_nameController.text.trim().isEmpty) {
-      _showSnackBar('Please enter a part name', Colors.red);
+      if (mounted) {
+        _showSnackBar('Please enter a part name', Colors.red);
+      }
       return;
     }
 
     final quantity = int.tryParse(_quantityController.text) ?? 1;
     if (quantity < 0) {
-      _showSnackBar('Quantity cannot be negative', Colors.red);
+      if (mounted) {
+        _showSnackBar('Quantity cannot be negative', Colors.red);
+      }
       return;
     }
 
-    final partId = const Uuid().v4();
-    String? imagePath;
+    try {
+      // FIX: Box ochilganligini tekshirish
+      if (!_isPartsBoxOpen()) {
+        if (mounted) {
+          _showSnackBar('Storage not available. Please try again.', Colors.red);
+        }
+        return;
+      }
 
-    // Rasmni saqlash
-    if (_selectedImage != null) {
-      imagePath = await ImageService.saveImage(_selectedImage!, partId);
-    }
+      final partId = const Uuid().v4();
+      String? imagePath;
 
-    final minQuantity = int.tryParse(_minQuantityController.text) ?? 3;
+      // Rasmni saqlash
+      if (_selectedImage != null) {
+        try {
+          imagePath = await ImageService.saveImage(_selectedImage!, partId);
+        } catch (e) {
+          // Rasm saqlash xatosi e'tiborsiz qoldiriladi
+        }
+      }
 
-    final part = PartModel(
-      id: partId,
-      name: _nameController.text.trim(),
-      quantity: quantity,
-      status: 'available',
-      imagePath: imagePath,
-      minQuantity: minQuantity,
-    );
+      final minQuantity = int.tryParse(_minQuantityController.text) ?? 3;
 
-    // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _partService.addPart(part);
-    if (mounted) {
-      if (success) {
-        _nameController.clear();
-        _quantityController.clear();
-        _minQuantityController.clear();
-        _selectedImage = null;
-        _showSnackBar('Part added successfully', Colors.green);
-        Navigator.pop(context);
-      } else {
-        _showSnackBar('Failed to add part. Please try again.', Colors.red);
+      final part = PartModel(
+        id: partId,
+        name: _nameController.text.trim(),
+        quantity: quantity,
+        status: 'available',
+        imagePath: imagePath,
+        minQuantity: minQuantity,
+      );
+
+      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
+      final success = await _partService.addPart(part);
+      if (mounted) {
+        if (success) {
+          _nameController.clear();
+          _quantityController.clear();
+          _minQuantityController.clear();
+          _selectedImage = null;
+          _showSnackBar('Part added successfully', Colors.green);
+          Navigator.pop(context);
+        } else {
+          _showSnackBar('Failed to add part. Please try again.', Colors.red);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('Error adding part: ${e.toString()}', Colors.red);
       }
     }
   }
 
   /// Qismni o'chirish
   Future<void> _deletePart(PartModel part) async {
+    if (!mounted) return;
+    
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -169,24 +238,39 @@ class _PartsPageState extends State<PartsPage> {
       ),
     );
 
-    if (confirmed == true) {
-      final parts = _getFilteredParts();
-      final index = parts.indexOf(part);
-      
-      if (index >= 0) {
-        // Rasmni o'chirish
-        if (part.imagePath != null) {
-          await ImageService.deleteImage(part.imagePath);
+    if (confirmed == true && mounted) {
+      try {
+        // FIX: Filtered list index emas, real Hive index ishlatish
+        final hiveIndex = _findHiveIndexById(part.id);
+        
+        if (hiveIndex == null) {
+          if (mounted) {
+            _showSnackBar('Part not found in storage', Colors.red);
+          }
+          return;
         }
         
-        // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-        final success = await _partService.deletePart(index);
+        // Rasmni o'chirish
+        if (part.imagePath != null) {
+          try {
+            await ImageService.deleteImage(part.imagePath);
+          } catch (e) {
+            // Rasm o'chirish xatosi e'tiborsiz qoldiriladi
+          }
+        }
+        
+        // FIX: Real Hive index ishlatish
+        final success = await _partService.deletePart(hiveIndex);
         if (mounted) {
           if (success) {
             _showSnackBar('Part deleted', Colors.orange);
           } else {
             _showSnackBar('Failed to delete part. Please try again.', Colors.red);
           }
+        }
+      } catch (e) {
+        if (mounted) {
+          _showSnackBar('Error deleting part: ${e.toString()}', Colors.red);
         }
       }
     }
@@ -273,46 +357,76 @@ class _PartsPageState extends State<PartsPage> {
           ),
           TextButton(
             onPressed: () async {
+              if (!mounted) return;
+              
               if (_nameController.text.trim().isEmpty) {
-                _showSnackBar('Please enter a part name', Colors.red);
+                if (mounted) {
+                  _showSnackBar('Please enter a part name', Colors.red);
+                }
                 return;
               }
 
-              // Eski rasmini o'chirish (agar yangi rasm tanlangan bo'lsa)
-              if (_selectedImage != null && part.imagePath != null) {
-                await ImageService.deleteImage(part.imagePath);
-              }
+              try {
+                // FIX: Box ochilganligini tekshirish
+                if (!_isPartsBoxOpen()) {
+                  if (mounted) {
+                    _showSnackBar('Storage not available. Please try again.', Colors.red);
+                  }
+                  return;
+                }
 
-              // Yangi rasmini saqlash
-              String? newImagePath = part.imagePath;
-              if (_selectedImage != null) {
-                newImagePath = await ImageService.saveImage(_selectedImage!, part.id);
-              } else if (_currentEditImagePath == null && part.imagePath != null) {
-                // Rasm o'chirilgan bo'lsa
-                await ImageService.deleteImage(part.imagePath);
-                newImagePath = null;
-              }
+                // Eski rasmini o'chirish (agar yangi rasm tanlangan bo'lsa)
+                if (_selectedImage != null && part.imagePath != null) {
+                  try {
+                    await ImageService.deleteImage(part.imagePath);
+                  } catch (e) {
+                    // Rasm o'chirish xatosi e'tiborsiz qoldiriladi
+                  }
+                }
 
-              part.name = _nameController.text.trim();
-              final qty = int.tryParse(_quantityController.text) ?? part.quantity;
-              part.quantity = qty < 0 ? 0 : qty;
-              final minQty = int.tryParse(_minQuantityController.text) ?? part.minQuantity;
-              part.minQuantity = minQty < 0 ? 0 : minQty;
-              part.imagePath = newImagePath;
-              
-              // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-              final success = await _partService.updatePart(part);
-              if (mounted) {
-                if (success) {
-                  _nameController.clear();
-                  _quantityController.clear();
-                  _minQuantityController.clear();
-                  _selectedImage = null;
-                  _currentEditImagePath = null;
-                  Navigator.pop(context);
-                  _showSnackBar('Part updated', Colors.green);
-                } else {
-                  _showSnackBar('Failed to update part. Please try again.', Colors.red);
+                // Yangi rasmini saqlash
+                String? newImagePath = part.imagePath;
+                if (_selectedImage != null) {
+                  try {
+                    newImagePath = await ImageService.saveImage(_selectedImage!, part.id);
+                  } catch (e) {
+                    // Rasm saqlash xatosi e'tiborsiz qoldiriladi
+                  }
+                } else if (_currentEditImagePath == null && part.imagePath != null) {
+                  // Rasm o'chirilgan bo'lsa
+                  try {
+                    await ImageService.deleteImage(part.imagePath);
+                    newImagePath = null;
+                  } catch (e) {
+                    // Rasm o'chirish xatosi e'tiborsiz qoldiriladi
+                  }
+                }
+
+                part.name = _nameController.text.trim();
+                final qty = int.tryParse(_quantityController.text) ?? part.quantity;
+                part.quantity = qty < 0 ? 0 : qty;
+                final minQty = int.tryParse(_minQuantityController.text) ?? part.minQuantity;
+                part.minQuantity = minQty < 0 ? 0 : minQty;
+                part.imagePath = newImagePath;
+                
+                // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
+                final success = await _partService.updatePart(part);
+                if (mounted) {
+                  if (success) {
+                    _nameController.clear();
+                    _quantityController.clear();
+                    _minQuantityController.clear();
+                    _selectedImage = null;
+                    _currentEditImagePath = null;
+                    Navigator.pop(context);
+                    _showSnackBar('Part updated', Colors.green);
+                  } else {
+                    _showSnackBar('Failed to update part. Please try again.', Colors.red);
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  _showSnackBar('Error updating part: ${e.toString()}', Colors.red);
                 }
               }
             },
@@ -357,17 +471,39 @@ class _PartsPageState extends State<PartsPage> {
     
     if (source != null) {
       try {
+        if (!mounted) return;
+        
+        // FIX: Box ochilganligini tekshirish
+        if (!_isPartsBoxOpen()) {
+          if (mounted) {
+            _showSnackBar('Storage not available. Please try again.', Colors.red);
+          }
+          return;
+        }
+        
         final pickedFile = await picker.pickImage(source: source);
-        if (pickedFile != null) {
+        if (pickedFile != null && mounted) {
           // Eski rasmini o'chirish
           if (part.imagePath != null) {
-            await ImageService.deleteImage(part.imagePath);
+            try {
+              await ImageService.deleteImage(part.imagePath);
+            } catch (e) {
+              // Rasm o'chirish xatosi e'tiborsiz qoldiriladi
+            }
           }
           // Yangi rasmini saqlash
-          final newImagePath = await ImageService.saveImage(
-            File(pickedFile.path),
-            part.id,
-          );
+          String? newImagePath;
+          try {
+            newImagePath = await ImageService.saveImage(
+              File(pickedFile.path),
+              part.id,
+            );
+          } catch (e) {
+            if (mounted) {
+              _showSnackBar('Failed to save image: ${e.toString()}', Colors.red);
+            }
+            return;
+          }
           part.imagePath = newImagePath;
           // FIX: Service endi bool qaytaradi
           final success = await _partService.updatePart(part);
@@ -505,17 +641,37 @@ class _PartsPageState extends State<PartsPage> {
                       ElevatedButton.icon(
                         onPressed: () async {
                           Navigator.pop(context);
-                          if (part.imagePath != null) {
-                            await ImageService.deleteImage(part.imagePath);
-                            part.imagePath = null;
-                            // FIX: Service endi bool qaytaradi
-                            final success = await _partService.updatePart(part);
-                            if (mounted) {
-                              if (success) {
-                                _showSnackBar('Image deleted', Colors.orange);
-                              } else {
-                                _showSnackBar('Failed to delete image. Please try again.', Colors.red);
+                          if (!mounted) return;
+                          
+                          try {
+                            // FIX: Box ochilganligini tekshirish
+                            if (!_isPartsBoxOpen()) {
+                              if (mounted) {
+                                _showSnackBar('Storage not available. Please try again.', Colors.red);
                               }
+                              return;
+                            }
+                            
+                            if (part.imagePath != null) {
+                              try {
+                                await ImageService.deleteImage(part.imagePath);
+                              } catch (e) {
+                                // Rasm o'chirish xatosi e'tiborsiz qoldiriladi
+                              }
+                              part.imagePath = null;
+                              // FIX: Service endi bool qaytaradi
+                              final success = await _partService.updatePart(part);
+                              if (mounted) {
+                                if (success) {
+                                  _showSnackBar('Image deleted', Colors.orange);
+                                } else {
+                                  _showSnackBar('Failed to delete image. Please try again.', Colors.red);
+                                }
+                              }
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              _showSnackBar('Error deleting image: ${e.toString()}', Colors.red);
                             }
                           }
                         },
@@ -553,7 +709,13 @@ class _PartsPageState extends State<PartsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final lowStockParts = _getLowStockParts();
+    // FIX: Xavfsiz low stock parts olish
+    List<PartModel> lowStockParts = [];
+    try {
+      lowStockParts = _getLowStockParts();
+    } catch (e) {
+      lowStockParts = [];
+    }
     final lowStockCount = lowStockParts.length;
 
     return Scaffold(
@@ -733,12 +895,11 @@ class _PartsPageState extends State<PartsPage> {
 
           // Parts list
           Expanded(
-            child: ValueListenableBuilder(
-              valueListenable: _boxService.partsListenable,
-              builder: (context, Box<PartModel> box, _) {
-                final parts = _getFilteredParts();
-
-                if (parts.isEmpty) {
+            child: Builder(
+              builder: (context) {
+                // FIX: Box ochilganligini tekshirish
+                if (!_isPartsBoxOpen()) {
+                  // Box ochilmagan bo'lsa, loading yoki empty state ko'rsatish
                   return RefreshIndicator(
                     onRefresh: () async {
                       setState(() {});
@@ -748,34 +909,75 @@ class _PartsPageState extends State<PartsPage> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       child: SizedBox(
                         height: MediaQuery.of(context).size.height * 0.6,
-                        child: EmptyStateWidget(
-                          icon: Icons.build,
-                          title: box.isEmpty 
-                              ? 'No parts yet' 
-                              : 'No parts match your filters',
-                          subtitle: box.isEmpty
-                              ? 'Tap the + button to add a part'
-                              : 'Try adjusting your search or filters',
+                        child: const EmptyStateWidget(
+                          icon: Icons.hourglass_empty,
+                          title: 'Loading parts...',
+                          subtitle: 'Please wait while we load your parts',
                         ),
                       ),
                     ),
                   );
                 }
+                
+                try {
+                  // FIX: Box ochilganligini tekshirgandan keyin partsListenable ishlatish
+                  return ValueListenableBuilder(
+                    valueListenable: _boxService.partsListenable,
+                    builder: (context, Box<PartModel> box, _) {
+                      if (!mounted) {
+                        return const SizedBox.shrink();
+                      }
+                      
+                      try {
+                        final parts = _getFilteredParts();
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    setState(() {});
-                    await Future.delayed(const Duration(milliseconds: 500));
-                  },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: parts.length,
-                    itemBuilder: (context, index) {
-                    final part = parts[index];
-                    final isLowStock = part.quantity < part.minQuantity;
-                    final statusColor = isLowStock ? Colors.red : Colors.green;
-                    final imageFile = ImageService.getImageFile(part.imagePath);
-                    final hasImage = imageFile != null && imageFile.existsSync();
+                        if (parts.isEmpty) {
+                          return RefreshIndicator(
+                            onRefresh: () async {
+                              if (mounted) {
+                                setState(() {});
+                              }
+                              await Future.delayed(const Duration(milliseconds: 500));
+                            },
+                            child: SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: SizedBox(
+                                height: MediaQuery.of(context).size.height * 0.6,
+                                child: EmptyStateWidget(
+                                  icon: Icons.build,
+                                  title: box.isEmpty 
+                                      ? 'No parts yet' 
+                                      : 'No parts match your filters',
+                                  subtitle: box.isEmpty
+                                      ? 'Tap the + button to add a part'
+                                      : 'Try adjusting your search or filters',
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return RefreshIndicator(
+                          onRefresh: () async {
+                            if (mounted) {
+                              setState(() {});
+                            }
+                            await Future.delayed(const Duration(milliseconds: 500));
+                          },
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: parts.length,
+                            itemBuilder: (context, index) {
+                              if (!mounted) {
+                                return const SizedBox.shrink();
+                              }
+                              
+                              try {
+                                final part = parts[index];
+                                final isLowStock = part.quantity < part.minQuantity;
+                                final statusColor = isLowStock ? Colors.red : Colors.green;
+                                final imageFile = ImageService.getImageFile(part.imagePath);
+                                final hasImage = imageFile != null && imageFile.existsSync();
 
                     return AnimatedListItem(
                       delay: index * 50,
@@ -1020,10 +1222,228 @@ class _PartsPageState extends State<PartsPage> {
                           ),
                         ),
                       ),
+                                );
+                              } catch (e) {
+                                // Item builder xatosi - bo'sh widget qaytarish
+                                return const SizedBox.shrink();
+                              }
+                            },
+                          ),
+                        );
+                      } catch (e) {
+                        // Box ma'lumotlarini olishda xatolik
+                        if (!mounted) {
+                          return const SizedBox.shrink();
+                        }
+                        return RefreshIndicator(
+                          onRefresh: () async {
+                            if (mounted) {
+                              setState(() {});
+                            }
+                            await Future.delayed(const Duration(milliseconds: 500));
+                          },
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: SizedBox(
+                              height: MediaQuery.of(context).size.height * 0.6,
+                              child: const EmptyStateWidget(
+                                icon: Icons.error_outline,
+                                title: 'Error loading parts',
+                                subtitle: 'Please try refreshing',
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  );
+                } catch (e) {
+                  // Chrome'da Hive ishlamaydi, oddiy ListView qaytaramiz
+                  if (!mounted) {
+                    return const SizedBox.shrink();
+                  }
+                  
+                  try {
+                    final parts = _getFilteredParts();
+                    if (parts.isEmpty) {
+                      return RefreshIndicator(
+                        onRefresh: () async {
+                          if (mounted) {
+                            setState(() {});
+                          }
+                          await Future.delayed(const Duration(milliseconds: 500));
+                        },
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: const EmptyStateWidget(
+                              icon: Icons.build,
+                              title: 'No parts yet',
+                              subtitle: 'Tap the + button to add a part',
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        if (mounted) {
+                          setState(() {});
+                        }
+                        await Future.delayed(const Duration(milliseconds: 500));
+                      },
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: parts.length,
+                        itemBuilder: (context, index) {
+                          if (!mounted) {
+                            return const SizedBox.shrink();
+                          }
+                          
+                          try {
+                            final part = parts[index];
+                            final isLowStock = part.quantity < part.minQuantity;
+                            final statusColor = isLowStock ? Colors.red : Colors.green;
+                            final imageFile = ImageService.getImageFile(part.imagePath);
+                            final hasImage = imageFile != null && imageFile.existsSync();
+                        return AnimatedListItem(
+                          delay: index * 50,
+                          child: Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ListTile(
+                              leading: hasImage
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        imageFile!,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return _buildImagePlaceholder(statusColor);
+                                        },
+                                      ),
+                                    )
+                                  : _buildImagePlaceholder(statusColor),
+                              title: Text(
+                                part.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.inventory_2,
+                                        size: 16,
+                                        color: isLowStock ? Colors.red : Colors.blue,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Quantity: ${part.quantity}',
+                                        style: TextStyle(
+                                          color: isLowStock ? Colors.red : Colors.blue,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (isLowStock) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.warning,
+                                          size: 14,
+                                          color: Colors.red,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Min: ${part.minQuantity}',
+                                          style: const TextStyle(
+                                            color: Colors.red,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _editPart(part);
+                                  } else if (value == 'delete') {
+                                    _deletePart(part);
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.edit, size: 20, color: Colors.blue),
+                                        const SizedBox(width: 8),
+                                        Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.delete, size: 20, color: Colors.red),
+                                        const SizedBox(width: 8),
+                                        Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                          } catch (e) {
+                            // Item builder xatosi - bo'sh widget qaytarish
+                            return const SizedBox.shrink();
+                          }
+                        },
+                      ),
                     );
-                  },
-                  ),
-                );
+                  } catch (e) {
+                    // Fallback xatolik - empty state ko'rsatish
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        if (mounted) {
+                          setState(() {});
+                        }
+                        await Future.delayed(const Duration(milliseconds: 500));
+                      },
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: const EmptyStateWidget(
+                            icon: Icons.error_outline,
+                            title: 'Error loading parts',
+                            subtitle: 'Please try refreshing',
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                }
               },
             ),
           ),

@@ -253,3 +253,6 @@ FULL OUTER JOIN public.users pu ON au.id = pu.id;
 
 **Endi:** App production-ga tayyor! 🎉
 
+
+
+

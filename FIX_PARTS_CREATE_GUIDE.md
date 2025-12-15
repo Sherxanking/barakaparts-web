@@ -121,3 +121,6 @@ Agar hali ham muammo bo'lsa:
 
 3. **Agar role 'worker' bo'lsa, `SET_DEFAULT_ROLE_MANAGER.sql` ni bajarish kerak**
 
+
+
+

@@ -240,3 +240,6 @@ $$;
 
 **Endi:** Barcha yangi userlar (Dashboard orqali ham) role ga ega bo'ladi! 🎉
 
+
+
+

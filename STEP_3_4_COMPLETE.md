@@ -67,3 +67,6 @@ flutter run
 
 **App run qildimi va authentication ishlayaptimi?** [Yes/No]
 
+
+
+

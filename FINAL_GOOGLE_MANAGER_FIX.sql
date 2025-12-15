@@ -211,3 +211,6 @@ END $$;
 -- 4. Keyingi Google login'lar avtomatik 'manager' bo'ladi
 -- ============================================
 
+
+
+
