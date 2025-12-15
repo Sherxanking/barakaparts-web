@@ -7,6 +7,7 @@
 /// - Qismlar miqdorini o'zgartirish
 /// 
 /// Barcha o'zgarishlar Hive'ga saqlanadi va mahsulot real-time yangilanadi.
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../data/models/product_model.dart';
@@ -15,6 +16,9 @@ import '../../data/services/hive_box_service.dart';
 import '../../data/services/product_service.dart';
 import '../../data/services/department_service.dart';
 import '../../data/services/part_service.dart';
+import '../../core/di/service_locator.dart';
+import '../../domain/entities/part.dart' as domain;
+import '../../data/models/part_model.dart';
 import '../../l10n/app_localizations.dart';
 
 class ProductEditPage extends StatefulWidget {
@@ -42,6 +46,10 @@ class _ProductEditPageState extends State<ProductEditPage> {
   // Holat (State)
   String? _selectedDepartmentId;
   Map<String, int> _productParts = {};
+  
+  // Chrome uchun state
+  List<PartModel> _webParts = [];
+  bool _isLoadingWebParts = false;
 
   @override
   void initState() {
@@ -50,6 +58,64 @@ class _ProductEditPageState extends State<ProductEditPage> {
     _nameController = TextEditingController(text: widget.product.name);
     _selectedDepartmentId = widget.product.departmentId;
     _productParts = Map<String, int>.from(widget.product.parts);
+    
+    // FIX: Chrome'da partslarni yuklash
+    if (kIsWeb) {
+      _loadWebParts();
+    }
+  }
+  
+  /// Chrome'da partslarni yuklash (Supabase'dan)
+  Future<void> _loadWebParts() async {
+    if (_isLoadingWebParts) return;
+    
+    setState(() {
+      _isLoadingWebParts = true;
+    });
+    
+    try {
+      final repository = ServiceLocator.instance.partRepository;
+      final result = await repository.getAllParts();
+      
+      result.fold(
+        (failure) {
+          // Xatolik bo'lsa bo'sh ro'yxat
+          if (mounted) {
+            setState(() {
+              _webParts = [];
+              _isLoadingWebParts = false;
+            });
+          }
+        },
+        (domainParts) {
+          // Domain Part'larni PartModel'ga o'tkazish
+          final parts = domainParts.map((domainPart) {
+            return PartModel(
+              id: domainPart.id,
+              name: domainPart.name,
+              quantity: domainPart.quantity,
+              status: 'available',
+              imagePath: domainPart.imagePath,
+              minQuantity: domainPart.minQuantity ?? 3,
+            );
+          }).toList();
+          
+          if (mounted) {
+            setState(() {
+              _webParts = parts;
+              _isLoadingWebParts = false;
+            });
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _webParts = [];
+          _isLoadingWebParts = false;
+        });
+      }
+    }
   }
 
   @override
@@ -109,6 +175,12 @@ class _ProductEditPageState extends State<ProductEditPage> {
     
     if (mounted) {
       if (success) {
+        // FIX: UI ni darhol yangilash - navigator pop dan oldin
+        setState(() {});
+        // FIX: Chrome'da partslarni qayta yuklash
+        if (kIsWeb) {
+          await _loadWebParts();
+        }
         _showSnackBar(
           l10n?.translate('productUpdated') ?? 'Product updated successfully',
           Colors.green,
@@ -129,7 +201,8 @@ class _ProductEditPageState extends State<ProductEditPage> {
   /// Har bir qism uchun miqdor kiritish maydoni mavjud.
   void _showPartsDialog() {
     final l10n = AppLocalizations.of(context);
-    final allParts = _partService.getAllParts();
+    // FIX: Chrome'da state'dan olish
+    final allParts = kIsWeb ? _webParts : _partService.getAllParts();
     
     if (allParts.isEmpty) {
       _showSnackBar(

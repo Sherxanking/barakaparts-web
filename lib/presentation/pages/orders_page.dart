@@ -6,6 +6,8 @@
 /// - Buyurtmalarni qidirish, filtrlash va tartiblash
 /// - Buyurtmalarni complete qilish (stock reduction)
 /// - Real-time yangilanishlar (ValueListenableBuilder)
+import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -18,6 +20,8 @@ import '../../data/services/department_service.dart';
 import '../../data/services/product_service.dart';
 import '../../data/services/part_calculator_service.dart';
 import '../../data/services/part_service.dart';
+import '../../core/di/service_locator.dart';
+import '../../domain/entities/order.dart' as domain;
 import '../widgets/search_bar_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
@@ -50,6 +54,13 @@ class _OrdersPageState extends State<OrdersPage> {
   String? _selectedStatusFilter;
   String? _selectedDepartmentFilter;
   SortOption? _selectedSortOption;
+  
+  // Chrome uchun state
+  List<Order> _webOrders = [];
+  bool _isLoadingWebOrders = false;
+  
+  // Chrome uchun real-time stream subscription
+  StreamSubscription? _ordersStreamSubscription;
 
   @override
   void initState() {
@@ -57,6 +68,154 @@ class _OrdersPageState extends State<OrdersPage> {
     _searchController.addListener(_onSearchChanged);
     // FIX: PartCalculatorService ni ishga tushirish
     _partCalculatorService = PartCalculatorService(_partService);
+    
+    // FIX: Chrome'da orderslarni yuklash
+    // FIX: Faqat Chrome uchun, telefon uchun emas
+    if (kIsWeb) {
+      // PostFrameCallback orqali yuklash - UI render bo'lgandan keyin
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && kIsWeb) {
+          try {
+            _loadWebOrders();
+            _listenToOrdersStream();
+          } catch (e) {
+            debugPrint('❌ Error initializing web orders: $e');
+          }
+        }
+      });
+    }
+  }
+  
+  /// Chrome'da orderslarni yuklash (Supabase'dan)
+  Future<void> _loadWebOrders() async {
+    if (_isLoadingWebOrders) {
+      debugPrint('⚠️ _loadWebOrders: Already loading, skipping...');
+      return;
+    }
+    
+    debugPrint('🔄 _loadWebOrders: Starting to load orders from Supabase...');
+    if (mounted) {
+      setState(() {
+        _isLoadingWebOrders = true;
+      });
+    }
+    
+    try {
+      final repository = ServiceLocator.instance.orderRepository;
+      debugPrint('   Repository obtained, calling getAllOrders()...');
+      final result = await repository.getAllOrders();
+      
+      result.fold(
+        (failure) {
+          // Xatolik bo'lsa bo'sh ro'yxat
+          debugPrint('❌ _loadWebOrders: Failed to load orders: ${failure.message}');
+          if (mounted) {
+            setState(() {
+              _webOrders = [];
+              _isLoadingWebOrders = false;
+            });
+          }
+        },
+        (domainOrders) {
+          // Domain Order'larni Order model'ga o'tkazish
+          debugPrint('   Received ${domainOrders.length} domain orders');
+          final orders = domainOrders.map((domainOrder) {
+            // FIX: Order model'da productId yo'q, productName bor
+            // Domain Order'dan productName to'g'ridan-to'g'ri olish
+            return Order(
+              id: domainOrder.id,
+              departmentId: domainOrder.departmentId,
+              productName: domainOrder.productName,
+              quantity: domainOrder.quantity,
+              status: domainOrder.status, // FIX: status allaqachon String
+              createdAt: domainOrder.createdAt,
+            );
+          }).toList();
+          
+          debugPrint('✅ _loadWebOrders: Loaded ${orders.length} orders from Supabase');
+          if (mounted) {
+            setState(() {
+              _webOrders = orders;
+              _isLoadingWebOrders = false;
+            });
+            debugPrint('   State updated, _webOrders.length = ${_webOrders.length}');
+          } else {
+            debugPrint('   Widget not mounted, skipping setState');
+          }
+        },
+      );
+    } catch (e, stackTrace) {
+      debugPrint('❌ _loadWebOrders: Error loading orders: $e');
+      debugPrint('   Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _webOrders = [];
+          _isLoadingWebOrders = false;
+        });
+      }
+    }
+  }
+  
+  /// Chrome'da orders stream'ga quloq solish (real-time updates)
+  void _listenToOrdersStream() {
+    // FIX: Faqat Chrome uchun ishlatish, telefon uchun emas
+    if (!kIsWeb) return;
+    
+    // FIX: Oldingi subscription'ni bekor qilish
+    _ordersStreamSubscription?.cancel();
+    _ordersStreamSubscription = null;
+    
+    try {
+      final repository = ServiceLocator.instance.orderRepository;
+      _ordersStreamSubscription = repository.watchOrders().listen(
+        (result) {
+          try {
+            result.fold(
+              (failure) {
+                debugPrint('⚠️ Orders stream error: ${failure.message}');
+              },
+              (domainOrders) {
+                debugPrint('✅ Orders realtime update: ${domainOrders.length} orders');
+                // Domain Order'larni Order model'ga o'tkazish
+                try {
+                  final orders = domainOrders.map((domainOrder) {
+                    // FIX: Order model'da productId yo'q, productName bor
+                    // Domain Order'dan productName to'g'ridan-to'g'ri olish
+                    return Order(
+                      id: domainOrder.id,
+                      departmentId: domainOrder.departmentId,
+                      productName: domainOrder.productName,
+                      quantity: domainOrder.quantity,
+                      status: domainOrder.status, // FIX: status allaqachon String
+                      createdAt: domainOrder.createdAt,
+                    );
+                  }).toList();
+                  
+                  if (mounted) {
+                    setState(() {
+                      _webOrders = orders;
+                    });
+                  }
+                } catch (e) {
+                  debugPrint('❌ Error mapping orders: $e');
+                }
+              },
+            );
+          } catch (e) {
+            debugPrint('❌ Error in orders stream callback: $e');
+          }
+        },
+        onError: (error, stackTrace) {
+          debugPrint('❌ Orders stream error: $error');
+          debugPrint('Stack trace: $stackTrace');
+        },
+        cancelOnError: false,
+      );
+      debugPrint('✅ Orders realtime stream listener initialized for Chrome');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Failed to initialize orders stream: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
   }
 
   @override
@@ -74,7 +233,48 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   /// Filtrlangan va tartiblangan orderlarni olish
+  /// Filtrlangan va tartiblangan orderlarni olish
+  /// FIX: Chrome'da state'dan olish
   List<Order> _getFilteredOrders() {
+    // FIX: Chrome'da Hive box ochilmaydi - state'dan olish
+    if (kIsWeb) {
+      debugPrint('🔍 _getFilteredOrders (Chrome): _webOrders.length = ${_webOrders.length}');
+      // Chrome'da state'dan olish
+      List<Order> orders = List.from(_webOrders);
+
+      // Qidiruv
+      if (_searchController.text.isNotEmpty) {
+        final query = _searchController.text.toLowerCase();
+        orders = orders.where((order) {
+          // FIX: Order model'da productId yo'q, productName bor
+          return order.productName.toLowerCase().contains(query);
+        }).toList();
+      }
+
+      // Status filter
+      if (_selectedStatusFilter != null) {
+        orders = orders.where((o) => o.status == _selectedStatusFilter).toList();
+      }
+
+      // Department filter
+      if (_selectedDepartmentFilter != null) {
+        orders = orders.where((o) => o.departmentId == _selectedDepartmentFilter).toList();
+      }
+
+      // Tartiblash
+      if (_selectedSortOption != null) {
+        orders = _orderService.sortOrders(
+          orders,
+          byDate: _selectedSortOption == SortOption.dateAsc || 
+                  _selectedSortOption == SortOption.dateDesc,
+          ascending: _selectedSortOption!.ascending,
+        );
+      }
+
+      return orders;
+    }
+    
+    // Mobile/Desktop - service'dan olish
     List<Order> orders = _orderService.searchAndFilterOrders(
       query: _searchController.text.isEmpty ? null : _searchController.text,
       status: _selectedStatusFilter,
@@ -140,6 +340,10 @@ class _OrdersPageState extends State<OrdersPage> {
           selectedProductId = null;
           quantity = 1;
         });
+        // FIX: Chrome'da orderslarni qayta yuklash
+        if (kIsWeb) {
+          await _loadWebOrders();
+        }
         // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
         if (!calculationResult.hasShortage) {
           _showSnackBar('Order created successfully', Colors.green);
@@ -153,10 +357,16 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Buyurtmani complete qilish
   Future<void> _completeOrder(Order order) async {
     final success = await _orderService.completeOrder(order);
-    if (success) {
-      _showSnackBar('Order completed successfully', Colors.green);
-    } else {
-      _showSnackBar('Failed to complete order. Check parts availability.', Colors.red);
+    if (mounted) {
+      if (success) {
+        // FIX: Chrome'da orderslarni qayta yuklash
+        if (kIsWeb) {
+          await _loadWebOrders();
+        }
+        _showSnackBar('Order completed successfully', Colors.green);
+      } else {
+        _showSnackBar('Failed to complete order. Check parts availability.', Colors.red);
+      }
     }
   }
 
@@ -187,6 +397,10 @@ class _OrdersPageState extends State<OrdersPage> {
       final success = await _orderService.deleteOrderById(order.id);
       if (mounted) {
         if (success) {
+          // FIX: Chrome'da orderslarni qayta yuklash
+          if (kIsWeb) {
+            await _loadWebOrders();
+          }
           _showSnackBar('Order deleted', Colors.orange);
         } else {
           _showSnackBar('Failed to delete order. Please try again.', Colors.red);
@@ -425,10 +639,27 @@ class _OrdersPageState extends State<OrdersPage> {
           // FIX: Main content - CustomScrollView + SliverList ishlatish
           // Bu nested scroll muammosini hal qiladi va performance ni yaxshilaydi
           Expanded(
-            child: ValueListenableBuilder<Box<Order>>(
-              valueListenable: _boxService.ordersListenable,
-              builder: (context, box, _) {
-                final orders = _getFilteredOrders();
+            child: Builder(
+              builder: (context) {
+                // FIX: Chrome'da Hive ishlamaydi - fallback qo'shish
+                // FIX: Faqat Chrome uchun fallback ishlatish, telefon uchun ValueListenableBuilder
+                if (kIsWeb) {
+                  // Chrome - to'g'ridan-to'g'ri state'dan olish
+                  return _buildWebOrdersFallback();
+                }
+                
+                // FIX: Telefon uchun Hive box ochilmagan bo'lsa, loading ko'rsatish
+                if (!Hive.isBoxOpen('ordersBox')) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+                
+                // Mobile/Desktop - ValueListenableBuilder ishlatish
+                return ValueListenableBuilder<Box<Order>>(
+                  valueListenable: _boxService.ordersListenable,
+                  builder: (context, box, _) {
+                    final orders = _getFilteredOrders();
                 
                 // FIX: RefreshIndicator faqat list boshida ishlashi uchun
                 // CustomScrollView + SliverList ishlatish
@@ -626,9 +857,196 @@ class _OrdersPageState extends State<OrdersPage> {
                     ],
                   ),
                 );
+                  },
+                );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Chrome/Web uchun fallback widget
+  /// FIX: Chrome'da Hive ishlamaydi - to'g'ridan-to'g'ri state'dan olish
+  Widget _buildWebOrdersFallback() {
+    debugPrint('🔍 _buildWebOrdersFallback called');
+    debugPrint('   _isLoadingWebOrders: $_isLoadingWebOrders');
+    debugPrint('   _webOrders.length: ${_webOrders.length}');
+    
+    // FIX: Chrome'da orderslar yuklanayotgan bo'lsa, loading ko'rsatish
+    if (kIsWeb && _isLoadingWebOrders) {
+      debugPrint('   Showing loading indicator');
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    // FIX: Agar orderslar bo'sh bo'lsa va yuklanayotgan bo'lmasa, yuklashga harakat qilish
+    if (kIsWeb && _webOrders.isEmpty && !_isLoadingWebOrders) {
+      debugPrint('   Orders empty, attempting to load...');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadWebOrders();
+        }
+      });
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    final orders = _getFilteredOrders();
+    debugPrint('   Filtered orders.length: ${orders.length}');
+    
+    return RefreshIndicator(
+      onRefresh: () async {
+        if (mounted) {
+          // FIX: Chrome'da orderslarni qayta yuklash
+          if (kIsWeb) {
+            await _loadWebOrders();
+          }
+          setState(() {});
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+      },
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          // Create Order Section
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Create New Order',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Department dropdown
+                      DropdownButtonFormField<String>(
+                        value: selectedDepartmentId,
+                        decoration: const InputDecoration(
+                          labelText: 'Department',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _departmentService.getAllDepartments().map((dept) {
+                          return DropdownMenuItem(
+                            value: dept.id,
+                            child: Text(dept.name),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedDepartmentId = value;
+                            selectedProductId = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Product dropdown
+                      if (selectedDepartmentId != null)
+                        DropdownButtonFormField<String>(
+                          value: selectedProductId,
+                          decoration: const InputDecoration(
+                            labelText: 'Product',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _productService
+                              .getProductsByDepartment(selectedDepartmentId!)
+                              .map((product) {
+                            return DropdownMenuItem(
+                              value: product.id,
+                              child: Text(product.name),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              selectedProductId = value;
+                            });
+                          },
+                        ),
+                      const SizedBox(height: 16),
+                      // Quantity input
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Quantity',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          setState(() {
+                            quantity = int.tryParse(value) ?? 1;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Create button
+                      ElevatedButton(
+                        onPressed: selectedDepartmentId != null &&
+                                selectedProductId != null
+                            ? _createOrder
+                            : null,
+                        child: const Text('Create Order'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Orders List Header
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: const Text(
+                'Orders List',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          
+          // Orders list
+          if (orders.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: const EmptyStateWidget(
+                icon: Icons.shopping_cart_outlined,
+                title: 'No orders yet',
+                subtitle: 'Create your first order using the form above',
+              ),
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final order = orders[index];
+                  final department = _departmentService.getDepartmentById(order.departmentId);
+                  
+                  return OrderItemWidget(
+                    order: order,
+                    department: department,
+                    onComplete: () => _completeOrder(order),
+                    onDelete: () => _deleteOrder(order),
+                  );
+                },
+                childCount: orders.length,
+              ),
+            ),
         ],
       ),
     );

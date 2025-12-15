@@ -8,6 +8,7 @@
 /// - Rasm qo'shish va boshqarish
 /// - Real-time yangilanishlar
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +17,8 @@ import '../../data/models/part_model.dart';
 import '../../data/services/hive_box_service.dart';
 import '../../data/services/part_service.dart';
 import '../../data/services/image_service.dart';
+import '../../core/di/service_locator.dart';
+import '../../domain/entities/part.dart' as domain;
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
@@ -35,6 +38,10 @@ class _PartsPageState extends State<PartsPage> {
   // Services
   final HiveBoxService _boxService = HiveBoxService();
   final PartService _partService = PartService();
+  
+  // Chrome uchun state
+  List<PartModel> _webParts = [];
+  bool _isLoadingWebParts = false;
 
   // Controllers
   final TextEditingController _nameController = TextEditingController();
@@ -56,6 +63,69 @@ class _PartsPageState extends State<PartsPage> {
     super.initState();
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
+    
+    // FIX: Chrome'da partslarni yuklash
+    if (kIsWeb) {
+      // PostFrameCallback orqali yuklash - UI render bo'lgandan keyin
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadWebParts();
+        }
+      });
+    }
+  }
+  
+  /// Chrome'da partslarni yuklash (Supabase'dan)
+  Future<void> _loadWebParts() async {
+    if (_isLoadingWebParts) return;
+    
+    setState(() {
+      _isLoadingWebParts = true;
+    });
+    
+    try {
+      final repository = ServiceLocator.instance.partRepository;
+      final result = await repository.getAllParts();
+      
+      result.fold(
+        (failure) {
+          // Xatolik bo'lsa bo'sh ro'yxat
+          if (mounted) {
+            setState(() {
+              _webParts = [];
+              _isLoadingWebParts = false;
+            });
+          }
+        },
+        (domainParts) {
+          // Domain Part'larni PartModel'ga o'tkazish
+          final parts = domainParts.map((domainPart) {
+            return PartModel(
+              id: domainPart.id,
+              name: domainPart.name,
+              quantity: domainPart.quantity,
+              status: 'available',
+              imagePath: domainPart.imagePath,
+              minQuantity: domainPart.minQuantity ?? 3,
+            );
+          }).toList();
+          
+          if (mounted) {
+            setState(() {
+              _webParts = parts;
+              _isLoadingWebParts = false;
+            });
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _webParts = [];
+          _isLoadingWebParts = false;
+        });
+      }
+    }
   }
 
   @override
@@ -69,34 +139,110 @@ class _PartsPageState extends State<PartsPage> {
     super.dispose();
   }
 
+  /// Hive box ochilganligini tekshirish
+  bool _isPartsBoxOpen() {
+    try {
+      return Hive.isBoxOpen('partsBox');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Part ID bo'yicha Hive box index topish
+  /// FIX: Filtered list index emas, real Hive index qaytaradi
+  int? _findHiveIndexById(String partId) {
+    try {
+      if (!_isPartsBoxOpen()) {
+        return null;
+      }
+      final box = _boxService.partsBox;
+      for (int i = 0; i < box.length; i++) {
+        final part = box.getAt(i);
+        if (part != null && part.id == partId) {
+          return i;
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Kam qolgan qismlarni olish (minQuantity dan kam)
   List<PartModel> _getLowStockParts() {
-    return _partService.getAllParts().where((part) {
-      return part.quantity < part.minQuantity;
-    }).toList();
+    try {
+      return _partService.getAllParts().where((part) {
+        return part.quantity < part.minQuantity;
+      }).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   /// Filtrlangan va tartiblangan partlarni olish
+  /// FIX: Xavfsiz Hive kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
+  /// FIX: Chrome'da box ochilganligini tekshirmasdan to'g'ridan-to'g'ri service'dan olish
   List<PartModel> _getFilteredParts() {
-    List<PartModel> parts = _partService.searchParts(_searchController.text);
+    try {
+      // FIX: Chrome'da Hive box ochilmaydi - state'dan olish
+      if (kIsWeb) {
+        // Chrome'da state'dan olish
+        List<PartModel> parts = List.from(_webParts);
 
-    // Low stock filter - minQuantity ga asoslangan
-    if (_showLowStockOnly) {
-      parts = parts.where((part) => part.quantity < part.minQuantity).toList();
+        // Qidiruv
+        if (_searchController.text.isNotEmpty) {
+          final query = _searchController.text.toLowerCase();
+          parts = parts.where((part) {
+            return part.name.toLowerCase().contains(query);
+          }).toList();
+        }
+
+        // Low stock filter - minQuantity ga asoslangan
+        if (_showLowStockOnly) {
+          parts = parts.where((part) => part.quantity < part.minQuantity).toList();
+        }
+
+        // Tartiblash
+        if (_selectedSortOption != null) {
+          final byName = _selectedSortOption == SortOption.nameAsc || 
+                         _selectedSortOption == SortOption.nameDesc;
+          parts = _partService.sortParts(
+            parts,
+            byName: byName,
+            ascending: _selectedSortOption!.ascending,
+          );
+        }
+
+        return parts;
+      }
+      
+      // Mobile/Desktop - box ochilganligini tekshirish
+      if (!_isPartsBoxOpen()) {
+        return [];
+      }
+      
+      List<PartModel> parts = _partService.searchParts(_searchController.text);
+
+      // Low stock filter - minQuantity ga asoslangan
+      if (_showLowStockOnly) {
+        parts = parts.where((part) => part.quantity < part.minQuantity).toList();
+      }
+
+      // Tartiblash
+      if (_selectedSortOption != null) {
+        final byName = _selectedSortOption == SortOption.nameAsc || 
+                       _selectedSortOption == SortOption.nameDesc;
+        parts = _partService.sortParts(
+          parts,
+          byName: byName,
+          ascending: _selectedSortOption!.ascending,
+        );
+      }
+
+      return parts;
+    } catch (e) {
+      return [];
     }
-
-    // Tartiblash
-    if (_selectedSortOption != null) {
-      final byName = _selectedSortOption == SortOption.nameAsc || 
-                     _selectedSortOption == SortOption.nameDesc;
-      parts = _partService.sortParts(
-        parts,
-        byName: byName,
-        ascending: _selectedSortOption!.ascending,
-      );
-    }
-
-    return parts;
   }
 
   /// Yangi qism qo'shish
@@ -139,8 +285,10 @@ class _PartsPageState extends State<PartsPage> {
         _quantityController.clear();
         _minQuantityController.clear();
         _selectedImage = null;
-        _showSnackBar('Part added successfully', Colors.green);
         Navigator.pop(context);
+        // FIX: UI ni darhol yangilash
+        setState(() {});
+        _showSnackBar('Part added successfully', Colors.green);
       } else {
         _showSnackBar('Failed to add part. Please try again.', Colors.red);
       }
@@ -169,24 +317,45 @@ class _PartsPageState extends State<PartsPage> {
       ),
     );
 
-    if (confirmed == true) {
-      final parts = _getFilteredParts();
-      final index = parts.indexOf(part);
-      
-      if (index >= 0) {
-        // Rasmni o'chirish
-        if (part.imagePath != null) {
-          await ImageService.deleteImage(part.imagePath);
+    if (confirmed == true && mounted) {
+      try {
+        // FIX: Filtered list index emas, real Hive index ishlatish
+        final hiveIndex = _findHiveIndexById(part.id);
+        
+        if (hiveIndex == null) {
+          if (mounted) {
+            _showSnackBar('Part not found in storage', Colors.red);
+          }
+          return;
         }
         
-        // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-        final success = await _partService.deletePart(index);
+        // Rasmni o'chirish
+        if (part.imagePath != null) {
+          try {
+            await ImageService.deleteImage(part.imagePath);
+          } catch (e) {
+            // Rasm o'chirish xatosi e'tiborsiz qoldiriladi
+          }
+        }
+        
+        // FIX: Real Hive index ishlatish
+        final success = await _partService.deletePart(hiveIndex);
         if (mounted) {
           if (success) {
+            // FIX: UI ni darhol yangilash
+            setState(() {});
+            // FIX: Chrome'da partslarni qayta yuklash
+            if (kIsWeb) {
+              await _loadWebParts();
+            }
             _showSnackBar('Part deleted', Colors.orange);
           } else {
             _showSnackBar('Failed to delete part. Please try again.', Colors.red);
           }
+        }
+      } catch (e) {
+        if (mounted) {
+          _showSnackBar('Error deleting part: ${e.toString()}', Colors.red);
         }
       }
     }
@@ -310,6 +479,12 @@ class _PartsPageState extends State<PartsPage> {
                   _selectedImage = null;
                   _currentEditImagePath = null;
                   Navigator.pop(context);
+                  // FIX: UI ni darhol yangilash
+                  setState(() {});
+                  // FIX: Chrome'da partslarni qayta yuklash
+                  if (kIsWeb) {
+                    await _loadWebParts();
+                  }
                   _showSnackBar('Part updated', Colors.green);
                 } else {
                   _showSnackBar('Failed to update part. Please try again.', Colors.red);
@@ -373,6 +548,8 @@ class _PartsPageState extends State<PartsPage> {
           final success = await _partService.updatePart(part);
           if (mounted) {
             if (success) {
+              // FIX: UI ni darhol yangilash
+              setState(() {});
               _showSnackBar('Image updated', Colors.green);
             } else {
               _showSnackBar('Failed to update image. Please try again.', Colors.red);
@@ -512,6 +689,8 @@ class _PartsPageState extends State<PartsPage> {
                             final success = await _partService.updatePart(part);
                             if (mounted) {
                               if (success) {
+                                // FIX: UI ni darhol yangilash
+                                setState(() {});
                                 _showSnackBar('Image deleted', Colors.orange);
                               } else {
                                 _showSnackBar('Failed to delete image. Please try again.', Colors.red);
@@ -733,10 +912,27 @@ class _PartsPageState extends State<PartsPage> {
 
           // Parts list
           Expanded(
-            child: ValueListenableBuilder(
-              valueListenable: _boxService.partsListenable,
-              builder: (context, Box<PartModel> box, _) {
-                final parts = _getFilteredParts();
+            child: Builder(
+              builder: (context) {
+                // FIX: Chrome'da Hive ishlamaydi - fallback qo'shish
+                // FIX: Faqat Chrome uchun fallback ishlatish, telefon uchun ValueListenableBuilder
+                if (kIsWeb) {
+                  // Chrome - to'g'ridan-to'g'ri state'dan olish
+                  return _buildWebFallback();
+                }
+                
+                // FIX: Telefon uchun Hive box ochilmagan bo'lsa, loading ko'rsatish
+                if (!_isPartsBoxOpen()) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+                
+                // Mobile/Desktop - ValueListenableBuilder ishlatish
+                return ValueListenableBuilder(
+                  valueListenable: _boxService.partsListenable,
+                  builder: (context, Box<PartModel> box, _) {
+                    final parts = _getFilteredParts();
 
                 if (parts.isEmpty) {
                   return RefreshIndicator(
@@ -1024,6 +1220,8 @@ class _PartsPageState extends State<PartsPage> {
                   },
                   ),
                 );
+                  },
+                );
               },
             ),
           ),
@@ -1146,6 +1344,275 @@ class _PartsPageState extends State<PartsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Chrome/Web uchun fallback widget
+  /// FIX: Chrome'da Hive ishlamaydi - to'g'ridan-to'g'ri service'dan olish
+  Widget _buildWebFallback() {
+    // FIX: Chrome'da partslar yuklanayotgan bo'lsa, loading ko'rsatish
+    if (kIsWeb && _isLoadingWebParts) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    // FIX: Agar partslar bo'sh bo'lsa va yuklanayotgan bo'lmasa, yuklashga harakat qilish
+    if (kIsWeb && _webParts.isEmpty && !_isLoadingWebParts) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadWebParts();
+        }
+      });
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    final parts = _getFilteredParts();
+
+    if (parts.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () async {
+          if (mounted) {
+            // FIX: Chrome'da partslarni qayta yuklash
+            if (kIsWeb) {
+              await _loadWebParts();
+            }
+            setState(() {});
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: const EmptyStateWidget(
+              icon: Icons.build,
+              title: 'No parts yet',
+              subtitle: 'Tap the + button to add a part',
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        if (mounted) {
+          // FIX: Chrome'da partslarni qayta yuklash
+          if (kIsWeb) {
+            await _loadWebParts();
+          }
+          setState(() {});
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+      },
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: parts.length,
+        itemBuilder: (context, index) {
+          if (!mounted) {
+            return const SizedBox.shrink();
+          }
+          
+          try {
+            final part = parts[index];
+            final isLowStock = part.quantity < part.minQuantity;
+            final statusColor = isLowStock ? Colors.red : Colors.green;
+            final imageFile = ImageService.getImageFile(part.imagePath);
+            final hasImage = imageFile != null && imageFile.existsSync();
+
+            return AnimatedListItem(
+              delay: index * 50,
+              child: Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                color: isLowStock ? Colors.red.shade50 : null,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _editPart(part),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Rasm
+                        GestureDetector(
+                          onTap: () => _showImageDialog(part),
+                          child: Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: statusColor.withOpacity(0.3),
+                                width: 2,
+                              ),
+                            ),
+                            child: hasImage
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.file(
+                                      imageFile!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return _buildImagePlaceholder(statusColor);
+                                      },
+                                    ),
+                                  )
+                                : _buildImagePlaceholder(statusColor),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // Ma'lumotlar
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                part.name,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: isLowStock ? Colors.red.shade700 : null,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isLowStock 
+                                          ? Colors.orange.shade50 
+                                          : Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isLowStock 
+                                            ? Colors.orange.shade300 
+                                            : Colors.blue.shade300,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.inventory_2,
+                                          size: 16,
+                                          color: isLowStock 
+                                              ? Colors.orange.shade700 
+                                              : Colors.blue.shade700,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '${part.quantity}',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                            color: isLowStock 
+                                                ? Colors.orange.shade900 
+                                                : Colors.blue.shade900,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isLowStock)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.red.shade300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.warning_amber_rounded,
+                                            size: 16,
+                                            color: Colors.red.shade700,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Min: ${part.minQuantity}',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.red.shade900,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Menu
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (value) {
+                            if (value == 'edit') {
+                              _editPart(part);
+                            } else if (value == 'delete') {
+                              _deletePart(part);
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.edit, size: 20, color: Colors.blue),
+                                  const SizedBox(width: 8),
+                                  Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.delete, size: 20, color: Colors.red),
+                                  const SizedBox(width: 8),
+                                  Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          } catch (e) {
+            return const SizedBox.shrink();
+          }
+        },
       ),
     );
   }

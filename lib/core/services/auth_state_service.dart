@@ -79,12 +79,29 @@ class AuthStateService {
   /// Handle auth state changes from Supabase
   /// 
   /// WHY: Responds to login/logout events and updates app state
-  /// FIX: Added timeout and retry logic for OAuth callbacks
+  /// FIX: Ignore OAuth sign-ins - only email/password authentication is supported
   Future<void> _handleAuthStateChange(AuthState state) async {
     final event = state.event;
     final session = state.session;
     
     debugPrint('🔐 Auth state changed: $event');
+    
+    // FIX: Ignore OAuth sign-ins - only email/password authentication is supported
+    if (session != null && session.user != null) {
+      final provider = session.user!.appMetadata['provider'] as String?;
+      if (provider != null && provider != 'email') {
+        debugPrint('⚠️ OAuth sign-in detected (provider: $provider) - ignoring and signing out');
+        // Sign out OAuth users immediately
+        try {
+          await AppSupabaseClient.instance.client.auth.signOut();
+        } catch (e) {
+          debugPrint('⚠️ Error signing out OAuth user: $e');
+        }
+        _currentUser = null;
+        _notifyAuthStateChange(null);
+        return;
+      }
+    }
     
     if (event == AuthChangeEvent.signedIn && session != null) {
       // User signed in - load profile with timeout

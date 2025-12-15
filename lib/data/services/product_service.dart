@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../models/product_model.dart' as data;
 import 'hive_box_service.dart';
 import '../../domain/entities/product.dart' as domain;
+import '../../domain/entities/department.dart' as domainDept;
 import '../../core/di/service_locator.dart';
 import '../../core/utils/either.dart';
 
@@ -41,8 +42,22 @@ class ProductService {
 
   /// Product qo'shish
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Department mavjudligini tekshirish
   Future<bool> addProduct(data.Product product) async {
     try {
+      // FIX: Department Supabase'da mavjudligini tekshirish
+      // Eslatma: Department repository hozircha ServiceLocator'da yo'q
+      // Shuning uchun faqat xatolik xabarini yaxshilaymiz
+      try {
+        final department = _boxService.departmentsBox.values.firstWhere(
+          (dept) => dept.id == product.departmentId,
+        );
+        debugPrint('✅ Department found in Hive: ${department.name}');
+      } catch (e) {
+        debugPrint('⚠️ Department not found in Hive: ${product.departmentId}');
+        // Department topilmadi, lekin davom etamiz
+      }
+      
       // 1. Supabase'ga yozish (realtime sync uchun)
       final domainProduct = domain.Product(
         id: product.id,
@@ -57,6 +72,11 @@ class ProductService {
       return result.fold(
         (failure) {
           debugPrint('❌ Failed to create product in Supabase: ${failure.message}');
+          // FIX: Foreign key constraint xatosi bo'lsa, aniqroq xabar
+          if (failure.message.contains('foreign key constraint') || 
+              failure.message.contains('departments')) {
+            debugPrint('❌ Department does not exist in Supabase. Please sync departments first.');
+          }
           // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
           try {
             _boxService.productsBox.add(product);

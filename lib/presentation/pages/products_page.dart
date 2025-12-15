@@ -6,6 +6,8 @@
 /// - Department bo'yicha filtrlash
 /// - Qidiruv va tartiblash
 /// - Real-time yangilanishlar
+import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -16,6 +18,8 @@ import '../../data/services/hive_box_service.dart';
 import '../../data/services/product_service.dart';
 import '../../data/services/department_service.dart';
 import '../../data/services/part_service.dart';
+import '../../core/di/service_locator.dart';
+import '../../domain/entities/product.dart' as domain;
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
@@ -46,6 +50,15 @@ class _ProductsPageState extends State<ProductsPage> {
   String? _selectedDepartmentFilter;
   Map<String, int> selectedParts = {};
   SortOption? _selectedSortOption;
+  
+  // Chrome uchun state
+  List<Product> _webProducts = [];
+  bool _isLoadingWebProducts = false;
+  List<PartModel> _webParts = [];
+  bool _isLoadingWebParts = false;
+  
+  // Chrome uchun real-time stream subscription
+  StreamSubscription? _productsStreamSubscription;
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
@@ -55,6 +68,203 @@ class _ProductsPageState extends State<ProductsPage> {
     super.initState();
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
+    
+    debugPrint('🚀 ProductsPage initState: kIsWeb = $kIsWeb');
+    
+    // FIX: Chrome'da productslarni yuklash
+    if (kIsWeb) {
+      debugPrint('   Chrome detected, loading products...');
+      // PostFrameCallback orqali yuklash - UI render bo'lgandan keyin
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && kIsWeb) {
+          try {
+            _loadWebProducts();
+            _listenToProductsStream();
+          } catch (e) {
+            debugPrint('❌ Error initializing web products: $e');
+          }
+        }
+      });
+    } else {
+      debugPrint('   Not Chrome, skipping web-specific loading');
+    }
+  }
+  
+  /// Chrome'da products stream'ga quloq solish (real-time updates)
+  void _listenToProductsStream() {
+    // FIX: Faqat Chrome uchun ishlatish, telefon uchun emas
+    if (!kIsWeb) return;
+    
+    // FIX: Oldingi subscription'ni bekor qilish
+    _productsStreamSubscription?.cancel();
+    _productsStreamSubscription = null;
+    
+    try {
+      final repository = ServiceLocator.instance.productRepository;
+      _productsStreamSubscription = repository.watchProducts().listen(
+        (result) {
+          try {
+            result.fold(
+              (failure) {
+                debugPrint('⚠️ Products stream error: ${failure.message}');
+              },
+              (domainProducts) {
+                debugPrint('✅ Products realtime update: ${domainProducts.length} products');
+                // Domain Product'larni Product model'ga o'tkazish
+                try {
+                  final products = domainProducts.map((domainProduct) {
+                    return Product(
+                      id: domainProduct.id,
+                      name: domainProduct.name,
+                      departmentId: domainProduct.departmentId,
+                      parts: domainProduct.partsRequired,
+                    );
+                  }).toList();
+                  
+                  if (mounted) {
+                    setState(() {
+                      _webProducts = products;
+                    });
+                  }
+                } catch (e) {
+                  debugPrint('❌ Error mapping products: $e');
+                }
+              },
+            );
+          } catch (e) {
+            debugPrint('❌ Error in products stream callback: $e');
+          }
+        },
+        onError: (error, stackTrace) {
+          debugPrint('❌ Products stream error: $error');
+          debugPrint('Stack trace: $stackTrace');
+        },
+        cancelOnError: false,
+      );
+      debugPrint('✅ Products realtime stream listener initialized for Chrome');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Failed to initialize products stream: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
+  }
+  
+  /// Chrome'da productslarni yuklash (Supabase'dan)
+  Future<void> _loadWebProducts() async {
+    if (_isLoadingWebProducts) {
+      debugPrint('⚠️ _loadWebProducts: Already loading, skipping...');
+      return;
+    }
+    
+    debugPrint('🔄 _loadWebProducts: Starting to load products from Supabase...');
+    if (mounted) {
+      setState(() {
+        _isLoadingWebProducts = true;
+      });
+    }
+    
+    try {
+      final repository = ServiceLocator.instance.productRepository;
+      debugPrint('   Repository obtained, calling getAllProducts()...');
+      final result = await repository.getAllProducts();
+      
+      result.fold(
+        (failure) {
+          // Xatolik bo'lsa bo'sh ro'yxat
+          debugPrint('❌ _loadWebProducts: Failed to load products: ${failure.message}');
+          if (mounted) {
+            setState(() {
+              _webProducts = [];
+              _isLoadingWebProducts = false;
+            });
+          }
+        },
+        (domainProducts) {
+          // Domain Product'larni Product model'ga o'tkazish
+          debugPrint('   Received ${domainProducts.length} domain products');
+          final products = domainProducts.map((domainProduct) {
+            return Product(
+              id: domainProduct.id,
+              name: domainProduct.name,
+              departmentId: domainProduct.departmentId,
+              parts: domainProduct.partsRequired,
+            );
+          }).toList();
+          
+          debugPrint('✅ _loadWebProducts: Loaded ${products.length} products from Supabase');
+          if (mounted) {
+            setState(() {
+              _webProducts = products;
+              _isLoadingWebProducts = false;
+            });
+            debugPrint('   State updated, _webProducts.length = ${_webProducts.length}');
+          } else {
+            debugPrint('   Widget not mounted, skipping setState');
+          }
+        },
+      );
+    } catch (e, stackTrace) {
+      debugPrint('❌ _loadWebProducts: Error loading products: $e');
+      debugPrint('   Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _webProducts = [];
+          _isLoadingWebProducts = false;
+        });
+      }
+    }
+  }
+  
+  /// Chrome'da partslarni yuklash (Supabase'dan)
+  Future<void> _loadWebParts() async {
+    if (_isLoadingWebParts) return;
+    
+    setState(() {
+      _isLoadingWebParts = true;
+    });
+    
+    try {
+      final repository = ServiceLocator.instance.partRepository;
+      final result = await repository.getAllParts();
+      
+      result.fold(
+        (failure) {
+          // Xatolik bo'lsa bo'sh ro'yxat
+          if (mounted) {
+            setState(() {
+              _webParts = [];
+              _isLoadingWebParts = false;
+            });
+          }
+        },
+        (domainParts) {
+          // Domain Part'larni PartModel'ga o'tkazish
+          final parts = domainParts.map((domainPart) {
+            return PartModel(
+              id: domainPart.id,
+              name: domainPart.name,
+              quantity: domainPart.quantity,
+              status: 'available',
+              imagePath: domainPart.imagePath,
+              minQuantity: domainPart.minQuantity ?? 3,
+            );
+          }).toList();
+          
+          if (mounted) {
+            setState(() {
+              _webParts = parts;
+              _isLoadingWebParts = false;
+            });
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _webParts = [];
+          _isLoadingWebParts = false;
+        });
+      }
+    }
   }
 
   @override
@@ -63,11 +273,45 @@ class _ProductsPageState extends State<ProductsPage> {
     _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _searchController.dispose();
+    // FIX: Chrome'da stream subscription'ni yopish
+    _productsStreamSubscription?.cancel();
     super.dispose();
   }
 
   /// Filtrlangan va tartiblangan productlarni olish
+  /// FIX: Chrome'da state'dan olish
   List<Product> _getFilteredProducts() {
+    // FIX: Chrome'da Hive box ochilmaydi - state'dan olish
+    if (kIsWeb) {
+      debugPrint('🔍 _getFilteredProducts (Chrome): _webProducts.length = ${_webProducts.length}');
+      // Chrome'da state'dan olish
+      List<Product> products = List.from(_webProducts);
+
+      // Qidiruv
+      if (_searchController.text.isNotEmpty) {
+        final query = _searchController.text.toLowerCase();
+        products = products.where((product) {
+          return product.name.toLowerCase().contains(query);
+        }).toList();
+      }
+
+      // Department filter
+      if (_selectedDepartmentFilter != null) {
+        products = products.where((p) => p.departmentId == _selectedDepartmentFilter).toList();
+      }
+
+      // Tartiblash
+      if (_selectedSortOption != null) {
+        products = _productService.sortProducts(
+          products,
+          _selectedSortOption!.ascending,
+        );
+      }
+
+      return products;
+    }
+    
+    // Mobile/Desktop - service'dan olish
     List<Product> products = _productService.searchAndFilterProducts(
       query: _searchController.text.isEmpty ? null : _searchController.text,
       departmentId: _selectedDepartmentFilter,
@@ -123,34 +367,79 @@ class _ProductsPageState extends State<ProductsPage> {
         selectedDepartmentId = null;
         selectedParts.clear();
 
-        _showSnackBar('Product added successfully', Colors.green);
+        // FIX: UI ni darhol yangilash - dialog yopilishidan oldin
+        setState(() {});
         Navigator.pop(context);
+        // FIX: Dialog yopilgandan keyin yana bir marta yangilash
+        if (mounted) {
+          setState(() {});
+        }
+        _showSnackBar('Product added successfully', Colors.green);
       } else {
         _showSnackBar('Failed to add product. Please try again.', Colors.red);
       }
     }
   }
 
+  /// Product ID bo'yicha Hive box index topish
+  /// FIX: Filtered list index emas, real Hive index qaytaradi
+  int? _findHiveIndexById(String productId) {
+    try {
+      if (!Hive.isBoxOpen('productsBox')) {
+        return null;
+      }
+      final box = _boxService.productsBox;
+      for (int i = 0; i < box.length; i++) {
+        final product = box.getAt(i);
+        if (product != null && product.id == productId) {
+          return i;
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Mahsulotni o'chirish
   Future<void> _deleteProduct(Product product) async {
-    final products = _getFilteredProducts();
-    final index = products.indexOf(product);
+    if (!mounted) return;
     
-    if (index >= 0) {
+    try {
+      // FIX: Filtered list index emas, real Hive index ishlatish
+      final hiveIndex = _findHiveIndexById(product.id);
+      
+      if (hiveIndex == null) {
+        if (mounted) {
+          _showSnackBar('Product not found in storage', Colors.red);
+        }
+        return;
+      }
+      
       // Departmentdan olib tashlash
       await _departmentService.removeProductFromDepartment(
         product.departmentId,
         product.id,
       );
       
-      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-      final success = await _productService.deleteProduct(index);
-      if (mounted) {
-        if (success) {
-          _showSnackBar('Product deleted', Colors.orange);
-        } else {
-          _showSnackBar('Failed to delete product. Please try again.', Colors.red);
+      // FIX: Real Hive index ishlatish
+      final success = await _productService.deleteProduct(hiveIndex);
+        if (mounted) {
+          if (success) {
+            // FIX: UI ni darhol yangilash
+            setState(() {});
+            // FIX: Chrome'da productslarni qayta yuklash
+            if (kIsWeb) {
+              await _loadWebProducts();
+            }
+            _showSnackBar('Product deleted', Colors.orange);
+          } else {
+            _showSnackBar('Failed to delete product. Please try again.', Colors.red);
+          }
         }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('Error deleting product: ${e.toString()}', Colors.red);
       }
     }
   }
@@ -159,8 +448,50 @@ class _ProductsPageState extends State<ProductsPage> {
   /// 
   /// Bu metod yangi mahsulot yaratishda qismlar tanlash uchun dialog ko'rsatadi.
   /// Har bir qism uchun miqdor kiritish maydoni mavjud.
-  void _showPartsDialog() {
-    final allParts = _partService.getAllParts();
+  Future<void> _showPartsDialog() async {
+    // FIX: Chrome'da partslarni yuklash kerak bo'lsa
+    if (kIsWeb && _webParts.isEmpty && !_isLoadingWebParts) {
+      await _loadWebParts();
+    }
+    
+    // FIX: Chrome'da partslar yuklanayotgan bo'lsa, kutish
+    if (kIsWeb && _isLoadingWebParts) {
+      // Loading dialog ko'rsatish
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: SizedBox(
+              height: 100,
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ),
+        );
+      }
+      
+      // Partslar yuklanguncha kutish
+      while (_isLoadingWebParts && mounted) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      
+      if (mounted) {
+        Navigator.pop(context); // Loading dialog'ni yopish
+      }
+    }
+    
+    // FIX: Chrome'da state'dan olish
+    final allParts = kIsWeb ? _webParts : _partService.getAllParts();
+    
+    if (allParts.isEmpty) {
+      if (mounted) {
+        _showSnackBar('No parts available. Please add parts first.', Colors.orange);
+      }
+      return;
+    }
+    
     Map<String, int> tempSelectedParts = Map.from(selectedParts);
     // Har bir qism uchun miqdor kiritish maydoni controllerlari
     final Map<String, TextEditingController> controllers = {};
@@ -173,6 +504,8 @@ class _ProductsPageState extends State<ProductsPage> {
       );
     }
 
+    if (!mounted) return;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -361,10 +694,27 @@ class _ProductsPageState extends State<ProductsPage> {
 
           // Products list
           Expanded(
-            child: ValueListenableBuilder(
-              valueListenable: _boxService.productsListenable,
-              builder: (context, Box<Product> box, _) {
-                final products = _getFilteredProducts();
+            child: Builder(
+              builder: (context) {
+                // FIX: Chrome'da Hive ishlamaydi - fallback qo'shish
+                // FIX: Faqat Chrome uchun fallback ishlatish, telefon uchun ValueListenableBuilder
+                if (kIsWeb) {
+                  // Chrome - to'g'ridan-to'g'ri state'dan olish
+                  return _buildWebProductsFallback();
+                }
+                
+                // FIX: Telefon uchun Hive box ochilmagan bo'lsa, bo'sh ko'rsatish
+                if (!Hive.isBoxOpen('productsBox')) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+                
+                // Mobile/Desktop - ValueListenableBuilder ishlatish
+                return ValueListenableBuilder(
+                  valueListenable: _boxService.productsListenable,
+                  builder: (context, Box<Product> box, _) {
+                    final products = _getFilteredProducts();
 
                 if (products.isEmpty) {
                   return RefreshIndicator(
@@ -442,8 +792,8 @@ class _ProductsPageState extends State<ProductsPage> {
                               builder: (context) => ProductEditPage(product: product),
                             ),
                           );
-                          // Refresh if product was updated
-                          if (result == true) {
+                          // FIX: Refresh if product was updated
+                          if (result == true && mounted) {
                             setState(() {});
                           }
                         },
@@ -483,6 +833,8 @@ class _ProductsPageState extends State<ProductsPage> {
                     );
                   },
                   ),
+                );
+                  },
                 );
               },
             ),
@@ -570,6 +922,176 @@ class _ProductsPageState extends State<ProductsPage> {
           );
         },
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  /// Chrome/Web uchun fallback widget
+  /// FIX: Chrome'da Hive ishlamaydi - to'g'ridan-to'g'ri state'dan olish
+  Widget _buildWebProductsFallback() {
+    debugPrint('🔍 _buildWebProductsFallback called');
+    debugPrint('   _isLoadingWebProducts: $_isLoadingWebProducts');
+    debugPrint('   _webProducts.length: ${_webProducts.length}');
+    
+    // FIX: Chrome'da productslar yuklanayotgan bo'lsa, loading ko'rsatish
+    if (kIsWeb && _isLoadingWebProducts) {
+      debugPrint('   Showing loading indicator');
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    // FIX: Agar productslar bo'sh bo'lsa va yuklanayotgan bo'lmasa, yuklashga harakat qilish
+    if (kIsWeb && _webProducts.isEmpty && !_isLoadingWebProducts) {
+      debugPrint('   Products empty, attempting to load...');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadWebProducts();
+        }
+      });
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    final products = _getFilteredProducts();
+    debugPrint('   Filtered products.length: ${products.length}');
+
+    if (products.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () async {
+          if (mounted) {
+            // FIX: Chrome'da productslarni qayta yuklash
+            if (kIsWeb) {
+              await _loadWebProducts();
+            }
+            setState(() {});
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: const EmptyStateWidget(
+              icon: Icons.inventory,
+              title: 'No products yet',
+              subtitle: 'Tap the + button to add a product',
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        if (mounted) {
+          // FIX: Chrome'da productslarni qayta yuklash
+          if (kIsWeb) {
+            await _loadWebProducts();
+          }
+          setState(() {});
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+      },
+      child: ListView.builder(
+        padding: const EdgeInsets.all(8),
+        itemCount: products.length,
+        itemBuilder: (context, index) {
+          if (!mounted) {
+            return const SizedBox.shrink();
+          }
+          
+          try {
+            final product = products[index];
+            final department = _departmentService.getDepartmentById(product.departmentId);
+
+            return AnimatedListItem(
+              delay: index * 50,
+              child: Card(
+                margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                elevation: 2,
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.inventory),
+                  ),
+                  title: Text(
+                    product.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Department: ${department?.name ?? 'Unknown'}'),
+                      Text('Parts: ${product.parts.length}'),
+                      if (product.parts.isNotEmpty)
+                        Text(
+                          product.parts.entries
+                              .map((e) {
+                                final part = _partService.getPartById(e.key);
+                                return '${part?.name ?? e.key}: ${e.value}';
+                              })
+                              .join(', '),
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                  onTap: () async {
+                    // Navigate to edit page
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProductEditPage(product: product),
+                      ),
+                    );
+                    // FIX: Refresh if product was updated
+                    if (result == true && mounted) {
+                      if (kIsWeb) {
+                        await _loadWebProducts();
+                      }
+                      setState(() {});
+                    }
+                  },
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Delete Product'),
+                          content: const Text(
+                            'Are you sure you want to delete this product?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _deleteProduct(product);
+                              },
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    tooltip: 'Delete',
+                  ),
+                ),
+              ),
+            );
+          } catch (e) {
+            return const SizedBox.shrink();
+          }
+        },
       ),
     );
   }

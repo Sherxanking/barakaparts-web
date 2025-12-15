@@ -18,8 +18,24 @@ class PartService {
 
   /// Barcha partlarni olish
   /// FIX: Xavfsiz box kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
+  /// FIX: Chrome'da Hive ishlamaydi - Supabase'dan olish
   List<PartModel> getAllParts() {
     try {
+      // FIX: Chrome'da Hive box ochilmaydi - Supabase'dan olish
+      if (kIsWeb) {
+        // Chrome'da to'g'ridan-to'g'ri repository'dan olish (async emas, lekin sync qilish kerak)
+        // Bu fallback - Chrome'da Hive ishlamaydi
+        try {
+          final box = _boxService.partsBox;
+          return box.values.toList();
+        } catch (e) {
+          // Hive box ochilmagan - bo'sh ro'yxat qaytarish
+          // Chrome'da bu normal holat
+          return [];
+        }
+      }
+      
+      // Mobile/Desktop - Hive box'dan olish
       return _boxService.partsBox.values.toList();
     } catch (e) {
       // Box ochilmagan yoki xatolik bo'lsa bo'sh ro'yxat qaytarish
