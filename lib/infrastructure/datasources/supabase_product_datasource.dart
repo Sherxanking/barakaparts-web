@@ -1,5 +1,6 @@
 /// Supabase Product Datasource
 
+import 'package:flutter/foundation.dart';
 import '../../domain/entities/product.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
@@ -83,14 +84,24 @@ class SupabaseProductDatasource {
   Future<Either<Failure, Product>> createProduct(Product product) async {
     try {
       final json = _mapToJson(product);
+      debugPrint('🔄 Creating product in Supabase:');
+      debugPrint('   ID: ${product.id}');
+      debugPrint('   Name: ${product.name}');
+      debugPrint('   Department ID: ${product.departmentId}');
+      debugPrint('   Parts Required: ${product.partsRequired}');
+      debugPrint('   JSON: $json');
+      
       final response = await _client.client
           .from(_tableName)
           .insert(json)
           .select()
           .single();
       
+      debugPrint('✅ Product created successfully in Supabase');
       return Right(_mapFromJson(response));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('❌ Failed to create product in Supabase: $e');
+      debugPrint('   Stack trace: $stackTrace');
       return Left(ServerFailure('Failed to create product: $e'));
     }
   }
@@ -152,11 +163,16 @@ class SupabaseProductDatasource {
   }
   
   Map<String, dynamic> _mapToJson(Product product) {
+    // FIX: Ensure parts_required is not null and is a valid JSONB format
+    final partsRequired = product.partsRequired.isNotEmpty 
+        ? product.partsRequired 
+        : <String, int>{};
+    
     return {
       'id': product.id,
       'name': product.name,
       'department_id': product.departmentId,
-      'parts_required': product.partsRequired,
+      'parts_required': partsRequired,
       'created_by': product.createdBy ?? _client.currentUserId,
       'updated_by': product.updatedBy,
       'created_at': product.createdAt.toIso8601String(),

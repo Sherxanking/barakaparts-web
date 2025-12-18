@@ -142,6 +142,8 @@ void _initializeRealtimeStreams() {
   try {
     final productRepository = ServiceLocator.instance.productRepository;
     final partRepository = ServiceLocator.instance.partRepository;
+    final orderRepository = ServiceLocator.instance.orderRepository;
+    final supabaseClient = AppSupabaseClient.instance.client;
     
     // Products stream - updates Hive cache automatically
     productRepository.watchProducts().listen(
@@ -184,7 +186,6 @@ void _initializeRealtimeStreams() {
     debugPrint('✅ Parts realtime stream initialized');
     
     // Orders stream - updates Hive cache automatically
-    final orderRepository = ServiceLocator.instance.orderRepository;
     orderRepository.watchOrders().listen(
       (result) {
         result.fold(
@@ -204,9 +205,75 @@ void _initializeRealtimeStreams() {
     );
     debugPrint('✅ Orders realtime stream initialized');
     
+    // Departments stream - updates Hive cache automatically
+    // FIX: Departments uchun repository yo'q, shuning uchun to'g'ridan-to'g'ri Supabase stream ishlatamiz
+    supabaseClient
+        .from('departments')
+        .stream(primaryKey: ['id'])
+        .order('name')
+        .listen(
+          (data) {
+            try {
+              final departments = (data as List).map((json) {
+                return Department(
+                  id: json['id'] as String,
+                  name: json['name'] as String,
+                  productIds: [], // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
+                  productParts: {}, // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
+                );
+              }).toList();
+              
+              debugPrint('✅ Departments realtime update: ${departments.length} departments');
+              
+              // Update Hive box
+              _updateDepartmentsBox(departments).catchError((e) {
+                debugPrint('⚠️ DepartmentsBox update error: $e');
+              });
+            } catch (e) {
+              debugPrint('❌ Error processing departments stream: $e');
+            }
+          },
+          onError: (error) {
+            debugPrint('❌ Departments stream error: $error');
+          },
+          cancelOnError: false,
+        );
+    debugPrint('✅ Departments realtime stream initialized');
+    
   } catch (e) {
     debugPrint('⚠️ Failed to initialize realtime streams: $e');
     // Don't crash app - continue without realtime sync
+  }
+}
+
+/// Update departmentsBox with departments from Supabase
+Future<void> _updateDepartmentsBox(List<Department> departments) async {
+  try {
+    if (!Hive.isBoxOpen('departmentsBox')) {
+      await Hive.openBox<Department>('departmentsBox');
+    }
+    final box = Hive.box<Department>('departmentsBox');
+    
+    // FIX: Mavjud department'larni saqlab qolish (productIds ni yo'qotmaslik uchun)
+    final existingDepartments = <String, Department>{};
+    for (var dept in box.values) {
+      existingDepartments[dept.id] = dept;
+    }
+    
+    await box.clear();
+    
+    for (var department in departments) {
+      // FIX: Mavjud department bo'lsa, productIds va productParts ni saqlab qolish
+      final existing = existingDepartments[department.id];
+      if (existing != null) {
+        department.productIds = existing.productIds;
+        department.productParts = existing.productParts;
+      }
+      await box.add(department);
+    }
+    debugPrint('✅ DepartmentsBox updated with ${departments.length} departments');
+  } catch (e) {
+    debugPrint('⚠️ Error updating departmentsBox: $e');
   }
 }
 

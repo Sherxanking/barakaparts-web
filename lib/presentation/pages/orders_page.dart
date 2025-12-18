@@ -6,7 +6,7 @@
 /// - Buyurtmalarni qidirish, filtrlash va tartiblash
 /// - Buyurtmalarni complete qilish (stock reduction)
 /// - Real-time yangilanishlar (ValueListenableBuilder)
-import 'dart:async';
+import 'dart:async' show StreamSubscription, TimeoutException;
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -103,7 +103,14 @@ class _OrdersPageState extends State<OrdersPage> {
     try {
       final repository = ServiceLocator.instance.orderRepository;
       debugPrint('   Repository obtained, calling getAllOrders()...');
-      final result = await repository.getAllOrders();
+      // FIX: Timeout qo'shish - 15 soniyadan keyin to'xtatish
+      final result = await repository.getAllOrders().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('⚠️ _loadWebOrders: Timeout after 15 seconds');
+          throw TimeoutException('Request timeout', const Duration(seconds: 15));
+        },
+      );
       
       result.fold(
         (failure) {
@@ -152,6 +159,9 @@ class _OrdersPageState extends State<OrdersPage> {
           _webOrders = [];
           _isLoadingWebOrders = false;
         });
+      } else {
+        // FIX: Widget unmounted bo'lsa ham loading'ni to'xtatish
+        _isLoadingWebOrders = false;
       }
     }
   }
@@ -224,6 +234,9 @@ class _OrdersPageState extends State<OrdersPage> {
     // Bu '_dependents.isEmpty' xatoligini oldini oladi
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    // FIX: Chrome'da stream subscription'ni yopish
+    _ordersStreamSubscription?.cancel();
+    _ordersStreamSubscription = null;
     super.dispose();
   }
 

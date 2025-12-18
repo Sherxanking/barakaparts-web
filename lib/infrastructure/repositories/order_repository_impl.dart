@@ -3,12 +3,14 @@
 /// Handles order operations with Supabase and Hive cache
 
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../../domain/repositories/order_repository.dart';
 import '../../domain/entities/order.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../datasources/supabase_order_datasource.dart';
 import '../cache/hive_order_cache.dart';
+import '../../data/models/order_model.dart' as model;
 
 class OrderRepositoryImpl implements OrderRepository {
   final SupabaseOrderDatasource _supabaseDatasource;
@@ -169,11 +171,40 @@ class OrderRepositoryImpl implements OrderRepository {
         // Log cache error but don't fail the stream
         debugPrint('⚠️ Cache update error: $e');
       });
+      // FIX: Also update ordersBox for UI sync
+      _updateOrdersBox(orders).catchError((e) {
+        debugPrint('⚠️ OrdersBox update error: $e');
+      });
       return Right<Failure, List<Order>>(orders);
     }).handleError((error, stackTrace) {
       // Return error as Left
       return Left<Failure, List<Order>>(ServerFailure('Stream error: $error'));
     });
+  }
+  
+  /// Update ordersBox with domain orders
+  Future<void> _updateOrdersBox(List<Order> domainOrders) async {
+    try {
+      if (!Hive.isBoxOpen('ordersBox')) {
+        await Hive.openBox<model.Order>('ordersBox');
+      }
+      final box = Hive.box<model.Order>('ordersBox');
+      await box.clear();
+      
+      for (var domainOrder in domainOrders) {
+        final orderModel = model.Order(
+          id: domainOrder.id,
+          departmentId: domainOrder.departmentId,
+          productName: domainOrder.productName,
+          quantity: domainOrder.quantity,
+          status: domainOrder.status,
+          createdAt: domainOrder.createdAt,
+        );
+        await box.add(orderModel);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error updating ordersBox: $e');
+    }
   }
 
   @override

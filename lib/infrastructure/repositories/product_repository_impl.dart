@@ -2,12 +2,15 @@
 /// 
 /// Combines Supabase (source of truth) with Hive cache (offline support).
 
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/foundation.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/repositories/product_repository.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../datasources/supabase_product_datasource.dart';
 import '../cache/hive_product_cache.dart';
+import '../../data/models/product_model.dart' as model;
 
 class ProductRepositoryImpl implements ProductRepository {
   final SupabaseProductDatasource _supabaseDatasource;
@@ -176,10 +179,37 @@ class ProductRepositoryImpl implements ProductRepository {
     return _supabaseDatasource.watchProducts().map((products) {
       // Update cache when data changes
       _cache.saveProducts(products);
+      // FIX: Also update productsBox for UI sync
+      _updateProductsBox(products).catchError((e) {
+        debugPrint('⚠️ ProductsBox update error: $e');
+      });
       return Right<Failure, List<Product>>(products);
     }).handleError((error) {
       return Left<Failure, List<Product>>(ServerFailure('Stream error: $error'));
     });
+  }
+  
+  /// Update productsBox with domain products
+  Future<void> _updateProductsBox(List<Product> domainProducts) async {
+    try {
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox<model.Product>('productsBox');
+      }
+      final box = Hive.box<model.Product>('productsBox');
+      await box.clear();
+      
+      for (var domainProduct in domainProducts) {
+        final productModel = model.Product(
+          id: domainProduct.id,
+          name: domainProduct.name,
+          departmentId: domainProduct.departmentId,
+          parts: domainProduct.partsRequired,
+        );
+        await box.add(productModel);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error updating productsBox: $e');
+    }
   }
 }
 

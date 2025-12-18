@@ -109,12 +109,61 @@ class OrderService {
   }
 
   /// Order yangilash
-  /// FIX: Xatolikni tutish va xavfsiz yangilash
+  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   Future<bool> updateOrder(data.Order order) async {
     try {
-      await order.save();
-      return true;
+      // 1. Supabase'ga yozish (realtime sync uchun)
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: order.status,
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return await result.fold(
+        (failure) async {
+          debugPrint('❌ Failed to update order in Supabase: ${failure.message}');
+          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
+          try {
+            await order.save();
+            return true; // Hive'ga yozildi, lekin sync yo'q
+          } catch (e) {
+            return false;
+          }
+        },
+        (updatedOrder) async {
+          // 2. Hive'ga ham yozish (offline cache uchun)
+          try {
+            await order.save();
+            debugPrint('✅ Order updated in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order updated in Supabase but failed to save to Hive: $e');
+            return true; // Supabase'ga yozildi, bu asosiy
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Error in updateOrder: $e');
       return false;
     }
   }
@@ -126,14 +175,14 @@ class OrderService {
       // 1. Supabase'dan o'chirish (realtime sync uchun)
       final result = await _orderRepository.deleteOrder(orderId);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to delete order in Supabase: ${failure.message}');
           // Supabase'dan o'chirish xato bo'lsa ham Hive'dan o'chirishga harakat qilamiz
           try {
             final order = getOrderById(orderId);
             if (order != null) {
-              order.delete();
+              await order.delete();
               return true; // Hive'dan o'chirildi, lekin sync yo'q
             }
             return false;
@@ -141,12 +190,12 @@ class OrderService {
             return false;
           }
         },
-        (_) {
+        (_) async {
           // 2. Hive'dan ham o'chirish (offline cache uchun)
           try {
             final order = getOrderById(orderId);
             if (order != null) {
-              order.delete();
+              await order.delete();
               debugPrint('✅ Order deleted from both Supabase and Hive');
               return true;
             }

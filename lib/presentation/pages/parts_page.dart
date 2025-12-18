@@ -43,6 +43,9 @@ class _PartsPageState extends State<PartsPage> {
   List<PartModel> _webParts = [];
   bool _isLoadingWebParts = false;
 
+  // FIX: Duplicate prevention - loading state
+  bool _isCreatingPart = false;
+
   // Controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
@@ -246,7 +249,14 @@ class _PartsPageState extends State<PartsPage> {
   }
 
   /// Yangi qism qo'shish
+  /// FIX: Duplicate prevention - loading state bilan
   Future<void> _addPart() async {
+    // FIX: Agar yaratish jarayoni davom etayotgan bo'lsa, qayta bosilishini oldini olish
+    if (_isCreatingPart) {
+      debugPrint('⚠️ Part creation already in progress, ignoring duplicate request');
+      return;
+    }
+
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar('Please enter a part name', Colors.red);
       return;
@@ -258,39 +268,55 @@ class _PartsPageState extends State<PartsPage> {
       return;
     }
 
-    final partId = const Uuid().v4();
-    String? imagePath;
-
-    // Rasmni saqlash
-    if (_selectedImage != null) {
-      imagePath = await ImageService.saveImage(_selectedImage!, partId);
+    // FIX: Loading state'ni o'rnatish
+    if (mounted) {
+      setState(() {
+        _isCreatingPart = true;
+      });
     }
 
-    final minQuantity = int.tryParse(_minQuantityController.text) ?? 3;
+    try {
+      final partId = const Uuid().v4();
+      String? imagePath;
 
-    final part = PartModel(
-      id: partId,
-      name: _nameController.text.trim(),
-      quantity: quantity,
-      status: 'available',
-      imagePath: imagePath,
-      minQuantity: minQuantity,
-    );
+      // Rasmni saqlash
+      if (_selectedImage != null) {
+        imagePath = await ImageService.saveImage(_selectedImage!, partId);
+      }
 
-    // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _partService.addPart(part);
-    if (mounted) {
-      if (success) {
-        _nameController.clear();
-        _quantityController.clear();
-        _minQuantityController.clear();
-        _selectedImage = null;
-        Navigator.pop(context);
-        // FIX: UI ni darhol yangilash
-        setState(() {});
-        _showSnackBar('Part added successfully', Colors.green);
-      } else {
-        _showSnackBar('Failed to add part. Please try again.', Colors.red);
+      final minQuantity = int.tryParse(_minQuantityController.text) ?? 3;
+
+      final part = PartModel(
+        id: partId,
+        name: _nameController.text.trim(),
+        quantity: quantity,
+        status: 'available',
+        imagePath: imagePath,
+        minQuantity: minQuantity,
+      );
+
+      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
+      final success = await _partService.addPart(part);
+      if (mounted) {
+        if (success) {
+          _nameController.clear();
+          _quantityController.clear();
+          _minQuantityController.clear();
+          _selectedImage = null;
+          Navigator.pop(context);
+          // FIX: UI ni darhol yangilash
+          setState(() {});
+          _showSnackBar('Part added successfully', Colors.green);
+        } else {
+          _showSnackBar('Failed to add part. Please try again.', Colors.red);
+        }
+      }
+    } finally {
+      // FIX: Loading state'ni tozalash
+      if (mounted) {
+        setState(() {
+          _isCreatingPart = false;
+        });
       }
     }
   }
@@ -566,8 +592,12 @@ class _PartsPageState extends State<PartsPage> {
 
   /// Rasmni katta ko'rinishda ko'rsatish
   void _showImageDialog(PartModel part) {
-    final imageFile = ImageService.getImageFile(part.imagePath);
-    final hasImage = imageFile != null && imageFile.existsSync();
+    // FIX: Supabase Storage URL yoki local file path
+    final imagePath = part.imagePath;
+    final isNetworkImage = imagePath != null && 
+        (imagePath.startsWith('http://') || imagePath.startsWith('https://'));
+    final imageFile = !isNetworkImage ? ImageService.getImageFile(imagePath) : null;
+    final hasImage = isNetworkImage || (imageFile != null && imageFile.existsSync());
 
     showDialog(
       context: context,
@@ -617,28 +647,70 @@ class _PartsPageState extends State<PartsPage> {
                   child: hasImage
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            imageFile!,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: 300,
-                                height: 300,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(12),
+                          child: isNetworkImage
+                              ? Image.network(
+                                  imagePath!,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      width: 300,
+                                      height: 300,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[200],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                                          SizedBox(height: 8),
+                                          Text('Image not found', style: TextStyle(color: Colors.grey)),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                  loadingBuilder: (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      width: 300,
+                                      height: 300,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[200],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          value: loadingProgress.expectedTotalBytes != null
+                                              ? loadingProgress.cumulativeBytesLoaded /
+                                                  loadingProgress.expectedTotalBytes!
+                                              : null,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : Image.file(
+                                  imageFile!,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      width: 300,
+                                      height: 300,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[200],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                                          SizedBox(height: 8),
+                                          Text('Image not found', style: TextStyle(color: Colors.grey)),
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
-                                child: const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.broken_image, size: 64, color: Colors.grey),
-                                    SizedBox(height: 8),
-                                    Text('Image not found', style: TextStyle(color: Colors.grey)),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
                         )
                       : Container(
                           width: 300,
@@ -970,8 +1042,12 @@ class _PartsPageState extends State<PartsPage> {
                     final part = parts[index];
                     final isLowStock = part.quantity < part.minQuantity;
                     final statusColor = isLowStock ? Colors.red : Colors.green;
-                    final imageFile = ImageService.getImageFile(part.imagePath);
-                    final hasImage = imageFile != null && imageFile.existsSync();
+                    // FIX: Supabase Storage URL yoki local file path
+                    final imagePath = part.imagePath;
+                    final isNetworkImage = imagePath != null && 
+                        (imagePath.startsWith('http://') || imagePath.startsWith('https://'));
+                    final imageFile = !isNetworkImage ? ImageService.getImageFile(imagePath) : null;
+                    final hasImage = isNetworkImage || (imageFile != null && imageFile.existsSync());
 
                     return AnimatedListItem(
                       delay: index * 50,
@@ -1006,13 +1082,32 @@ class _PartsPageState extends State<PartsPage> {
                                     child: hasImage
                                         ? ClipRRect(
                                             borderRadius: BorderRadius.circular(10),
-                                            child: Image.file(
-                                              imageFile!,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return _buildImagePlaceholder(statusColor);
-                                              },
-                                            ),
+                                            child: isNetworkImage
+                                                ? Image.network(
+                                                    imagePath!,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return _buildImagePlaceholder(statusColor);
+                                                    },
+                                                    loadingBuilder: (context, child, loadingProgress) {
+                                                      if (loadingProgress == null) return child;
+                                                      return Center(
+                                                        child: CircularProgressIndicator(
+                                                          value: loadingProgress.expectedTotalBytes != null
+                                                              ? loadingProgress.cumulativeBytesLoaded /
+                                                                  loadingProgress.expectedTotalBytes!
+                                                              : null,
+                                                        ),
+                                                      );
+                                                    },
+                                                  )
+                                                : Image.file(
+                                                    imageFile!,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return _buildImagePlaceholder(statusColor);
+                                                    },
+                                                  ),
                                           )
                                         : _buildImagePlaceholder(statusColor),
                                   ),
@@ -1303,12 +1398,21 @@ class _PartsPageState extends State<PartsPage> {
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: _addPart,
+                  onPressed: _isCreatingPart ? null : _addPart,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Add'),
+                  child: _isCreatingPart
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Add'),
                 ),
               ],
             ),
@@ -1421,8 +1525,12 @@ class _PartsPageState extends State<PartsPage> {
             final part = parts[index];
             final isLowStock = part.quantity < part.minQuantity;
             final statusColor = isLowStock ? Colors.red : Colors.green;
-            final imageFile = ImageService.getImageFile(part.imagePath);
-            final hasImage = imageFile != null && imageFile.existsSync();
+            // FIX: Supabase Storage URL yoki local file path
+            final imagePath = part.imagePath;
+            final isNetworkImage = imagePath != null && 
+                (imagePath.startsWith('http://') || imagePath.startsWith('https://'));
+            final imageFile = !isNetworkImage ? ImageService.getImageFile(imagePath) : null;
+            final hasImage = isNetworkImage || (imageFile != null && imageFile.existsSync());
 
             return AnimatedListItem(
               delay: index * 50,
@@ -1457,13 +1565,32 @@ class _PartsPageState extends State<PartsPage> {
                             child: hasImage
                                 ? ClipRRect(
                                     borderRadius: BorderRadius.circular(10),
-                                    child: Image.file(
-                                      imageFile!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return _buildImagePlaceholder(statusColor);
-                                      },
-                                    ),
+                                    child: isNetworkImage
+                                        ? Image.network(
+                                            imagePath!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return _buildImagePlaceholder(statusColor);
+                                            },
+                                            loadingBuilder: (context, child, loadingProgress) {
+                                              if (loadingProgress == null) return child;
+                                              return Center(
+                                                child: CircularProgressIndicator(
+                                                  value: loadingProgress.expectedTotalBytes != null
+                                                      ? loadingProgress.cumulativeBytesLoaded /
+                                                          loadingProgress.expectedTotalBytes!
+                                                      : null,
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        : Image.file(
+                                            imageFile!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return _buildImagePlaceholder(statusColor);
+                                            },
+                                          ),
                                   )
                                 : _buildImagePlaceholder(statusColor),
                           ),

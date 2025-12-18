@@ -6,7 +6,7 @@
 /// - Department bo'yicha filtrlash
 /// - Qidiruv va tartiblash
 /// - Real-time yangilanishlar
-import 'dart:async';
+import 'dart:async' show StreamSubscription, TimeoutException;
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -56,6 +56,9 @@ class _ProductsPageState extends State<ProductsPage> {
   bool _isLoadingWebProducts = false;
   List<PartModel> _webParts = [];
   bool _isLoadingWebParts = false;
+  
+  // FIX: Duplicate prevention - loading state
+  bool _isCreatingProduct = false;
   
   // Chrome uchun real-time stream subscription
   StreamSubscription? _productsStreamSubscription;
@@ -165,7 +168,14 @@ class _ProductsPageState extends State<ProductsPage> {
     try {
       final repository = ServiceLocator.instance.productRepository;
       debugPrint('   Repository obtained, calling getAllProducts()...');
-      final result = await repository.getAllProducts();
+      // FIX: Timeout qo'shish - 15 soniyadan keyin to'xtatish
+      final result = await repository.getAllProducts().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('⚠️ _loadWebProducts: Timeout after 15 seconds');
+          throw TimeoutException('Request timeout', const Duration(seconds: 15));
+        },
+      );
       
       result.fold(
         (failure) {
@@ -210,6 +220,9 @@ class _ProductsPageState extends State<ProductsPage> {
           _webProducts = [];
           _isLoadingWebProducts = false;
         });
+      } else {
+        // FIX: Widget unmounted bo'lsa ham loading'ni to'xtatish
+        _isLoadingWebProducts = false;
       }
     }
   }
@@ -329,7 +342,14 @@ class _ProductsPageState extends State<ProductsPage> {
   }
 
   /// Yangi mahsulot qo'shish
+  /// FIX: Duplicate prevention - loading state bilan
   Future<void> _addProduct() async {
+    // FIX: Agar yaratish jarayoni davom etayotgan bo'lsa, qayta bosilishini oldini olish
+    if (_isCreatingProduct) {
+      debugPrint('⚠️ Product creation already in progress, ignoring duplicate request');
+      return;
+    }
+
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar('Please enter a product name', Colors.red);
       return;
@@ -345,38 +365,54 @@ class _ProductsPageState extends State<ProductsPage> {
       return;
     }
 
-    final product = Product(
-      id: const Uuid().v4(),
-      name: _nameController.text.trim(),
-      departmentId: selectedDepartmentId!,
-      parts: Map.from(selectedParts),
-    );
-
-    // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _productService.addProduct(product);
+    // FIX: Loading state'ni o'rnatish
     if (mounted) {
-      if (success) {
-        // Department productIds ni yangilash
-        await _departmentService.assignProductToDepartment(
-          selectedDepartmentId!,
-          product.id,
-        );
+      setState(() {
+        _isCreatingProduct = true;
+      });
+    }
 
-        // Formni tozalash
-        _nameController.clear();
-        selectedDepartmentId = null;
-        selectedParts.clear();
+    try {
+      final product = Product(
+        id: const Uuid().v4(),
+        name: _nameController.text.trim(),
+        departmentId: selectedDepartmentId!,
+        parts: Map.from(selectedParts),
+      );
 
-        // FIX: UI ni darhol yangilash - dialog yopilishidan oldin
-        setState(() {});
-        Navigator.pop(context);
-        // FIX: Dialog yopilgandan keyin yana bir marta yangilash
-        if (mounted) {
+      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
+      final success = await _productService.addProduct(product);
+      if (mounted) {
+        if (success) {
+          // Department productIds ni yangilash
+          await _departmentService.assignProductToDepartment(
+            selectedDepartmentId!,
+            product.id,
+          );
+
+          // Formni tozalash
+          _nameController.clear();
+          selectedDepartmentId = null;
+          selectedParts.clear();
+
+          // FIX: UI ni darhol yangilash - dialog yopilishidan oldin
           setState(() {});
+          Navigator.pop(context);
+          // FIX: Dialog yopilgandan keyin yana bir marta yangilash
+          if (mounted) {
+            setState(() {});
+          }
+          _showSnackBar('Product added successfully', Colors.green);
+        } else {
+          _showSnackBar('Failed to add product. Please try again.', Colors.red);
         }
-        _showSnackBar('Product added successfully', Colors.green);
-      } else {
-        _showSnackBar('Failed to add product. Please try again.', Colors.red);
+      }
+    } finally {
+      // FIX: Loading state'ni tozalash
+      if (mounted) {
+        setState(() {
+          _isCreatingProduct = false;
+        });
       }
     }
   }
@@ -912,10 +948,16 @@ class _ProductsPageState extends State<ProductsPage> {
                   child: const Text('Cancel'),
                 ),
                 TextButton(
-                  onPressed: () {
+                  onPressed: _isCreatingProduct ? null : () {
                     _addProduct();
                   },
-                  child: const Text('Add'),
+                  child: _isCreatingProduct
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add'),
                 ),
               ],
             ),
