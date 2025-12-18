@@ -190,16 +190,17 @@ void _initializeRealtimeStreams() {
       (result) {
         result.fold(
           (failure) {
-            debugPrint('⚠️ Orders stream error: ${failure.message}');
+            debugPrint('⚠️ Orders stream error in main.dart: ${failure.message}');
           },
           (orders) {
-            debugPrint('✅ Orders realtime update: ${orders.length} orders');
-            // Cache is automatically updated by repository
+            debugPrint('✅ Orders realtime update in main.dart: ${orders.length} orders');
+            // Cache and Hive box are automatically updated by repository
           },
         );
       },
-      onError: (error) {
-        debugPrint('❌ Orders stream error: $error');
+      onError: (error, stackTrace) {
+        debugPrint('❌ Orders stream error in main.dart: $error');
+        debugPrint('Stack trace: $stackTrace');
       },
       cancelOnError: false, // Keep listening even on errors
     );

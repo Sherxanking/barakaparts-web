@@ -146,6 +146,15 @@ class _ProductEditPageState extends State<ProductEditPage> {
     final cleanedParts = Map<String, int>.from(_productParts)
       ..removeWhere((key, value) => value <= 0); // 0 yoki manfiy qiymatlarni olib tashlash
     
+    // FIX: Agar qismlar bo'sh bo'lsa, xatolik ko'rsatish
+    if (cleanedParts.isEmpty) {
+      _showSnackBar(
+        l10n?.translate('selectAtLeastOnePart') ?? 'Please select at least one part',
+        Colors.red,
+      );
+      return;
+    }
+    
     // FIX: Yangi Product yaratish - service mavjud productni topib yangilaydi
     final updatedProduct = Product(
       id: widget.product.id,
@@ -283,31 +292,55 @@ class _ProductEditPageState extends State<ProductEditPage> {
                                 SizedBox(
                                   width: 80,
                                   child: TextField(
-                                    keyboardType: TextInputType.number,
+                                    keyboardType: const TextInputType.numberWithOptions(
+                                      signed: false,
+                                      decimal: false,
+                                    ),
                                     decoration: InputDecoration(
                                       labelText: l10n?.translate('quantity') ?? 'Qty',
                                       isDense: true,
+                                      errorText: null, // FIX: Assertion xatolikni oldini olish
                                     ),
                                     controller: controllers[part.id],
                                     onChanged: (val) {
                                       // FIX: disposed check olib tashlandi - try-catch ishlatish
                                       try {
-                                        if (controllers[part.id] == null) return;
+                                        final controller = controllers[part.id];
+                                        if (controller == null) return;
+                                        
+                                        // FIX: Bo'sh yoki faqat raqam bo'lishi kerak
+                                        if (val.isEmpty) {
+                                          // Yozish paytida bo'sh qoldirishga ruxsat berish
+                                          tempParts.remove(part.id);
+                                          return;
+                                        }
+                                        
+                                        // FIX: Faqat raqamlarni qabul qilish
+                                        if (!RegExp(r'^\d+$').hasMatch(val)) {
+                                          // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
+                                          final prevQty = tempParts[part.id] ?? 1;
+                                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                                            if (controller.text != prevQty.toString()) {
+                                              controller.text = prevQty.toString();
+                                            }
+                                          });
+                                          tempParts[part.id] = prevQty;
+                                          return;
+                                        }
                                         
                                         final newQty = int.tryParse(val);
                                         if (newQty != null && newQty > 0) {
                                           tempParts[part.id] = newQty;
-                                        } else if (val.isEmpty) {
-                                          // Yozish paytida bo'sh qoldirishga ruxsat berish
-                                          tempParts.remove(part.id);
                                         } else {
-                                          // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
-                                          final prevQty = tempParts[part.id] ?? 1;
-                                          controllers[part.id]!.text = prevQty.toString();
-                                          tempParts[part.id] = prevQty;
+                                          // 0 yoki manfiy qiymat, olib tashlash
+                                          tempParts.remove(part.id);
+                                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                                            controller.text = '';
+                                          });
                                         }
                                       } catch (e) {
                                         // Controller allaqachon dispose qilingan yoki xatolik
+                                        debugPrint('⚠️ Error in quantity TextField: $e');
                                       }
                                     },
                                   ),

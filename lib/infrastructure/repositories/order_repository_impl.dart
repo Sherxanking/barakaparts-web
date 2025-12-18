@@ -164,19 +164,27 @@ class OrderRepositoryImpl implements OrderRepository {
   Stream<Either<Failure, List<Order>>> watchOrders() {
     // WHY: Fixed stream error handling - properly wraps errors in Either
     return _supabaseDatasource.watchOrders().map((orders) {
+      debugPrint('🔄 watchOrders: Received ${orders.length} orders from Supabase');
+      
       // Update cache when data changes (async but don't await - fire and forget)
       _cache.saveOrders(orders).then((_) {
-        // Cache updated successfully
+        debugPrint('✅ Orders cache updated');
       }).catchError((e) {
         // Log cache error but don't fail the stream
         debugPrint('⚠️ Cache update error: $e');
       });
+      
       // FIX: Also update ordersBox for UI sync
-      _updateOrdersBox(orders).catchError((e) {
+      _updateOrdersBox(orders).then((_) {
+        debugPrint('✅ OrdersBox updated from stream');
+      }).catchError((e) {
         debugPrint('⚠️ OrdersBox update error: $e');
       });
+      
       return Right<Failure, List<Order>>(orders);
     }).handleError((error, stackTrace) {
+      debugPrint('❌ Orders stream error: $error');
+      debugPrint('Stack trace: $stackTrace');
       // Return error as Left
       return Left<Failure, List<Order>>(ServerFailure('Stream error: $error'));
     });
@@ -191,6 +199,8 @@ class OrderRepositoryImpl implements OrderRepository {
       final box = Hive.box<model.Order>('ordersBox');
       await box.clear();
       
+      debugPrint('🔄 Updating ordersBox with ${domainOrders.length} orders');
+      
       for (var domainOrder in domainOrders) {
         final orderModel = model.Order(
           id: domainOrder.id,
@@ -202,8 +212,11 @@ class OrderRepositoryImpl implements OrderRepository {
         );
         await box.add(orderModel);
       }
-    } catch (e) {
+      
+      debugPrint('✅ OrdersBox updated with ${domainOrders.length} orders');
+    } catch (e, stackTrace) {
       debugPrint('⚠️ Error updating ordersBox: $e');
+      debugPrint('Stack trace: $stackTrace');
     }
   }
 
