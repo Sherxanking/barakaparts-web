@@ -286,3 +286,6 @@ Agar muammo bo'lsa:
 
 
 
+
+
+

@@ -325,3 +325,6 @@ O'zgartirilishi kerak bo'lgan fayllar:
 
 
 
+
+
+

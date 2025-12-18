@@ -292,3 +292,6 @@ Agar muammo bo'lsa:
 
 
 
+
+
+

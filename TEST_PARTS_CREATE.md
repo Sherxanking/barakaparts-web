@@ -106,3 +106,6 @@ Agar "No" bo'lsa, debug query natijalarini yuboring.
 
 
 
+
+
+

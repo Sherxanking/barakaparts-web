@@ -26,6 +26,7 @@ import '../widgets/empty_state_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
 import 'product_edit_page.dart';
+import '../../core/services/auth_state_service.dart';
 
 class ProductsPage extends StatefulWidget {
   const ProductsPage({super.key});
@@ -40,6 +41,12 @@ class _ProductsPageState extends State<ProductsPage> {
   final ProductService _productService = ProductService();
   final DepartmentService _departmentService = DepartmentService();
   final PartService _partService = PartService();
+  
+  /// Check if current user can create products
+  bool get _canCreateProducts {
+    final user = AuthStateService().currentUser;
+    return user != null && (user.isManager || user.isBoss);
+  }
 
   // Controllers
   final TextEditingController _nameController = TextEditingController();
@@ -877,11 +884,12 @@ class _ProductsPageState extends State<ProductsPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _nameController.clear();
-          selectedDepartmentId = null;
-          selectedParts.clear();
+      floatingActionButton: _canCreateProducts
+          ? FloatingActionButton(
+              onPressed: () {
+                _nameController.clear();
+                selectedDepartmentId = null;
+                selectedParts.clear();
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
@@ -964,7 +972,8 @@ class _ProductsPageState extends State<ProductsPage> {
           );
         },
         child: const Icon(Icons.add),
-      ),
+      )
+          : null, // Hide button if user can't create products
     );
   }
 

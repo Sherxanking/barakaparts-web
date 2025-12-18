@@ -256,3 +256,6 @@ FULL OUTER JOIN public.users pu ON au.id = pu.id;
 
 
 
+
+
+

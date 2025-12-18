@@ -26,6 +26,7 @@ import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
 import '../widgets/image_picker_widget.dart';
 import '../../l10n/app_localizations.dart';
+import '../../core/services/auth_state_service.dart';
 
 class PartsPage extends StatefulWidget {
   const PartsPage({super.key});
@@ -38,6 +39,12 @@ class _PartsPageState extends State<PartsPage> {
   // Services
   final HiveBoxService _boxService = HiveBoxService();
   final PartService _partService = PartService();
+  
+  /// Check if current user can create parts
+  bool get _canCreateParts {
+    final user = AuthStateService().currentUser;
+    return user != null && user.canCreateParts();
+  }
   
   // Chrome uchun state
   List<PartModel> _webParts = [];
@@ -1322,8 +1329,9 @@ class _PartsPageState extends State<PartsPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
+      floatingActionButton: _canCreateParts
+          ? FloatingActionButton.extended(
+              onPressed: () {
           _nameController.clear();
           _quantityController.clear();
           _minQuantityController.clear();
@@ -1420,7 +1428,8 @@ class _PartsPageState extends State<PartsPage> {
         },
         icon: const Icon(Icons.add),
         label: const Text('Add Part'),
-      ) ,
+      )
+          : null, // Hide button if user can't create parts
     );
   }
 
