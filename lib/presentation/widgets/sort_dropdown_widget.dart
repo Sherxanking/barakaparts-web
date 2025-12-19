@@ -3,19 +3,26 @@
 /// Bu widget ma'lumotlarni turli usullar bilan tartiblash imkonini beradi.
 /// Material Design 3 DropdownButton asosida.
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Tartiblash variantlari
 enum SortOption {
-  nameAsc('Name (A-Z)', true),
-  nameDesc('Name (Z-A)', false),
-  dateAsc('Date (Oldest)', true),
-  dateDesc('Date (Newest)', false),
-  quantityAsc('Quantity (Low)', true),
-  quantityDesc('Quantity (High)', false);
+  nameAsc('nameAsc', true),
+  nameDesc('nameDesc', false),
+  dateAsc('dateAsc', true),
+  dateDesc('dateDesc', false),
+  quantityAsc('quantityAsc', true),
+  quantityDesc('quantityDesc', false);
 
-  final String label;
+  final String translationKey;
   final bool ascending;
-  const SortOption(this.label, this.ascending);
+  const SortOption(this.translationKey, this.ascending);
+  
+  /// Get localized label
+  String getLabel(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return l10n?.translate(translationKey) ?? translationKey;
+  }
 }
 
 class SortDropdownWidget extends StatelessWidget {
@@ -42,10 +49,11 @@ class SortDropdownWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return DropdownButtonFormField<SortOption>(
       value: selectedOption,
       decoration: InputDecoration(
-        labelText: 'Sort by',
+        labelText: l10n?.translate('sortBy') ?? 'Sort by',
         prefixIcon: const Icon(Icons.sort),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -55,7 +63,7 @@ class SortDropdownWidget extends StatelessWidget {
       items: options.map((option) {
         return DropdownMenuItem(
           value: option,
-          child: Text(option.label),
+          child: Text(option.getLabel(context)),
         );
       }).toList(),
       onChanged: (value) {

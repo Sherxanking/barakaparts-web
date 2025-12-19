@@ -4,6 +4,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../l10n/app_localizations.dart';
 
 class ImageViewerWidget extends StatelessWidget {
   /// Rasm fayl yo'li
@@ -25,25 +26,26 @@ class ImageViewerWidget extends StatelessWidget {
   /// Rasm tanlash dialogini ko'rsatish
   Future<void> _pickImage(BuildContext context) async {
     final picker = ImagePicker();
+    final l10n = AppLocalizations.of(context);
     
     final source = await showDialog<ImageSource>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Image Source'),
+        title: Text(l10n?.translate('selectImageSource') ?? 'Select Image Source'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt, size: 32),
-              title: const Text('Camera'),
-              subtitle: const Text('Take a new photo'),
+              title: Text(l10n?.translate('camera') ?? 'Camera'),
+              subtitle: Text(l10n?.translate('takeNewPhoto') ?? 'Take a new photo'),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.photo_library, size: 32),
-              title: const Text('Gallery'),
-              subtitle: const Text('Choose from gallery'),
+              title: Text(l10n?.translate('gallery') ?? 'Gallery'),
+              subtitle: Text(l10n?.translate('chooseFromGallery') ?? 'Choose from gallery'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
@@ -229,7 +231,7 @@ class ImageViewerWidget extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap to add image',
+            AppLocalizations.of(context)?.translate('tapToAddImage') ?? 'Tap to add image',
             style: TextStyle(
               color: Colors.grey[600],
               fontSize: 14,

@@ -304,6 +304,87 @@ class PartService {
     }
   }
 
+  /// OPTIMIZATION: Barcha partlarni bir marta kamaytirish (batch update)
+  /// Bu funksiya bir nechta part'larni parallel yangilaydi - tezroq ishlaydi
+  /// Map: partId -> quantity to decrease
+  Future<bool> decreaseQuantitiesBatch(Map<String, int> partsToDecrease) async {
+    if (partsToDecrease.isEmpty) return true;
+    
+    try {
+      // 1. Barcha part'larni olish va miqdorlarni yangilash (local)
+      final partsToUpdate = <PartModel>[];
+      
+      for (var entry in partsToDecrease.entries) {
+        final part = getPartById(entry.key);
+        if (part == null) {
+          debugPrint('❌ Part not found: ${entry.key}');
+          return false;
+        }
+        
+        final newQuantity = (part.quantity - entry.value).clamp(0, double.infinity).toInt();
+        if (newQuantity < 0) {
+          debugPrint('❌ Insufficient quantity for part: ${part.name}');
+          return false;
+        }
+        
+        part.quantity = newQuantity;
+        partsToUpdate.add(part);
+      }
+      
+      // 2. Barcha part'larni parallel yangilash (Supabase)
+      final updateFutures = partsToUpdate.map((part) async {
+        final domainPart = Part(
+          id: part.id,
+          name: part.name,
+          quantity: part.quantity,
+          minQuantity: part.minQuantity,
+          imagePath: part.imagePath,
+          createdAt: DateTime.now(),
+        );
+        
+        return await _partRepository.updatePart(domainPart);
+      }).toList();
+      
+      final results = await Future.wait(updateFutures);
+      
+      // 3. Natijalarni tekshirish va Hive'ga yozish
+      bool allSuccess = true;
+      for (int i = 0; i < results.length; i++) {
+        final result = results[i];
+        final part = partsToUpdate[i];
+        
+        result.fold(
+          (failure) {
+            debugPrint('⚠️ Failed to update part ${part.name} in Supabase: ${failure.message}');
+            // Supabase xato bo'lsa ham Hive'ga yozish
+            try {
+              part.save();
+            } catch (e) {
+              allSuccess = false;
+            }
+          },
+          (_) {
+            // Supabase'ga yozildi, Hive'ga ham yozish
+            try {
+              part.save();
+            } catch (e) {
+              debugPrint('⚠️ Failed to save part ${part.name} to Hive: $e');
+            }
+          },
+        );
+      }
+      
+      if (allSuccess) {
+        debugPrint('✅ Batch updated ${partsToUpdate.length} parts successfully');
+      }
+      
+      return allSuccess;
+    } catch (e) {
+      debugPrint('❌ Error in decreaseQuantitiesBatch: $e');
+      return false;
+    }
+  }
+
   /// Qidiruv - nom bo'yicha
   List<PartModel> searchParts(String query) {
     if (query.isEmpty) return getAllParts();

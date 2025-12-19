@@ -2,7 +2,10 @@
 /// 
 /// Bu widget order yoki boshqa entity statusini rangli badge 
 /// ko'rinishida ko'rsatadi.
+/// 
+/// FIX: Uses localized strings - no manual capitalization
 import 'package:flutter/material.dart';
+import '../../core/extensions/status_localization_extension.dart';
 
 class StatusBadgeWidget extends StatelessWidget {
   /// Status matni
@@ -41,6 +44,8 @@ class StatusBadgeWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _getStatusColor(context);
+    // FIX: Use localized status - capitalization from translation files
+    final localizedStatus = status.localizedStatus(context);
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -50,7 +55,7 @@ class StatusBadgeWidget extends StatelessWidget {
         border: Border.all(color: statusColor, width: 1),
       ),
       child: Text(
-        status.toUpperCase(),
+        localizedStatus,
         style: TextStyle(
           color: statusColor,
           fontSize: 10,

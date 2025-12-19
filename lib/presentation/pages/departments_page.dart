@@ -16,6 +16,7 @@ import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/animated_list_item.dart';
 import 'department_details_page.dart';
+import '../../l10n/app_localizations.dart';
 
 class DepartmentsPage extends StatefulWidget {
   const DepartmentsPage({super.key});
@@ -109,7 +110,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
   /// Yangi bo'lim qo'shish
   Future<void> _addDepartment() async {
     if (_nameController.text.trim().isEmpty) {
-      _showSnackBar('Please enter a department name', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('enterProductName')?.replaceAll('product', 'department') ?? 'Please enter a department name', Colors.red);
       return;
     }
 
@@ -126,7 +127,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
       if (success) {
         _nameController.clear();
         _nameValidationError = null;
-        _showSnackBar('Department added successfully', Colors.green);
+        _showSnackBar(AppLocalizations.of(context)?.translate('productAdded')?.replaceAll('product', 'department') ?? 'Department added successfully', Colors.green);
         Navigator.pop(context); // Dialog yopish
       } else {
         // Check if it's a duplicate name error
@@ -142,14 +143,14 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
           // FIX: Dialog yopilgandan keyin xabar ko'rsatish
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _showSnackBar('A department with this name already exists. Please use a different name.', Colors.red);
+              _showSnackBar(AppLocalizations.of(context)?.translate('duplicateDepartmentName') ?? 'A department with this name already exists. Please use a different name.', Colors.red);
             }
           });
         } else {
           // FIX: Dialog yopilgandan keyin xabar ko'rsatish
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _showSnackBar('Failed to add department. Please try again.', Colors.red);
+              _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddDepartment') ?? 'Failed to add department. Please try again.', Colors.red);
             }
           });
         }
@@ -167,9 +168,9 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
       final success = await _departmentService.deleteDepartment(index);
       if (mounted) {
         if (success) {
-          _showSnackBar('Department deleted', Colors.orange);
+          _showSnackBar(AppLocalizations.of(context)?.translate('departmentDeleted') ?? 'Department deleted', Colors.orange);
         } else {
-          _showSnackBar('Failed to delete department. Please try again.', Colors.red);
+          _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddDepartment') ?? 'Failed to delete department. Please try again.', Colors.red);
         }
       }
     }
@@ -185,7 +186,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit Department'),
+        title: Text(AppLocalizations.of(context)?.translate('editDepartment') ?? 'Edit Department'),
         content: TextField(
           controller: _nameController,
           decoration: InputDecoration(
@@ -203,12 +204,12 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
               _editNameValidationError = null;
               Navigator.pop(context);
             },
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
           ),
           TextButton(
             onPressed: (_editNameValidationError != null) ? null : () async {
               if (_nameController.text.trim().isEmpty) {
-                _showSnackBar('Please enter a department name', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('enterProductName')?.replaceAll('product', 'department') ?? 'Please enter a department name', Colors.red);
                 return;
               }
               
@@ -222,7 +223,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                 setState(() {
                   _editNameValidationError = 'A department with this name already exists';
                 });
-                _showSnackBar('A department with this name already exists. Please use a different name.', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('duplicateDepartmentName') ?? 'A department with this name already exists. Please use a different name.', Colors.red);
                 return;
               }
               
@@ -234,7 +235,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                   _nameController.clear();
                   _editNameValidationError = null;
                   Navigator.pop(context);
-                  _showSnackBar('Department updated', Colors.green);
+                  _showSnackBar(AppLocalizations.of(context)?.translate('departmentUpdated') ?? 'Department updated', Colors.green);
                 } else {
                   // Check if it's a duplicate name error
                   final normalizedName = department.name.trim().toLowerCase();
@@ -246,14 +247,14 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                     setState(() {
                       _editNameValidationError = 'A department with this name already exists';
                     });
-                    _showSnackBar('A department with this name already exists. Please use a different name.', Colors.red);
+                    _showSnackBar(AppLocalizations.of(context)?.translate('duplicateDepartmentName') ?? 'A department with this name already exists. Please use a different name.', Colors.red);
                   } else {
-                    _showSnackBar('Failed to update department. Please try again.', Colors.red);
+                    _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddDepartment') ?? 'Failed to update department. Please try again.', Colors.red);
                   }
                 }
               }
             },
-            child: const Text('Save'),
+            child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
           ),
         ],
       ),
@@ -275,7 +276,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Departments'),
+        title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
         elevation: 2,
       ),
       body: Column(
@@ -288,7 +289,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
               children: [
                 SearchBarWidget(
                   controller: _searchController,
-                  hintText: 'Search departments...',
+                  hintText: AppLocalizations.of(context)?.translate('searchDepartments') ?? 'Search departments...',
                   onChanged: (_) => setState(() {}),
                   onClear: () => setState(() {}),
                 ),
@@ -367,8 +368,8 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Products: ${department.productIds.length}'),
-                            Text('Parts assigned: ${department.productParts.length}'),
+                            Text('${AppLocalizations.of(context)?.translate('products') ?? 'Products'}: ${department.productIds.length}'),
+                            Text('${AppLocalizations.of(context)?.translate('partsAssigned') ?? 'Parts assigned'}: ${department.productParts.length}'),
                           ],
                         ),
                         onTap: () {
@@ -395,23 +396,23 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                                 showDialog(
                                   context: context,
                                   builder: (context) => AlertDialog(
-                                    title: const Text('Delete Department'),
-                                    content: const Text(
-                                      'Are you sure you want to delete this department?',
+                                    title: Text(AppLocalizations.of(context)?.translate('deleteDepartment') ?? 'Delete Department'),
+                                    content: Text(
+                                      '${AppLocalizations.of(context)?.translate('deleteDepartmentConfirm') ?? 'Are you sure you want to delete this department'}?',
                                     ),
                                     actions: [
                                       TextButton(
                                         onPressed: () => Navigator.pop(context),
-                                        child: const Text('Cancel'),
+                                        child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                                       ),
                                       TextButton(
                                         onPressed: () {
                                           Navigator.pop(context);
                                           _deleteDepartment(department);
                                         },
-                                        child: const Text(
-                                          'Delete',
-                                          style: TextStyle(color: Colors.red),
+                                        child: Text(
+                                          AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+                                          style: const TextStyle(color: Colors.red),
                                         ),
                                       ),
                                     ],
@@ -440,13 +441,13 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
-              title: const Text('Add New Department'),
+              title: Text(AppLocalizations.of(context)?.translate('addDepartment') ?? 'Add New Department'),
               content: TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Department Name',
+                  labelText: AppLocalizations.of(context)?.translate('departmentName') ?? 'Department Name',
                   border: const OutlineInputBorder(),
-                  hintText: 'Enter department name',
+                  hintText: AppLocalizations.of(context)?.translate('enterDepartmentName') ?? 'Enter department name',
                   errorText: _nameValidationError,
                   errorMaxLines: 2,
                 ),
@@ -464,11 +465,11 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                     _nameValidationError = null;
                     Navigator.pop(context);
                   },
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                 ),
                 TextButton(
                   onPressed: (_nameValidationError != null) ? null : _addDepartment,
-                  child: const Text('Add'),
+                  child: Text(AppLocalizations.of(context)?.translate('add') ?? 'Add'),
                 ),
               ],
             ),

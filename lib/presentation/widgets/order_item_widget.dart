@@ -10,12 +10,14 @@ import '../../data/models/order_model.dart';
 import '../../data/models/department_model.dart';
 import '../widgets/status_badge_widget.dart';
 import '../widgets/animated_list_item.dart';
+import '../../l10n/app_localizations.dart';
 
 class OrderItemWidget extends StatelessWidget {
   final Order order;
   final Department? department;
   final VoidCallback onComplete;
   final VoidCallback onDelete;
+  final bool isCompleting; // OPTIMIZATION: Loading state
 
   const OrderItemWidget({
     super.key,
@@ -23,6 +25,7 @@ class OrderItemWidget extends StatelessWidget {
     this.department,
     required this.onComplete,
     required this.onDelete,
+    this.isCompleting = false, // Default: not loading
   });
 
   @override
@@ -93,7 +96,7 @@ class OrderItemWidget extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Quantity: ${order.quantity}',
+                      '${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ${order.quantity}',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[700],
@@ -113,7 +116,7 @@ class OrderItemWidget extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Created: ${order.createdAt.toString().substring(0, 16)}',
+                      '${AppLocalizations.of(context)?.translate('created') ?? 'Created'}: ${order.createdAt.toString().substring(0, 16)}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -128,11 +131,21 @@ class OrderItemWidget extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     // Complete button (only for pending orders)
+                    // OPTIMIZATION: Loading state bilan
                     if (order.status == 'pending')
                       TextButton.icon(
-                        onPressed: onComplete,
-                        icon: const Icon(Icons.check_circle, size: 18),
-                        label: const Text('Complete'),
+                        onPressed: isCompleting ? null : onComplete, // Disable while loading
+                        icon: isCompleting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                                ),
+                              )
+                            : const Icon(Icons.check_circle, size: 18),
+                        label: Text(AppLocalizations.of(context)?.translate('complete') ?? 'Complete'),
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.green,
                         ),
@@ -142,7 +155,7 @@ class OrderItemWidget extends StatelessWidget {
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
                       onPressed: onDelete,
-                      tooltip: 'Delete Order',
+                      tooltip: AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
                     ),
                   ],
                 ),

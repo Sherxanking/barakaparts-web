@@ -337,9 +337,11 @@ class OrderService {
       partsToUpdate[partId] = totalQty;
     }
 
-    // FIX: Barcha partlarni bir marta yangilash (performance)
-    for (var entry in partsToUpdate.entries) {
-      await _partService.decreaseQuantity(entry.key, entry.value);
+    // OPTIMIZATION: Barcha partlarni bir marta batch update qilish (tezroq)
+    final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+    if (!batchResult) {
+      debugPrint('❌ Failed to update parts in batch');
+      return false;
     }
 
     // Order statusini yangilash (Supabase'ga ham yozish)

@@ -21,12 +21,12 @@ import '../../data/services/product_service.dart';
 import '../../data/services/part_calculator_service.dart';
 import '../../data/services/part_service.dart';
 import '../../core/di/service_locator.dart';
-import '../../domain/entities/order.dart' as domain;
 import '../widgets/search_bar_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/order_item_widget.dart';
+import '../../l10n/app_localizations.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -61,6 +61,9 @@ class _OrdersPageState extends State<OrdersPage> {
   
   // Chrome uchun real-time stream subscription
   StreamSubscription? _ordersStreamSubscription;
+  
+  // Order completion loading state (optimization)
+  String? _completingOrderId;
 
   @override
   void initState() {
@@ -311,7 +314,7 @@ class _OrdersPageState extends State<OrdersPage> {
   Future<void> _createOrder() async {
     // Validatsiya
     if (selectedDepartmentId == null || selectedProductId == null) {
-      _showSnackBar('Please select a department and product', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('pleaseSelectDepartmentAndProduct') ?? 'Please select a department and product', Colors.red);
       return;
     }
 
@@ -319,7 +322,7 @@ class _OrdersPageState extends State<OrdersPage> {
     final product = _productService.getProductById(selectedProductId!);
 
     if (department == null || product == null) {
-      _showSnackBar('Selected department or product not found', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('selectedDepartmentOrProductNotFound') ?? 'Selected department or product not found', Colors.red);
       return;
     }
 
@@ -359,34 +362,48 @@ class _OrdersPageState extends State<OrdersPage> {
         }
         // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
         if (!calculationResult.hasShortage) {
-          _showSnackBar('Order created successfully', Colors.green);
+          _showSnackBar(AppLocalizations.of(context)?.translate('orderCreated') ?? 'Order created successfully', Colors.green);
         }
       } else {
-        _showSnackBar('Failed to create order. Please try again.', Colors.red);
+        _showSnackBar(AppLocalizations.of(context)?.translate('failedToCreateOrder') ?? 'Failed to create order. Please try again.', Colors.red);
       }
     }
   }
 
   /// Buyurtmani complete qilish
+  /// OPTIMIZATION: Loading indicator va background refresh
   Future<void> _completeOrder(Order order) async {
-    // FIX: Loading indicator ko'rsatish
+    // Loading state
     if (mounted) {
       setState(() {
-        // Loading state qo'shish kerak bo'lsa
+        _completingOrderId = order.id;
       });
     }
     
-    final success = await _orderService.completeOrder(order);
-    
-    if (mounted) {
-      if (success) {
-        // FIX: Chrome'da orderslarni qayta yuklash
-        if (kIsWeb) {
-          await _loadWebOrders();
+    try {
+      // OPTIMIZATION: Batch update bilan tezroq ishlaydi
+      final success = await _orderService.completeOrder(order);
+      
+      if (mounted) {
+        if (success) {
+          // OPTIMIZATION: Chrome'da background'da refresh (blocking emas)
+          if (kIsWeb) {
+            // Background'da refresh - UI'ni bloklamaydi
+            _loadWebOrders().catchError((e) {
+              debugPrint('⚠️ Background refresh failed: $e');
+            });
+          }
+          _showSnackBar(AppLocalizations.of(context)?.translate('orderCompleted') ?? 'Order completed successfully', Colors.green);
+        } else {
+          _showSnackBar(AppLocalizations.of(context)?.translate('failedToCompleteOrder') ?? 'Failed to complete order. Check parts availability.', Colors.red);
         }
-        _showSnackBar('Order completed successfully', Colors.green);
-      } else {
-        _showSnackBar('Failed to complete order. Check parts availability.', Colors.red);
+      }
+    } finally {
+      // Loading state'ni tozalash
+      if (mounted) {
+        setState(() {
+          _completingOrderId = null;
+        });
       }
     }
   }
@@ -397,17 +414,17 @@ class _OrdersPageState extends State<OrdersPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Order'),
-        content: Text('Are you sure you want to delete order for ${order.productName}?'),
+        title: Text(AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order'),
+        content: Text('${AppLocalizations.of(context)?.translate('deleteOrderConfirm') ?? 'Are you sure you want to delete order for'} ${order.productName}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
           ),
         ],
       ),
@@ -422,9 +439,9 @@ class _OrdersPageState extends State<OrdersPage> {
           if (kIsWeb) {
             await _loadWebOrders();
           }
-          _showSnackBar('Order deleted', Colors.orange);
+          _showSnackBar(AppLocalizations.of(context)?.translate('orderDeleted') ?? 'Order deleted', Colors.orange);
         } else {
-          _showSnackBar('Failed to delete order. Please try again.', Colors.red);
+          _showSnackBar(AppLocalizations.of(context)?.translate('failedToDeleteOrder') ?? 'Failed to delete order. Please try again.', Colors.red);
         }
       }
     }
@@ -443,10 +460,10 @@ class _OrdersPageState extends State<OrdersPage> {
           children: [
             Icon(Icons.warning, color: Colors.orange.shade700),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
-                'Parts Shortage',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                AppLocalizations.of(context)?.translate('partsShortage') ?? 'Parts Shortage',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -458,9 +475,9 @@ class _OrdersPageState extends State<OrdersPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'The following parts are insufficient:',
-                  style: TextStyle(fontWeight: FontWeight.w500),
+                Text(
+                  AppLocalizations.of(context)?.translate('partsInsufficient') ?? 'The following parts are insufficient:',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 16),
                 // FIX: ListView.builder o'rniga Column ishlatish - overflow muammosini oldini olish
@@ -490,14 +507,14 @@ class _OrdersPageState extends State<OrdersPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Required: ${shortage.required}',
+                                    '${AppLocalizations.of(context)?.translate('required') ?? 'Required'}: ${shortage.required}',
                                     style: TextStyle(
                                       color: Colors.grey[700],
                                       fontSize: 14,
                                     ),
                                   ),
                                   Text(
-                                    'Available: ${shortage.available}',
+                                    '${AppLocalizations.of(context)?.translate('available') ?? 'Available'}: ${shortage.available}',
                                     style: TextStyle(
                                       color: Colors.grey[700],
                                       fontSize: 14,
@@ -519,7 +536,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                   ),
                                 ),
                                 child: Text(
-                                  'Short: ${shortage.shortage}',
+                                  '${AppLocalizations.of(context)?.translate('short') ?? 'Short'}: ${shortage.shortage}',
                                   style: TextStyle(
                                     color: Colors.red.shade900,
                                     fontWeight: FontWeight.bold,
@@ -533,11 +550,11 @@ class _OrdersPageState extends State<OrdersPage> {
                       ),
                     ),
                   );
-                }).toList(),
+                }),
                 const SizedBox(height: 16),
-                const Text(
-                  'Do you want to proceed anyway?',
-                  style: TextStyle(
+                Text(
+                  AppLocalizations.of(context)?.translate('doYouWantToProceedAnyway') ?? 'Do you want to proceed anyway?',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 14,
                   ),
@@ -549,12 +566,12 @@ class _OrdersPageState extends State<OrdersPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
-              'Proceed',
+              AppLocalizations.of(context)?.translate('proceedAnyway') ?? 'Proceed',
               style: TextStyle(color: Colors.orange.shade700),
             ),
           ),
@@ -578,7 +595,7 @@ class _OrdersPageState extends State<OrdersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Orders'),
+        title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
         elevation: 2,
       ),
       body: Column(
@@ -614,7 +631,7 @@ class _OrdersPageState extends State<OrdersPage> {
           ),
                       const SizedBox(width: 8),
                       FilterChipWidget(
-                        label: 'Pending',
+                        label: AppLocalizations.of(context)?.translate('pending') ?? 'Pending',
                         selected: _selectedStatusFilter == 'pending',
                         onSelected: (selected) {
                           setState(() {
@@ -625,7 +642,7 @@ class _OrdersPageState extends State<OrdersPage> {
                       ),
                       const SizedBox(width: 8),
                       FilterChipWidget(
-                        label: 'Completed',
+                        label: AppLocalizations.of(context)?.translate('completed') ?? 'Completed',
                         selected: _selectedStatusFilter == 'completed',
                         onSelected: (selected) {
                           setState(() {
@@ -708,9 +725,9 @@ class _OrdersPageState extends State<OrdersPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  const Text(
-                                    'Create New Order',
-                                    style: TextStyle(
+                                  Text(
+                                    AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
+                                    style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -723,11 +740,11 @@ class _OrdersPageState extends State<OrdersPage> {
                                     builder: (context, Box<Department> deptBox, _) {
                                       final departments = deptBox.values.toList();
                                       return DropdownButtonFormField<String>(
-                                        value: selectedDepartmentId,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Select Department',
-                                          border: OutlineInputBorder(),
-                                          prefixIcon: Icon(Icons.business),
+                                        initialValue: selectedDepartmentId,
+                                        decoration: InputDecoration(
+                                          labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
+                                          border: const OutlineInputBorder(),
+                                          prefixIcon: const Icon(Icons.business),
                                         ),
                                         items: departments.map((dept) {
                                           return DropdownMenuItem(
@@ -755,11 +772,12 @@ class _OrdersPageState extends State<OrdersPage> {
                                           : <Product>[];
                                       
                                       return DropdownButtonFormField<String>(
-                                        value: selectedProductId,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Select Product',
-                                          border: OutlineInputBorder(),
-                                          prefixIcon: Icon(Icons.inventory),
+                                        key: ValueKey('product_${selectedDepartmentId}_${selectedProductId}'), // FIX: Key qo'shish - dropdown yangilanishi uchun
+                                        initialValue: selectedProductId,
+                                        decoration: InputDecoration(
+                                          labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
+                                          border: const OutlineInputBorder(),
+                                          prefixIcon: const Icon(Icons.inventory),
                                         ),
                                         items: products.map((product) {
                                           return DropdownMenuItem(
@@ -783,7 +801,7 @@ class _OrdersPageState extends State<OrdersPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-                                      const Text('Quantity: ', style: TextStyle(fontSize: 16)),
+                                      Text('${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ', style: const TextStyle(fontSize: 16)),
               IconButton(
                                         icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () {
@@ -816,7 +834,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                   ElevatedButton.icon(
                                     onPressed: _createOrder,
                                     icon: const Icon(Icons.add_shopping_cart),
-                                    label: const Text('Create Order'),
+                                    label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
                                     style: ElevatedButton.styleFrom(
                                       padding: const EdgeInsets.symmetric(vertical: 12),
                                     ),
@@ -832,9 +850,9 @@ class _OrdersPageState extends State<OrdersPage> {
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                          child: const Text(
-                            'Orders List',
-                            style: TextStyle(
+                          child: Text(
+                            AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
+                            style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                             ),
@@ -865,11 +883,13 @@ class _OrdersPageState extends State<OrdersPage> {
                               final department = _departmentService.getDepartmentById(order.departmentId);
                               
                               // FIX: OrderItemWidget ishlatish - rebuild optimizatsiyasi
+                              // OPTIMIZATION: Loading state uzatish
                               return OrderItemWidget(
                                 order: order,
                                 department: department,
                                 onComplete: () => _completeOrder(order),
                                 onDelete: () => _deleteOrder(order),
+                                isCompleting: _completingOrderId == order.id, // Loading state
                               );
                             },
                             childCount: orders.length,
@@ -946,55 +966,69 @@ class _OrdersPageState extends State<OrdersPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Create New Order',
-                        style: TextStyle(
+                      Text(
+                        AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 16),
                       // Department dropdown
-                      DropdownButtonFormField<String>(
-                        value: selectedDepartmentId,
-                        decoration: const InputDecoration(
-                          labelText: 'Department',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _departmentService.getAllDepartments().map((dept) {
-                          return DropdownMenuItem(
-                            value: dept.id,
-                            child: Text(dept.name),
+                      ValueListenableBuilder(
+                        valueListenable: _boxService.departmentsListenable,
+                        builder: (context, Box<Department> deptBox, _) {
+                          final departments = deptBox.values.toList();
+                          return DropdownButtonFormField<String>(
+                            initialValue: selectedDepartmentId,
+                            decoration: InputDecoration(
+                              labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.business),
+                            ),
+                            items: departments.map((dept) {
+                              return DropdownMenuItem(
+                                value: dept.id,
+                                child: Text(dept.name),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                selectedDepartmentId = value;
+                                selectedProductId = null; // Reset product
+                              });
+                            },
                           );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedDepartmentId = value;
-                            selectedProductId = null;
-                          });
                         },
                       ),
                       const SizedBox(height: 16),
-                      // Product dropdown
+                      // Product dropdown (filtered by department)
                       if (selectedDepartmentId != null)
-                        DropdownButtonFormField<String>(
-                          value: selectedProductId,
-                          decoration: const InputDecoration(
-                            labelText: 'Product',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: _productService
-                              .getProductsByDepartment(selectedDepartmentId!)
-                              .map((product) {
-                            return DropdownMenuItem(
-                              value: product.id,
-                              child: Text(product.name),
+                        ValueListenableBuilder(
+                          valueListenable: _boxService.productsListenable,
+                          builder: (context, Box<Product> prodBox, _) {
+                            final products = _productService.getProductsByDepartment(selectedDepartmentId!);
+                            
+                            return DropdownButtonFormField<String>(
+                              key: ValueKey('product_${selectedDepartmentId}_${selectedProductId}'), // FIX: Key qo'shish - dropdown yangilanishi uchun
+                              initialValue: selectedProductId,
+                              decoration: InputDecoration(
+                                labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.inventory),
+                              ),
+                              items: products.map((product) {
+                                return DropdownMenuItem(
+                                  value: product.id,
+                                  child: Text(product.name),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  selectedProductId = value;
+                                });
+                              },
                             );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              selectedProductId = value;
-                            });
                           },
                         ),
                       const SizedBox(height: 16),
@@ -1018,7 +1052,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                 selectedProductId != null
                             ? _createOrder
                             : null,
-                        child: const Text('Create Order'),
+                        child: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
                       ),
                     ],
                   ),
@@ -1031,9 +1065,9 @@ class _OrdersPageState extends State<OrdersPage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: const Text(
-                'Orders List',
-                style: TextStyle(
+              child: Text(
+                AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1063,6 +1097,7 @@ class _OrdersPageState extends State<OrdersPage> {
                     department: department,
                     onComplete: () => _completeOrder(order),
                     onDelete: () => _deleteOrder(order),
+                    isCompleting: _completingOrderId == order.id, // Loading state
                   );
                 },
                 childCount: orders.length,

@@ -3,6 +3,7 @@
 /// Bu widget barcha sahifalarda qidiruv funksiyasini ta'minlaydi.
 /// TextField va search icon bilan Material Design 3 standartlariga mos.
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 
 class SearchBarWidget extends StatelessWidget {
   /// Qidiruv so'zini boshqaruvchi controller
@@ -11,8 +12,8 @@ class SearchBarWidget extends StatelessWidget {
   /// Qidiruv so'zi o'zgarganda chaqiriladigan callback
   final ValueChanged<String>? onChanged;
   
-  /// Placeholder text
-  final String hintText;
+  /// Placeholder text (optional, will use default localized text if not provided)
+  final String? hintText;
   
   /// Qidiruvni tozalash funksiyasi
   final VoidCallback? onClear;
@@ -21,16 +22,17 @@ class SearchBarWidget extends StatelessWidget {
     super.key,
     required this.controller,
     this.onChanged,
-    this.hintText = 'Search...',
+    this.hintText,
     this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return TextField(
       controller: controller,
       decoration: InputDecoration(
-        hintText: hintText,
+        hintText: hintText ?? l10n?.translate('search') ?? 'Search...',
         prefixIcon: const Icon(Icons.search),
         suffixIcon: controller.text.isNotEmpty
             ? IconButton(

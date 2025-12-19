@@ -297,7 +297,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
                                       decimal: false,
                                     ),
                                     decoration: InputDecoration(
-                                      labelText: l10n?.translate('quantity') ?? 'Qty',
+                                      labelText: l10n?.translate('quantity') ?? 'Quantity',
                                       isDense: true,
                                       errorText: null, // FIX: Assertion xatolikni oldini olish
                                     ),
@@ -533,7 +533,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
                         child: Padding(
                           padding: const EdgeInsets.all(24),
                           child: Text(
-                            l10n?.translate('selectParts') ?? 'No parts selected. Tap "Select Parts" to add.',
+                            l10n?.translate('noPartsSelected') ?? 'No parts selected. Tap "Select Parts" to add.',
                             style: TextStyle(color: Colors.grey[600]),
                             textAlign: TextAlign.center,
                           ),

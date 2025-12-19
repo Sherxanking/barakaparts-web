@@ -27,6 +27,7 @@ import '../widgets/animated_list_item.dart';
 import '../widgets/image_picker_widget.dart';
 import '../../l10n/app_localizations.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../core/extensions/status_localization_extension.dart';
 
 class PartsPage extends StatefulWidget {
   const PartsPage({super.key});
@@ -294,13 +295,13 @@ class _PartsPageState extends State<PartsPage> {
     }
 
     if (_nameController.text.trim().isEmpty) {
-      _showSnackBar('Please enter a part name', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('enterPartName') ?? 'Please enter a part name', Colors.red);
       return;
     }
 
     final quantity = int.tryParse(_quantityController.text) ?? 1;
     if (quantity < 0) {
-      _showSnackBar('Quantity cannot be negative', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('quantityCannotBeNegative') ?? 'Quantity cannot be negative', Colors.red);
       return;
     }
 
@@ -343,7 +344,7 @@ class _PartsPageState extends State<PartsPage> {
           Navigator.pop(context);
           // FIX: UI ni darhol yangilash
           setState(() {});
-          _showSnackBar('Part added successfully', Colors.green);
+          _showSnackBar(AppLocalizations.of(context)?.translate('partAdded') ?? 'Part added successfully', Colors.green);
         } else {
           // Check if it's a duplicate name error
           final normalizedName = part.name.trim().toLowerCase();
@@ -353,19 +354,19 @@ class _PartsPageState extends State<PartsPage> {
           
           if (hasDuplicate) {
             setState(() {
-              _nameValidationError = 'A part with this name already exists';
+              _nameValidationError = AppLocalizations.of(context)?.translate('duplicatePartName') ?? 'A part with this name already exists';
             });
             // FIX: Dialog yopilgandan keyin xabar ko'rsatish
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('A part with this name already exists. Please use a different name.', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('duplicatePartName') ?? 'A part with this name already exists. Please use a different name.', Colors.red);
               }
             });
           } else {
             // FIX: Dialog yopilgandan keyin xabar ko'rsatish
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('Failed to add part. Please try again.', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddPart') ?? 'Failed to add part. Please try again.', Colors.red);
               }
             });
           }
@@ -387,17 +388,17 @@ class _PartsPageState extends State<PartsPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Part'),
-        content: Text('Are you sure you want to delete ${part.name}?'),
+        title: Text(AppLocalizations.of(context)?.translate('deletePart') ?? 'Delete Part'),
+        content: Text('${AppLocalizations.of(context)?.translate('deletePartConfirm') ?? 'Are you sure you want to delete'} ${part.name}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
           ),
         ],
       ),
@@ -410,7 +411,7 @@ class _PartsPageState extends State<PartsPage> {
         
         if (hiveIndex == null) {
           if (mounted) {
-            _showSnackBar('Part not found in storage', Colors.red);
+            _showSnackBar(AppLocalizations.of(context)?.translate('partNotFoundInStorage') ?? 'Part not found in storage', Colors.red);
           }
           return;
         }
@@ -434,14 +435,14 @@ class _PartsPageState extends State<PartsPage> {
             if (kIsWeb) {
               await _loadWebParts();
             }
-            _showSnackBar('Part deleted', Colors.orange);
+            _showSnackBar(AppLocalizations.of(context)?.translate('partDeleted') ?? 'Part deleted', Colors.orange);
           } else {
-            _showSnackBar('Failed to delete part. Please try again.', Colors.red);
+            _showSnackBar(AppLocalizations.of(context)?.translate('failedToDeleteOrder') ?? 'Failed to delete part. Please try again.', Colors.red);
           }
         }
       } catch (e) {
         if (mounted) {
-          _showSnackBar('Error deleting part: ${e.toString()}', Colors.red);
+          _showSnackBar('${AppLocalizations.of(context)?.translate('errorDeletingPart') ?? 'Error deleting part'}: ${e.toString()}', Colors.red);
         }
       }
     }
@@ -460,7 +461,7 @@ class _PartsPageState extends State<PartsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit Part'),
+        title: Text(AppLocalizations.of(context)?.translate('editPart') ?? 'Edit Part'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -486,28 +487,28 @@ class _PartsPageState extends State<PartsPage> {
               const SizedBox(height: 16),
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Part Name',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: AppLocalizations.of(context)?.translate('partName') ?? 'Part Name',
+                  border: const OutlineInputBorder(),
                 ),
                 autofocus: true,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _quantityController,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity',
+                  border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _minQuantityController,
-                decoration: const InputDecoration(
-                  labelText: 'Min Quantity (Alert Threshold)',
-                  border: OutlineInputBorder(),
-                  helperText: 'Alert when quantity falls below this',
+                decoration: InputDecoration(
+                  labelText: '${AppLocalizations.of(context)?.translate('minQuantity') ?? 'Min Quantity'} (${AppLocalizations.of(context)?.translate('alertThreshold') ?? 'Alert Threshold'})',
+                  border: const OutlineInputBorder(),
+                  helperText: AppLocalizations.of(context)?.translate('alertWhenQuantityFallsBelow') ?? 'Alert when quantity falls below this',
                 ),
                 keyboardType: TextInputType.number,
               ),
@@ -524,12 +525,12 @@ class _PartsPageState extends State<PartsPage> {
               _currentEditImagePath = null;
               Navigator.pop(context);
             },
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
           ),
           TextButton(
             onPressed: () async {
               if (_nameController.text.trim().isEmpty) {
-                _showSnackBar('Please enter a part name', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('enterPartName') ?? 'Please enter a part name', Colors.red);
                 return;
               }
 
@@ -571,13 +572,13 @@ class _PartsPageState extends State<PartsPage> {
                   if (kIsWeb) {
                     await _loadWebParts();
                   }
-                  _showSnackBar('Part updated', Colors.green);
+                  _showSnackBar(AppLocalizations.of(context)?.translate('partUpdated') ?? 'Part updated', Colors.green);
                 } else {
-                  _showSnackBar('Failed to update part. Please try again.', Colors.red);
+                  _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddPart') ?? 'Failed to update part. Please try again.', Colors.red);
                 }
               }
             },
-            child: const Text('Save'),
+            child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
           ),
         ],
       ),
@@ -592,23 +593,23 @@ class _PartsPageState extends State<PartsPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Select Image Source'),
+        title: Text(AppLocalizations.of(context)?.translate('selectImageSource') ?? 'Select Image Source'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               leading: const Icon(Icons.camera_alt, size: 32, color: Colors.blue),
-              title: const Text('Camera', style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text('Take a new photo'),
+              title: Text(AppLocalizations.of(context)?.translate('camera') ?? 'Camera', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(AppLocalizations.of(context)?.translate('takeNewPhoto') ?? 'Take a new photo'),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             const SizedBox(height: 8),
             ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               leading: const Icon(Icons.photo_library, size: 32, color: Colors.green),
-              title: const Text('Gallery', style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text('Choose from gallery'),
+              title: Text(AppLocalizations.of(context)?.translate('gallery') ?? 'Gallery', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(AppLocalizations.of(context)?.translate('chooseFromGallery') ?? 'Choose from gallery'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
@@ -636,15 +637,15 @@ class _PartsPageState extends State<PartsPage> {
             if (success) {
               // FIX: UI ni darhol yangilash
               setState(() {});
-              _showSnackBar('Image updated', Colors.green);
+              _showSnackBar(AppLocalizations.of(context)?.translate('imageUpdated') ?? 'Image updated', Colors.green);
             } else {
-              _showSnackBar('Failed to update image. Please try again.', Colors.red);
+              _showSnackBar(AppLocalizations.of(context)?.translate('failedToUpdateImage') ?? 'Failed to update image. Please try again.', Colors.red);
             }
           }
         }
       } catch (e) {
         if (mounted) {
-          _showSnackBar('Error: ${e.toString()}', Colors.red);
+          _showSnackBar('${AppLocalizations.of(context)?.translate('error') ?? 'Error'}: ${e.toString()}', Colors.red);
         }
       }
     }
@@ -719,12 +720,12 @@ class _PartsPageState extends State<PartsPage> {
                                         color: Colors.grey[200],
                                         borderRadius: BorderRadius.circular(12),
                                       ),
-                                      child: const Column(
+                                      child: Column(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Icon(Icons.broken_image, size: 64, color: Colors.grey),
-                                          SizedBox(height: 8),
-                                          Text('Image not found', style: TextStyle(color: Colors.grey)),
+                                          const Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                                          const SizedBox(height: 8),
+                                          Text(AppLocalizations.of(context)?.translate('imageNotFound') ?? 'Image not found', style: const TextStyle(color: Colors.grey)),
                                         ],
                                       ),
                                     );
@@ -760,12 +761,12 @@ class _PartsPageState extends State<PartsPage> {
                                         color: Colors.grey[200],
                                         borderRadius: BorderRadius.circular(12),
                                       ),
-                                      child: const Column(
+                                      child: Column(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Icon(Icons.broken_image, size: 64, color: Colors.grey),
-                                          SizedBox(height: 8),
-                                          Text('Image not found', style: TextStyle(color: Colors.grey)),
+                                          const Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                                          const SizedBox(height: 8),
+                                          Text(AppLocalizations.of(context)?.translate('imageNotFound') ?? 'Image not found', style: const TextStyle(color: Colors.grey)),
                                         ],
                                       ),
                                     );
@@ -779,12 +780,12 @@ class _PartsPageState extends State<PartsPage> {
                             color: Colors.grey[200],
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Column(
+                          child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.image, size: 64, color: Colors.grey),
-                              SizedBox(height: 8),
-                              Text('No image', style: TextStyle(color: Colors.grey)),
+                              const Icon(Icons.image, size: 64, color: Colors.grey),
+                              const SizedBox(height: 8),
+                              Text(AppLocalizations.of(context)?.translate('noImage') ?? 'No image', style: const TextStyle(color: Colors.grey)),
                             ],
                           ),
                         ),
@@ -802,7 +803,7 @@ class _PartsPageState extends State<PartsPage> {
                         _pickAndUpdateImage(part);
                       },
                       icon: const Icon(Icons.edit),
-                      label: const Text('Change'),
+                      label: Text(AppLocalizations.of(context)?.translate('change') ?? 'Change'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
@@ -823,15 +824,15 @@ class _PartsPageState extends State<PartsPage> {
                               if (success) {
                                 // FIX: UI ni darhol yangilash
                                 setState(() {});
-                                _showSnackBar('Image deleted', Colors.orange);
+                                _showSnackBar(AppLocalizations.of(context)?.translate('imageDeleted') ?? 'Image deleted', Colors.orange);
                               } else {
-                                _showSnackBar('Failed to delete image. Please try again.', Colors.red);
+                                _showSnackBar(AppLocalizations.of(context)?.translate('failedToDeleteImage') ?? 'Failed to delete image. Please try again.', Colors.red);
                               }
                             }
                           }
                         },
                         icon: const Icon(Icons.delete),
-                        label: const Text('Delete'),
+                        label: Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
@@ -871,7 +872,7 @@ class _PartsPageState extends State<PartsPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            const Text('Parts'),
+            Text(AppLocalizations.of(context)?.translate('parts') ?? 'Parts'),
             if (lowStockCount > 0) ...[
               const SizedBox(width: 8),
               Container(
@@ -913,7 +914,7 @@ class _PartsPageState extends State<PartsPage> {
               children: [
                 SearchBarWidget(
                   controller: _searchController,
-                  hintText: 'Search parts...',
+                  hintText: AppLocalizations.of(context)?.translate('searchParts') ?? 'Search parts...',
                   onChanged: (_) => setState(() {}),
                   onClear: () => setState(() {}),
                 ),
@@ -922,7 +923,7 @@ class _PartsPageState extends State<PartsPage> {
                 Row(
                   children: [
                     FilterChipWidget(
-                      label: 'Low Stock',
+                      label: AppLocalizations.of(context)?.translate('lowStock') ?? 'Low Stock',
                       selected: _showLowStockOnly,
                       onSelected: (selected) {
                         setState(() {
@@ -984,7 +985,7 @@ class _PartsPageState extends State<PartsPage> {
                             _showLowStockOnly = true;
                           });
                         },
-                        child: const Text('View All'),
+                        child: Text(AppLocalizations.of(context)?.translate('viewAll') ?? 'View All'),
                       ),
                     ],
                   ),
@@ -1290,7 +1291,7 @@ class _PartsPageState extends State<PartsPage> {
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: Text(
-                                              part.status.toUpperCase(),
+                                              part.status.localizedStatus(context),
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 color: statusColor,
@@ -1393,7 +1394,7 @@ class _PartsPageState extends State<PartsPage> {
             context: context,
             builder: (context) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text('Add New Part'),
+              title: Text(AppLocalizations.of(context)?.translate('addPart') ?? 'Add New Part'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1411,9 +1412,9 @@ class _PartsPageState extends State<PartsPage> {
                     TextField(
                       controller: _nameController,
                       decoration: InputDecoration(
-                        labelText: 'Part Name',
+                        labelText: AppLocalizations.of(context)?.translate('partName') ?? 'Part Name',
                         border: const OutlineInputBorder(),
-                        hintText: 'Enter part name',
+                        hintText: AppLocalizations.of(context)?.translate('enterPartName') ?? 'Enter part name',
                         prefixIcon: const Icon(Icons.label),
                         errorText: _nameValidationError,
                         errorMaxLines: 2,
@@ -1428,11 +1429,11 @@ class _PartsPageState extends State<PartsPage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _quantityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Quantity',
-                        border: OutlineInputBorder(),
-                        hintText: 'Enter quantity',
-                        prefixIcon: Icon(Icons.numbers),
+                      decoration: InputDecoration(
+                        labelText: AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity',
+                        border: const OutlineInputBorder(),
+                        hintText: AppLocalizations.of(context)?.translate('enterQuantity') ?? 'Enter quantity',
+                        prefixIcon: const Icon(Icons.numbers),
                       ),
                       keyboardType: TextInputType.number,
                       onSubmitted: (_) => _addPart(),
@@ -1440,12 +1441,12 @@ class _PartsPageState extends State<PartsPage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _minQuantityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Min Quantity (Alert Threshold)',
-                        border: OutlineInputBorder(),
-                        hintText: 'Enter minimum quantity',
-                        prefixIcon: Icon(Icons.warning),
-                        helperText: 'Alert when quantity falls below this',
+                      decoration: InputDecoration(
+                        labelText: '${AppLocalizations.of(context)?.translate('minQuantity') ?? 'Min Quantity'} (${AppLocalizations.of(context)?.translate('alertThreshold') ?? 'Alert Threshold'})',
+                        border: const OutlineInputBorder(),
+                        hintText: AppLocalizations.of(context)?.translate('enterMinQuantity') ?? 'Enter minimum quantity',
+                        prefixIcon: const Icon(Icons.warning),
+                        helperText: AppLocalizations.of(context)?.translate('alertWhenQuantityFallsBelow') ?? 'Alert when quantity falls below this',
                       ),
                       keyboardType: TextInputType.number,
                       onSubmitted: (_) => _addPart(),
@@ -1463,7 +1464,7 @@ class _PartsPageState extends State<PartsPage> {
                     _nameValidationError = null;
                     Navigator.pop(context);
                   },
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                 ),
                 ElevatedButton(
                   onPressed: (_isCreatingPart || _nameValidationError != null) ? null : _addPart,
@@ -1480,14 +1481,14 @@ class _PartsPageState extends State<PartsPage> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text('Add'),
+                      : Text(AppLocalizations.of(context)?.translate('add') ?? 'Add'),
                 ),
               ],
             ),
           );
         },
         icon: const Icon(Icons.add),
-        label: const Text('Add Part'),
+        label: Text(AppLocalizations.of(context)?.translate('addPart') ?? 'Add Part'),
       )
           : null, // Hide button if user can't create parts
     );
@@ -1510,7 +1511,7 @@ class _PartsPageState extends State<PartsPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Tap to add',
+            AppLocalizations.of(context)?.translate('tapToAdd') ?? 'Tap to add',
             style: TextStyle(
               fontSize: 10,
               color: statusColor.withOpacity(0.6),

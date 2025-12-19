@@ -27,6 +27,7 @@ import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
 import 'product_edit_page.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../l10n/app_localizations.dart';
 
 class ProductsPage extends StatefulWidget {
   const ProductsPage({super.key});
@@ -387,17 +388,17 @@ class _ProductsPageState extends State<ProductsPage> {
     }
 
     if (_nameController.text.trim().isEmpty) {
-      _showSnackBar('Please enter a product name', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('enterProductName') ?? 'Please enter a product name', Colors.red);
       return;
     }
 
     if (selectedDepartmentId == null) {
-      _showSnackBar('Please select a department', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('pleaseSelectDepartment') ?? 'Please select a department', Colors.red);
       return;
     }
 
     if (selectedParts.isEmpty) {
-      _showSnackBar('Please select at least one part', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)?.translate('selectAtLeastOnePart') ?? 'Please select at least one part', Colors.red);
       return;
     }
 
@@ -439,7 +440,7 @@ class _ProductsPageState extends State<ProductsPage> {
           if (mounted) {
             setState(() {});
           }
-          _showSnackBar('Product added successfully', Colors.green);
+          _showSnackBar(AppLocalizations.of(context)?.translate('productAdded') ?? 'Product added successfully', Colors.green);
         } else {
           // Check if it's a duplicate name error
           final normalizedName = product.name.trim().toLowerCase();
@@ -454,14 +455,14 @@ class _ProductsPageState extends State<ProductsPage> {
             // FIX: Dialog yopilgandan keyin xabar ko'rsatish
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('A product with this name already exists. Please use a different name.', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('duplicateProductName') ?? 'A product with this name already exists. Please use a different name.', Colors.red);
               }
             });
           } else {
             // FIX: Dialog yopilgandan keyin xabar ko'rsatish
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('Failed to add product. Please try again.', Colors.red);
+                _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddProduct') ?? 'Failed to add product. Please try again.', Colors.red);
               }
             });
           }
@@ -507,7 +508,7 @@ class _ProductsPageState extends State<ProductsPage> {
       
       if (hiveIndex == null) {
         if (mounted) {
-          _showSnackBar('Product not found in storage', Colors.red);
+          _showSnackBar(AppLocalizations.of(context)?.translate('partNotFoundInStorage')?.replaceAll('part', 'product') ?? 'Product not found in storage', Colors.red);
         }
         return;
       }
@@ -528,14 +529,14 @@ class _ProductsPageState extends State<ProductsPage> {
             if (kIsWeb) {
               await _loadWebProducts();
             }
-            _showSnackBar('Product deleted', Colors.orange);
+            _showSnackBar(AppLocalizations.of(context)?.translate('productDeleted') ?? 'Product deleted', Colors.orange);
           } else {
-            _showSnackBar('Failed to delete product. Please try again.', Colors.red);
+            _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddProduct') ?? 'Failed to delete product. Please try again.', Colors.red);
           }
         }
     } catch (e) {
       if (mounted) {
-        _showSnackBar('Error deleting product: ${e.toString()}', Colors.red);
+        _showSnackBar('${AppLocalizations.of(context)?.translate('error') ?? 'Error'} deleting product: ${e.toString()}', Colors.red);
       }
     }
   }
@@ -583,7 +584,7 @@ class _ProductsPageState extends State<ProductsPage> {
     
     if (allParts.isEmpty) {
       if (mounted) {
-        _showSnackBar('No parts available. Please add parts first.', Colors.orange);
+        _showSnackBar(AppLocalizations.of(context)?.translate('noPartsAvailable') ?? 'No parts available. Please add parts first.', Colors.orange);
       }
       return;
     }
@@ -605,7 +606,7 @@ class _ProductsPageState extends State<ProductsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Parts'),
+        title: Text(AppLocalizations.of(context)?.translate('selectParts') ?? 'Select Parts'),
         content: StatefulBuilder(
           builder: (context, setDialogState) => SizedBox(
             width: double.maxFinite,
@@ -619,7 +620,7 @@ class _ProductsPageState extends State<ProductsPage> {
                     margin: const EdgeInsets.symmetric(vertical: 4),
                     child: ListTile(
                       title: Text(part.name),
-                      subtitle: Text('Available: ${part.quantity}'),
+                      subtitle: Text('${AppLocalizations.of(context)?.translate('available') ?? 'Available'}: ${part.quantity}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -644,8 +645,8 @@ class _ProductsPageState extends State<ProductsPage> {
                               width: 80,
                               child: TextField(
                                 keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'Qty',
+                                decoration: InputDecoration(
+                                  labelText: AppLocalizations.of(context)?.translate('quantity') ?? 'Qty',
                                   isDense: true,
                                 ),
                                 controller: controllers[part.id],
@@ -675,14 +676,14 @@ class _ProductsPageState extends State<ProductsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
           ),
           TextButton(
             onPressed: () {
               selectedParts = tempSelectedParts;
               Navigator.pop(context);
             },
-            child: const Text('Save'),
+            child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
           ),
         ],
       ),
@@ -715,7 +716,7 @@ class _ProductsPageState extends State<ProductsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Products'),
+        title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
         elevation: 2,
       ),
       body: Column(
@@ -728,7 +729,7 @@ class _ProductsPageState extends State<ProductsPage> {
               children: [
                 SearchBarWidget(
                   controller: _searchController,
-                  hintText: 'Search products...',
+                  hintText: AppLocalizations.of(context)?.translate('searchProducts') ?? 'Search products...',
                   onChanged: (_) => setState(() {}),
                   onClear: () => setState(() {}),
                 ),
@@ -743,7 +744,7 @@ class _ProductsPageState extends State<ProductsPage> {
                       child: Row(
                         children: [
                           FilterChipWidget(
-                            label: 'All Departments',
+                            label: AppLocalizations.of(context)?.translate('allDepartments') ?? 'All Departments',
                             selected: _selectedDepartmentFilter == null,
                             onSelected: (selected) {
                               setState(() {
@@ -864,8 +865,8 @@ class _ProductsPageState extends State<ProductsPage> {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Department: ${department?.name ?? 'Unknown'}'),
-                            Text('Parts: ${product.parts.length}'),
+                            Text('${AppLocalizations.of(context)?.translate('department') ?? 'Department'}: ${department?.name ?? AppLocalizations.of(context)?.translate('unknown') ?? 'Unknown'}'),
+                            Text('${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'}: ${product.parts.length}'),
                             if (product.parts.isNotEmpty)
                               Text(
                                 product.parts.entries
@@ -899,23 +900,23 @@ class _ProductsPageState extends State<ProductsPage> {
                             showDialog(
                               context: context,
                               builder: (context) => AlertDialog(
-                                title: const Text('Delete Product'),
-                                content: const Text(
-                                  'Are you sure you want to delete this product?',
+                                title: Text(AppLocalizations.of(context)?.translate('deleteProduct') ?? 'Delete Product'),
+                                content: Text(
+                                  '${AppLocalizations.of(context)?.translate('deleteProductConfirm') ?? 'Are you sure you want to delete this product'}?',
                                 ),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(context),
-                                    child: const Text('Cancel'),
+                                    child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                                   ),
                                   TextButton(
                                     onPressed: () {
                                       Navigator.pop(context);
                                       _deleteProduct(product);
                                     },
-                                    child: const Text(
-                                      'Delete',
-                                      style: TextStyle(color: Colors.red),
+                                    child: Text(
+                                      AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+                                      style: const TextStyle(color: Colors.red),
                                     ),
                                   ),
                                 ],
@@ -947,7 +948,7 @@ class _ProductsPageState extends State<ProductsPage> {
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
-              title: const Text('Add New Product'),
+              title: Text(AppLocalizations.of(context)?.translate('addProduct') ?? 'Add New Product'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -955,9 +956,9 @@ class _ProductsPageState extends State<ProductsPage> {
                     TextField(
                       controller: _nameController,
                       decoration: InputDecoration(
-                        labelText: 'Product Name',
+                        labelText: AppLocalizations.of(context)?.translate('productName') ?? 'Product Name',
                         border: const OutlineInputBorder(),
-                        hintText: 'Enter product name',
+                        hintText: AppLocalizations.of(context)?.translate('enterProductName') ?? 'Enter product name',
                         errorText: _nameValidationError,
                         errorMaxLines: 2,
                       ),
@@ -970,9 +971,9 @@ class _ProductsPageState extends State<ProductsPage> {
                         final departments = deptBox.values.toList();
                         return DropdownButtonFormField<String>(
                           value: selectedDepartmentId,
-                          decoration: const InputDecoration(
-                            labelText: 'Department',
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Department',
+                            border: const OutlineInputBorder(),
                           ),
                           items: departments.map((dept) {
                             return DropdownMenuItem(
@@ -994,8 +995,8 @@ class _ProductsPageState extends State<ProductsPage> {
                       icon: const Icon(Icons.add),
                       label: Text(
                         selectedParts.isEmpty
-                            ? 'Select Parts'
-                            : 'Parts (${selectedParts.length})',
+                            ? (AppLocalizations.of(context)?.translate('selectParts') ?? 'Select Parts')
+                            : '${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'} (${selectedParts.length})',
                       ),
                     ),
                   ],
@@ -1010,7 +1011,7 @@ class _ProductsPageState extends State<ProductsPage> {
                     _nameValidationError = null;
                     Navigator.pop(context);
                   },
-                  child: const Text('Cancel'),
+                  child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                 ),
                 TextButton(
                   onPressed: (_isCreatingProduct || _nameValidationError != null) ? null : () {
@@ -1022,7 +1023,7 @@ class _ProductsPageState extends State<ProductsPage> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Add'),
+                      : Text(AppLocalizations.of(context)?.translate('add') ?? 'Add'),
                 ),
               ],
             ),
@@ -1130,8 +1131,8 @@ class _ProductsPageState extends State<ProductsPage> {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Department: ${department?.name ?? 'Unknown'}'),
-                      Text('Parts: ${product.parts.length}'),
+                      Text('${AppLocalizations.of(context)?.translate('department') ?? 'Department'}: ${department?.name ?? AppLocalizations.of(context)?.translate('unknown') ?? 'Unknown'}'),
+                      Text('${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'}: ${product.parts.length}'),
                       if (product.parts.isNotEmpty)
                         Text(
                           product.parts.entries
@@ -1168,23 +1169,23 @@ class _ProductsPageState extends State<ProductsPage> {
                       showDialog(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: const Text('Delete Product'),
-                          content: const Text(
-                            'Are you sure you want to delete this product?',
+                          title: Text(AppLocalizations.of(context)?.translate('deleteProduct') ?? 'Delete Product'),
+                          content: Text(
+                            '${AppLocalizations.of(context)?.translate('deleteProductConfirm') ?? 'Are you sure you want to delete this product'}?',
                           ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
+                              child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                             ),
                             TextButton(
                               onPressed: () {
                                 Navigator.pop(context);
                                 _deleteProduct(product);
                               },
-                              child: const Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.red),
+                              child: Text(
+                                AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+                                style: const TextStyle(color: Colors.red),
                               ),
                             ),
                           ],

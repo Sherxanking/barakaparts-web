@@ -4,6 +4,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../l10n/app_localizations.dart';
 
 class ImagePickerWidget extends StatelessWidget {
   /// Hozirgi rasm fayl yo'li
@@ -25,22 +26,23 @@ class ImagePickerWidget extends StatelessWidget {
   /// Rasm tanlash dialogini ko'rsatish
   Future<void> _pickImage(BuildContext context) async {
     final picker = ImagePicker();
+    final l10n = AppLocalizations.of(context);
     
     final source = await showDialog<ImageSource>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Image Source'),
+        title: Text(l10n?.translate('selectImageSource') ?? 'Select Image Source'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt),
-              title: const Text('Camera'),
+              title: Text(l10n?.translate('camera') ?? 'Camera'),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text('Gallery'),
+              title: Text(l10n?.translate('gallery') ?? 'Gallery'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
@@ -108,7 +110,9 @@ class ImagePickerWidget extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: () => _pickImage(context),
                 icon: const Icon(Icons.image),
-                label: Text(hasImage ? 'Change Image' : 'Pick Image'),
+                label: Text(hasImage 
+                  ? (AppLocalizations.of(context)?.translate('changeImage') ?? 'Change Image')
+                  : (AppLocalizations.of(context)?.translate('pickImage') ?? 'Pick Image')),
               ),
             ),
             if (hasImage) ...[
@@ -119,7 +123,7 @@ class ImagePickerWidget extends StatelessWidget {
                   onImageDeleted?.call();
                 },
                 icon: const Icon(Icons.delete, color: Colors.red),
-                tooltip: 'Remove Image',
+                tooltip: AppLocalizations.of(context)?.translate('removeImage') ?? 'Remove Image',
               ),
             ],
           ],
@@ -140,7 +144,7 @@ class ImagePickerWidget extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap to add image',
+            AppLocalizations.of(context)?.translate('tapToAddImage') ?? 'Tap to add image',
             style: TextStyle(
               color: Colors.grey[600],
               fontSize: 14,
