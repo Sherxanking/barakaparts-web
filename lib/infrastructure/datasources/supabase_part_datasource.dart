@@ -129,6 +129,11 @@ class SupabasePartDatasource {
         return Left<Failure, Part>(PermissionFailure('You do not have permission to create parts.'));
       } else if (errorStr.contains('network') || errorStr.contains('connection')) {
         return Left<Failure, Part>(ServerFailure('Network error. Please check your internet connection.'));
+      } else if (errorStr.contains('duplicate key') || 
+                 errorStr.contains('unique constraint') || 
+                 errorStr.contains('idx_parts_name_unique')) {
+        // Duplicate name detected by database
+        return Left<Failure, Part>(ValidationFailure('A part with this name already exists. Please use a different name.'));
       }
       
       return Left<Failure, Part>(ServerFailure('Failed to create part: ${e.toString()}'));

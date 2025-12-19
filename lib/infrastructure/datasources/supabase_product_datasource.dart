@@ -102,6 +102,22 @@ class SupabaseProductDatasource {
     } catch (e, stackTrace) {
       debugPrint('❌ Failed to create product in Supabase: $e');
       debugPrint('   Stack trace: $stackTrace');
+      final errorStr = e.toString();
+      
+      // Provide specific error messages
+      if (errorStr.contains('null value') || errorStr.contains('NOT NULL')) {
+        return Left(ValidationFailure('Missing required field. Please check all inputs.'));
+      } else if (errorStr.contains('permission') || errorStr.contains('policy')) {
+        return Left(PermissionFailure('You do not have permission to create products.'));
+      } else if (errorStr.contains('network') || errorStr.contains('connection')) {
+        return Left(ServerFailure('Network error. Please check your internet connection.'));
+      } else if (errorStr.contains('duplicate key') || 
+                 errorStr.contains('unique constraint') || 
+                 errorStr.contains('idx_products_name_unique')) {
+        // Duplicate name detected by database
+        return Left(ValidationFailure('A product with this name already exists. Please use a different name.'));
+      }
+      
       return Left(ServerFailure('Failed to create product: $e'));
     }
   }

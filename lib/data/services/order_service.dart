@@ -316,7 +316,9 @@ class OrderService {
       return false; // Product not found
     }
 
-    // Har bir part uchun miqdorni tekshirish va kamaytirish
+    // FIX: Barcha partlarni bir marta tekshirish (performance)
+    final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
+    
     for (var entry in product.parts.entries) {
       final partId = entry.key;
       final qtyPerProduct = entry.value;
@@ -331,13 +333,24 @@ class OrderService {
         return false; // Insufficient stock
       }
 
-      // Stock reduction
-      await _partService.decreaseQuantity(partId, totalQty);
+      // Barcha o'zgarishlarni to'plab olish
+      partsToUpdate[partId] = totalQty;
     }
 
-    // Order statusini yangilash
+    // FIX: Barcha partlarni bir marta yangilash (performance)
+    for (var entry in partsToUpdate.entries) {
+      await _partService.decreaseQuantity(entry.key, entry.value);
+    }
+
+    // Order statusini yangilash (Supabase'ga ham yozish)
     order.status = 'completed';
-    await order.save();
+    
+    // FIX: Supabase'ga ham yozish (realtime sync uchun)
+    final updateResult = await updateOrder(order);
+    if (!updateResult) {
+      // Supabase'ga yozish xato bo'lsa ham Hive'ga yozish
+      await order.save();
+    }
 
     return true;
   }

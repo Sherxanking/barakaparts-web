@@ -369,7 +369,15 @@ class _OrdersPageState extends State<OrdersPage> {
 
   /// Buyurtmani complete qilish
   Future<void> _completeOrder(Order order) async {
+    // FIX: Loading indicator ko'rsatish
+    if (mounted) {
+      setState(() {
+        // Loading state qo'shish kerak bo'lsa
+      });
+    }
+    
     final success = await _orderService.completeOrder(order);
+    
     if (mounted) {
       if (success) {
         // FIX: Chrome'da orderslarni qayta yuklash

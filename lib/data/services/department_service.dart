@@ -35,10 +35,34 @@ class DepartmentService {
     }
   }
 
+  /// Check if department name already exists (case-insensitive, trimmed)
+  /// Returns true if duplicate found, false otherwise
+  bool _hasDuplicateName(String name, {String? excludeId}) {
+    final normalizedName = name.trim().toLowerCase();
+    try {
+      return _boxService.departmentsBox.values.any((existingDept) {
+        if (excludeId != null && existingDept.id == excludeId) {
+          return false; // Exclude current item when editing
+        }
+        return existingDept.name.trim().toLowerCase() == normalizedName;
+      });
+    } catch (e) {
+      debugPrint('⚠️ Error checking duplicate department name: $e');
+      return false; // If check fails, allow creation (server will catch it)
+    }
+  }
+
   /// Department qo'shish
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Duplicate name validation (case-insensitive, trimmed)
   Future<bool> addDepartment(Department department) async {
     try {
+      // 0. Local validation: Check for duplicate name
+      if (_hasDuplicateName(department.name)) {
+        debugPrint('❌ Duplicate department name detected: ${department.name}');
+        return false; // Will be handled by UI with proper error message
+      }
+      
       // 1. Supabase'ga yozish (realtime sync uchun)
       try {
         final response = await _supabaseClient
@@ -54,6 +78,18 @@ class DepartmentService {
         debugPrint('✅ Department created in Supabase: ${response['name']}');
       } catch (e) {
         debugPrint('❌ Failed to create department in Supabase: $e');
+        final errorStr = e.toString();
+        
+        // Check for duplicate name error
+        if (errorStr.contains('duplicate key') || 
+            errorStr.contains('unique constraint') || 
+            errorStr.contains('departments_name_key') ||
+            errorStr.contains('idx_departments_name_unique')) {
+          debugPrint('❌ Duplicate department name detected by database');
+          // Return false to trigger UI error message
+          return false;
+        }
+        
         // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
         try {
           await _boxService.departmentsBox.add(department);
@@ -80,8 +116,15 @@ class DepartmentService {
 
   /// Department yangilash
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Duplicate name validation (case-insensitive, trimmed)
   Future<bool> updateDepartment(Department department) async {
     try {
+      // 0. Local validation: Check for duplicate name (exclude current department)
+      if (_hasDuplicateName(department.name, excludeId: department.id)) {
+        debugPrint('❌ Duplicate department name detected: ${department.name}');
+        return false; // Will be handled by UI with proper error message
+      }
+      
       // 1. Supabase'ga yozish (realtime sync uchun)
       try {
         await _supabaseClient
@@ -94,6 +137,18 @@ class DepartmentService {
         debugPrint('✅ Department updated in Supabase: ${department.name}');
       } catch (e) {
         debugPrint('❌ Failed to update department in Supabase: $e');
+        final errorStr = e.toString();
+        
+        // Check for duplicate name error
+        if (errorStr.contains('duplicate key') || 
+            errorStr.contains('unique constraint') || 
+            errorStr.contains('departments_name_key') ||
+            errorStr.contains('idx_departments_name_unique')) {
+          debugPrint('❌ Duplicate department name detected by database');
+          // Return false to trigger UI error message
+          return false;
+        }
+        
         // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
         try {
           await department.save();

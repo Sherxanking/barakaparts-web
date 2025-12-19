@@ -56,10 +56,34 @@ class PartService {
     }
   }
 
+  /// Check if part name already exists (case-insensitive, trimmed)
+  /// Returns true if duplicate found, false otherwise
+  bool _hasDuplicateName(String name, {String? excludeId}) {
+    final normalizedName = name.trim().toLowerCase();
+    try {
+      return _boxService.partsBox.values.any((existingPart) {
+        if (excludeId != null && existingPart.id == excludeId) {
+          return false; // Exclude current item when editing
+        }
+        return existingPart.name.trim().toLowerCase() == normalizedName;
+      });
+    } catch (e) {
+      debugPrint('⚠️ Error checking duplicate part name: $e');
+      return false; // If check fails, allow creation (server will catch it)
+    }
+  }
+
   /// Part qo'shish
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Duplicate name validation (case-insensitive, trimmed)
   Future<bool> addPart(PartModel part) async {
     try {
+      // 0. Local validation: Check for duplicate name
+      if (_hasDuplicateName(part.name)) {
+        debugPrint('❌ Duplicate part name detected: ${part.name}');
+        return false; // Will be handled by UI with proper error message
+      }
+      
       // 1. Supabase'ga yozish (realtime sync uchun)
       final domainPart = Part(
         id: part.id,
@@ -103,8 +127,15 @@ class PartService {
 
   /// Part yangilash
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Duplicate name validation (case-insensitive, trimmed)
   Future<bool> updatePart(PartModel part) async {
     try {
+      // 0. Local validation: Check for duplicate name (exclude current part)
+      if (_hasDuplicateName(part.name, excludeId: part.id)) {
+        debugPrint('❌ Duplicate part name detected: ${part.name}');
+        return false; // Will be handled by UI with proper error message
+      }
+      
       // 1. Supabase'ga yozish (realtime sync uchun)
       final domainPart = Part(
         id: part.id,

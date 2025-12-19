@@ -45,3 +45,4 @@ DROP POLICY IF EXISTS "Managers and boss can delete parts" ON public.parts;
 
 
 
+

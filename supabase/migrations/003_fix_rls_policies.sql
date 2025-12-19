@@ -352,3 +352,4 @@ CREATE POLICY "Boss can delete departments" ON departments
 
 
 
+

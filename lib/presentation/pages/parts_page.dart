@@ -52,6 +52,9 @@ class _PartsPageState extends State<PartsPage> {
 
   // FIX: Duplicate prevention - loading state
   bool _isCreatingPart = false;
+  
+  // FIX: Duplicate name validation
+  String? _nameValidationError;
 
   // Controllers
   final TextEditingController _nameController = TextEditingController();
@@ -74,6 +77,9 @@ class _PartsPageState extends State<PartsPage> {
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
     
+    // FIX: Real-time duplicate name validation
+    _nameController.addListener(_validatePartName);
+    
     // FIX: Chrome'da partslarni yuklash
     if (kIsWeb) {
       // PostFrameCallback orqali yuklash - UI render bo'lgandan keyin
@@ -83,6 +89,29 @@ class _PartsPageState extends State<PartsPage> {
         }
       });
     }
+  }
+  
+  /// Validate part name for duplicates (case-insensitive, trimmed)
+  void _validatePartName() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() {
+        _nameValidationError = null;
+      });
+      return;
+    }
+    
+    // Check for duplicate in Hive
+    final normalizedName = name.toLowerCase();
+    final hasDuplicate = _partService.getAllParts().any((part) {
+      return part.name.trim().toLowerCase() == normalizedName;
+    });
+    
+    setState(() {
+      _nameValidationError = hasDuplicate 
+          ? 'A part with this name already exists'
+          : null;
+    });
   }
   
   /// Chrome'da partslarni yuklash (Supabase'dan)
@@ -310,12 +339,36 @@ class _PartsPageState extends State<PartsPage> {
           _quantityController.clear();
           _minQuantityController.clear();
           _selectedImage = null;
+          _nameValidationError = null;
           Navigator.pop(context);
           // FIX: UI ni darhol yangilash
           setState(() {});
           _showSnackBar('Part added successfully', Colors.green);
         } else {
-          _showSnackBar('Failed to add part. Please try again.', Colors.red);
+          // Check if it's a duplicate name error
+          final normalizedName = part.name.trim().toLowerCase();
+          final hasDuplicate = _partService.getAllParts().any((p) {
+            return p.name.trim().toLowerCase() == normalizedName;
+          });
+          
+          if (hasDuplicate) {
+            setState(() {
+              _nameValidationError = 'A part with this name already exists';
+            });
+            // FIX: Dialog yopilgandan keyin xabar ko'rsatish
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('A part with this name already exists. Please use a different name.', Colors.red);
+              }
+            });
+          } else {
+            // FIX: Dialog yopilgandan keyin xabar ko'rsatish
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('Failed to add part. Please try again.', Colors.red);
+              }
+            });
+          }
         }
       }
     } finally {
@@ -1357,14 +1410,20 @@ class _PartsPageState extends State<PartsPage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Part Name',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                         hintText: 'Enter part name',
-                        prefixIcon: Icon(Icons.label),
+                        prefixIcon: const Icon(Icons.label),
+                        errorText: _nameValidationError,
+                        errorMaxLines: 2,
                       ),
                       autofocus: true,
-                      onSubmitted: (_) => _addPart(),
+                      onSubmitted: (_) {
+                        if (_nameValidationError == null && !_isCreatingPart) {
+                          _addPart();
+                        }
+                      },
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -1401,12 +1460,13 @@ class _PartsPageState extends State<PartsPage> {
                     _quantityController.clear();
                     _minQuantityController.clear();
                     _selectedImage = null;
+                    _nameValidationError = null;
                     Navigator.pop(context);
                   },
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: _isCreatingPart ? null : _addPart,
+                  onPressed: (_isCreatingPart || _nameValidationError != null) ? null : _addPart,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,

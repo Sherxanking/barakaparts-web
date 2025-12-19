@@ -81,3 +81,4 @@ SQL Editor'da quyidagi barcha SQL'larni **O'CHIRING**:
 
 
 
+

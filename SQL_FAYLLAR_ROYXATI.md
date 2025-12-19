@@ -132,3 +132,4 @@ Bu ikkita SQL fayl barcha kerakli sozlamalarni o'z ichiga oladi!
 
 
 
+

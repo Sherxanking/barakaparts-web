@@ -40,11 +40,35 @@ class ProductService {
     }
   }
 
+  /// Check if product name already exists (case-insensitive, trimmed)
+  /// Returns true if duplicate found, false otherwise
+  bool _hasDuplicateName(String name, {String? excludeId}) {
+    final normalizedName = name.trim().toLowerCase();
+    try {
+      return _boxService.productsBox.values.any((existingProduct) {
+        if (excludeId != null && existingProduct.id == excludeId) {
+          return false; // Exclude current item when editing
+        }
+        return existingProduct.name.trim().toLowerCase() == normalizedName;
+      });
+    } catch (e) {
+      debugPrint('⚠️ Error checking duplicate product name: $e');
+      return false; // If check fails, allow creation (server will catch it)
+    }
+  }
+
   /// Product qo'shish
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   /// FIX: Department mavjudligini tekshirish
+  /// FIX: Duplicate name validation (case-insensitive, trimmed)
   Future<bool> addProduct(data.Product product) async {
     try {
+      // 0. Local validation: Check for duplicate name
+      if (_hasDuplicateName(product.name)) {
+        debugPrint('❌ Duplicate product name detected: ${product.name}');
+        return false; // Will be handled by UI with proper error message
+      }
+      
       // FIX: Department Supabase'da mavjudligini tekshirish
       // Eslatma: Department repository hozircha ServiceLocator'da yo'q
       // Shuning uchun faqat xatolik xabarini yaxshilaymiz
@@ -105,8 +129,15 @@ class ProductService {
 
   /// Product yangilash
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Duplicate name validation (case-insensitive, trimmed)
   Future<bool> updateProduct(data.Product updatedProduct) async {
     try {
+      // 0. Local validation: Check for duplicate name (exclude current product)
+      if (_hasDuplicateName(updatedProduct.name, excludeId: updatedProduct.id)) {
+        debugPrint('❌ Duplicate product name detected: ${updatedProduct.name}');
+        return false; // Will be handled by UI with proper error message
+      }
+      
       // FIX: Hive boxdan mavjud productni topish
       final existingProduct = getProductById(updatedProduct.id);
       if (existingProduct == null) {

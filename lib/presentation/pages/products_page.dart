@@ -67,6 +67,9 @@ class _ProductsPageState extends State<ProductsPage> {
   // FIX: Duplicate prevention - loading state
   bool _isCreatingProduct = false;
   
+  // FIX: Duplicate name validation
+  String? _nameValidationError;
+  
   // Chrome uchun real-time stream subscription
   StreamSubscription? _productsStreamSubscription;
 
@@ -78,6 +81,9 @@ class _ProductsPageState extends State<ProductsPage> {
     super.initState();
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
+    
+    // FIX: Real-time duplicate name validation
+    _nameController.addListener(_validateProductName);
     
     debugPrint('🚀 ProductsPage initState: kIsWeb = $kIsWeb');
     
@@ -348,6 +354,29 @@ class _ProductsPageState extends State<ProductsPage> {
     return products;
   }
 
+  /// Validate product name for duplicates (case-insensitive, trimmed)
+  void _validateProductName() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() {
+        _nameValidationError = null;
+      });
+      return;
+    }
+    
+    // Check for duplicate in Hive
+    final normalizedName = name.toLowerCase();
+    final hasDuplicate = _productService.getAllProducts().any((product) {
+      return product.name.trim().toLowerCase() == normalizedName;
+    });
+    
+    setState(() {
+      _nameValidationError = hasDuplicate 
+          ? 'A product with this name already exists'
+          : null;
+    });
+  }
+
   /// Yangi mahsulot qo'shish
   /// FIX: Duplicate prevention - loading state bilan
   Future<void> _addProduct() async {
@@ -401,6 +430,7 @@ class _ProductsPageState extends State<ProductsPage> {
           _nameController.clear();
           selectedDepartmentId = null;
           selectedParts.clear();
+          _nameValidationError = null;
 
           // FIX: UI ni darhol yangilash - dialog yopilishidan oldin
           setState(() {});
@@ -411,7 +441,30 @@ class _ProductsPageState extends State<ProductsPage> {
           }
           _showSnackBar('Product added successfully', Colors.green);
         } else {
-          _showSnackBar('Failed to add product. Please try again.', Colors.red);
+          // Check if it's a duplicate name error
+          final normalizedName = product.name.trim().toLowerCase();
+          final hasDuplicate = _productService.getAllProducts().any((p) {
+            return p.name.trim().toLowerCase() == normalizedName;
+          });
+          
+          if (hasDuplicate) {
+            setState(() {
+              _nameValidationError = 'A product with this name already exists';
+            });
+            // FIX: Dialog yopilgandan keyin xabar ko'rsatish
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('A product with this name already exists. Please use a different name.', Colors.red);
+              }
+            });
+          } else {
+            // FIX: Dialog yopilgandan keyin xabar ko'rsatish
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('Failed to add product. Please try again.', Colors.red);
+              }
+            });
+          }
         }
       }
     } finally {
@@ -890,6 +943,7 @@ class _ProductsPageState extends State<ProductsPage> {
                 _nameController.clear();
                 selectedDepartmentId = null;
                 selectedParts.clear();
+                _nameValidationError = null;
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
@@ -900,10 +954,12 @@ class _ProductsPageState extends State<ProductsPage> {
                   children: [
                     TextField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Product Name',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                         hintText: 'Enter product name',
+                        errorText: _nameValidationError,
+                        errorMaxLines: 2,
                       ),
                       autofocus: true,
                     ),
@@ -951,12 +1007,13 @@ class _ProductsPageState extends State<ProductsPage> {
                     _nameController.clear();
                     selectedDepartmentId = null;
                     selectedParts.clear();
+                    _nameValidationError = null;
                     Navigator.pop(context);
                   },
                   child: const Text('Cancel'),
                 ),
                 TextButton(
-                  onPressed: _isCreatingProduct ? null : () {
+                  onPressed: (_isCreatingProduct || _nameValidationError != null) ? null : () {
                     _addProduct();
                   },
                   child: _isCreatingProduct
