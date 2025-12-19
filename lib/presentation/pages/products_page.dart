@@ -940,6 +940,7 @@ class _ProductsPageState extends State<ProductsPage> {
       ),
       floatingActionButton: _canCreateProducts
           ? FloatingActionButton(
+              heroTag: "add_product_fab", // FIX: Unique hero tag
               onPressed: () {
                 _nameController.clear();
                 selectedDepartmentId = null;

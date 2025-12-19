@@ -191,16 +191,29 @@ class OrderRepositoryImpl implements OrderRepository {
   }
   
   /// Update ordersBox with domain orders
+  /// FIX: ValueListenableBuilder yangilanishi uchun to'g'ri yozish
   Future<void> _updateOrdersBox(List<Order> domainOrders) async {
     try {
       if (!Hive.isBoxOpen('ordersBox')) {
         await Hive.openBox<model.Order>('ordersBox');
       }
       final box = Hive.box<model.Order>('ordersBox');
-      await box.clear();
       
       debugPrint('🔄 Updating ordersBox with ${domainOrders.length} orders');
       
+      // FIX: Clear va add o'rniga, mavjud elementlarni yangilash yoki qo'shish
+      final existingKeys = box.keys.toList();
+      final newOrderIds = domainOrders.map((o) => o.id).toSet();
+      
+      // Eski elementlarni o'chirish (mavjud bo'lmaganlar)
+      for (var key in existingKeys) {
+        final order = box.get(key);
+        if (order != null && !newOrderIds.contains(order.id)) {
+          await box.delete(key);
+        }
+      }
+      
+      // Yangi elementlarni qo'shish yoki yangilash
       for (var domainOrder in domainOrders) {
         final orderModel = model.Order(
           id: domainOrder.id,
@@ -210,7 +223,14 @@ class OrderRepositoryImpl implements OrderRepository {
           status: domainOrder.status,
           createdAt: domainOrder.createdAt,
         );
-        await box.add(orderModel);
+        
+        // Mavjud bo'lsa, yangilash; yo'q bo'lsa, qo'shish
+        final existingIndex = box.values.toList().indexWhere((o) => o.id == domainOrder.id);
+        if (existingIndex >= 0) {
+          await box.putAt(existingIndex, orderModel);
+        } else {
+          await box.add(orderModel);
+        }
       }
       
       debugPrint('✅ OrdersBox updated with ${domainOrders.length} orders');

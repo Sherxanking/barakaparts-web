@@ -1385,6 +1385,7 @@ class _PartsPageState extends State<PartsPage> {
       ),
       floatingActionButton: _canCreateParts
           ? FloatingActionButton.extended(
+              heroTag: "add_part_fab", // FIX: Unique hero tag
               onPressed: () {
           _nameController.clear();
           _quantityController.clear();

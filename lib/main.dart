@@ -1,4 +1,4 @@
-/// Baraka Parts - Buyurtma va ombor boshqaruv tizimi (MVP)
+// Baraka Parts - Buyurtma va ombor boshqaruv tizimi (MVP)
 /// 
 /// Bu loyiha Flutter va Hive asosida qurilgan inventory/order management tizimi.
 /// 
@@ -122,6 +122,12 @@ Future<void> _initializeServicesInBackground() async {
       await AuthStateService().initialize();
       debugPrint('✅ Auth state service initialized');
       
+      // FIX: Birinchi marta ma'lumotlarni yuklash (agar box'lar bo'sh bo'lsa)
+      // WHY: App reinstall qilinganda Supabase'dan ma'lumotlarni yuklash kerak
+      // IMPORTANT: Kichik kechikish - Supabase to'liq tayyor bo'lishi uchun
+      await Future.delayed(const Duration(milliseconds: 500));
+      await _syncInitialDataFromSupabase();
+      
       // Initialize realtime streams for products and orders
       // WHY: Keep Hive cache synced with Supabase in real-time
       _initializeRealtimeStreams();
@@ -133,6 +139,173 @@ Future<void> _initializeServicesInBackground() async {
   } catch (e) {
     debugPrint('❌ Background initialization error: $e');
     // Don't crash app - continue with offline mode
+  }
+}
+
+/// FIX: Birinchi marta Supabase'dan ma'lumotlarni yuklash
+/// WHY: App reinstall qilinganda Hive box'lar bo'sh bo'ladi, Supabase'dan yuklash kerak
+Future<void> _syncInitialDataFromSupabase() async {
+  try {
+    // FIX: Supabase initialize bo'lishini tekshirish
+    if (!AppSupabaseClient.isInitialized) {
+      debugPrint('⚠️ Supabase hali initialize bo\'lmagan, yuklash o\'tkazib yuborildi');
+      return;
+    }
+    
+    final partsBox = Hive.box<PartModel>('partsBox');
+    final productsBox = Hive.box<Product>('productsBox');
+    final ordersBox = Hive.box<Order>('ordersBox');
+    final departmentsBox = Hive.box<Department>('departmentsBox');
+    
+    // Agar barcha box'lar bo'sh bo'lsa, Supabase'dan yuklash
+    final isEmpty = partsBox.isEmpty && productsBox.isEmpty && 
+                    ordersBox.isEmpty && departmentsBox.isEmpty;
+    
+    debugPrint('🔍 Box\'lar holati: parts=${partsBox.length}, products=${productsBox.length}, orders=${ordersBox.length}, departments=${departmentsBox.length}');
+    
+    if (isEmpty) {
+      debugPrint('📥 Box\'lar bo\'sh, Supabase\'dan ma\'lumotlarni yuklayapman...');
+      
+      final partRepository = ServiceLocator.instance.partRepository;
+      final productRepository = ServiceLocator.instance.productRepository;
+      final orderRepository = ServiceLocator.instance.orderRepository;
+      final supabaseClient = AppSupabaseClient.instance.client;
+      
+      // Parts yuklash va Hive box'ga yozish
+      debugPrint('🔄 Parts yuklayapman...');
+      final partsResult = await partRepository.getAllParts();
+      await partsResult.fold(
+        (failure) async {
+          debugPrint('❌ Parts yuklanmadi: ${failure.message}');
+          debugPrint('   Failure type: ${failure.runtimeType}');
+        },
+        (parts) async {
+          debugPrint('✅ ${parts.length} ta part yuklandi Supabase\'dan');
+          if (parts.isEmpty) {
+            debugPrint('⚠️ Parts ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q');
+          } else {
+            // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
+            for (var part in parts) {
+              final partModel = PartModel(
+                id: part.id,
+                name: part.name,
+                quantity: part.quantity,
+                minQuantity: part.minQuantity,
+                status: part.quantity < part.minQuantity ? 'lowstock' : 'available',
+                imagePath: part.imagePath,
+              );
+              await partsBox.add(partModel);
+            }
+            debugPrint('✅ ${parts.length} ta part Hive box\'ga yozildi');
+          }
+        },
+      );
+      
+      // Products yuklash va Hive box'ga yozish
+      debugPrint('🔄 Products yuklayapman...');
+      final productsResult = await productRepository.getAllProducts();
+      await productsResult.fold(
+        (failure) async {
+          debugPrint('❌ Products yuklanmadi: ${failure.message}');
+          debugPrint('   Failure type: ${failure.runtimeType}');
+        },
+        (products) async {
+          debugPrint('✅ ${products.length} ta product yuklandi Supabase\'dan');
+          if (products.isEmpty) {
+            debugPrint('⚠️ Products ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q');
+          } else {
+            // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
+            for (var product in products) {
+              final productModel = Product(
+                id: product.id,
+                name: product.name,
+                departmentId: product.departmentId,
+                parts: product.partsRequired, // FIX: Domain entity'da partsRequired deb nomlangan
+              );
+              await productsBox.add(productModel);
+            }
+            debugPrint('✅ ${products.length} ta product Hive box\'ga yozildi');
+          }
+        },
+      );
+      
+      // Orders yuklash va Hive box'ga yozish
+      debugPrint('🔄 Orders yuklayapman...');
+      final ordersResult = await orderRepository.getAllOrders();
+      await ordersResult.fold(
+        (failure) async {
+          debugPrint('❌ Orders yuklanmadi: ${failure.message}');
+          debugPrint('   Failure type: ${failure.runtimeType}');
+        },
+        (orders) async {
+          debugPrint('✅ ${orders.length} ta order yuklandi Supabase\'dan');
+          if (orders.isEmpty) {
+            debugPrint('⚠️ Orders ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q');
+          } else {
+            // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
+            for (var order in orders) {
+              final orderModel = Order(
+                id: order.id,
+                departmentId: order.departmentId,
+                productName: order.productName,
+                quantity: order.quantity,
+                status: order.status,
+                createdAt: order.createdAt,
+              );
+              await ordersBox.add(orderModel);
+            }
+            debugPrint('✅ ${orders.length} ta order Hive box\'ga yozildi');
+          }
+        },
+      );
+      
+      // Departments yuklash (to'g'ridan-to'g'ri Supabase'dan)
+      try {
+        final response = await supabaseClient
+            .from('departments')
+            .select()
+            .order('name');
+        
+        final departments = (response as List).map((json) {
+          return Department(
+            id: json['id'] as String,
+            name: json['name'] as String,
+            productIds: [], // Hive'dan keyin to'ldiriladi
+            productParts: {},
+          );
+        }).toList();
+        
+        if (departments.isNotEmpty) {
+          await _updateDepartmentsBox(departments);
+          debugPrint('✅ ${departments.length} ta department yuklandi');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Departments yuklanmadi: $e');
+      }
+      
+      // FIX: Agar Supabase'da ma'lumotlar bo'sh bo'lsa, default ma'lumotlarni yuklash
+      final finalPartsCount = partsBox.length;
+      final finalProductsCount = productsBox.length;
+      final finalOrdersCount = ordersBox.length;
+      final finalDepartmentsCount = departmentsBox.length;
+      
+      debugPrint('📊 Yakuniy holat: parts=$finalPartsCount, products=$finalProductsCount, orders=$finalOrdersCount, departments=$finalDepartmentsCount');
+      
+      // Agar hali ham bo'sh bo'lsa, default ma'lumotlarni yuklash
+      if (finalPartsCount == 0 && finalProductsCount == 0 && finalDepartmentsCount == 0) {
+        debugPrint('⚠️ Supabase\'da ma\'lumotlar yo\'q, default ma\'lumotlarni yuklayapman...');
+        await _initializeDefaultData();
+        debugPrint('✅ Default ma\'lumotlar yuklandi');
+      } else {
+        debugPrint('✅ Barcha ma\'lumotlar Supabase\'dan yuklandi va Hive box\'larga yozildi');
+      }
+    } else {
+      debugPrint('📦 Box\'larda ma\'lumotlar bor, yuklash o\'tkazib yuborildi');
+    }
+  } catch (e, stackTrace) {
+    debugPrint('❌ Initial data sync xatosi: $e');
+    debugPrint('Stack trace: $stackTrace');
+    // Xato bo'lsa ham app ishlashi kerak
   }
 }
 
@@ -431,7 +604,6 @@ class MyApp extends StatefulWidget {
 /// FIX: Async initState muammosini hal qilish - FutureBuilder yoki mounted check
 class MyAppState extends State<MyApp> {
   Locale _locale = const Locale('en');
-  bool _isLocaleLoaded = false;
 
   @override
   void initState() {
@@ -447,7 +619,6 @@ class MyAppState extends State<MyApp> {
     if (mounted) {
       setState(() {
         _locale = locale;
-        _isLocaleLoaded = true;
       });
     }
   }

@@ -160,14 +160,40 @@ class PartRepositoryImpl implements PartRepository {
   }
   
   /// Update partsBox with domain parts
+  /// FIX: ValueListenableBuilder yangilanishi uchun to'g'ri yozish
   Future<void> _updatePartsBox(List<Part> parts) async {
     try {
       if (!Hive.isBoxOpen('partsBox')) {
         await Hive.openBox<PartModel>('partsBox');
       }
       final box = Hive.box<PartModel>('partsBox');
-      await box.clear();
       
+      // FIX: Clear va add o'rniga, mavjud elementlarni yangilash yoki qo'shish
+      // Bu ValueListenableBuilder'ni yangilaydi
+      final existingParts = <String, int>{}; // partId -> index
+      for (int i = 0; i < box.length; i++) {
+        final part = box.getAt(i);
+        if (part != null) {
+          existingParts[part.id] = i;
+        }
+      }
+      
+      final newPartIds = parts.map((p) => p.id).toSet();
+      
+      // Eski elementlarni o'chirish (mavjud bo'lmaganlar) - teskari tartibda
+      final keysToDelete = <int>[];
+      for (var entry in existingParts.entries) {
+        if (!newPartIds.contains(entry.key)) {
+          keysToDelete.add(entry.value);
+        }
+      }
+      // Teskari tartibda o'chirish (index o'zgarmasligi uchun)
+      keysToDelete.sort((a, b) => b.compareTo(a));
+      for (var index in keysToDelete) {
+        await box.deleteAt(index);
+      }
+      
+      // Yangi elementlarni qo'shish yoki yangilash
       for (var part in parts) {
         final partModel = PartModel(
           id: part.id,
@@ -175,10 +201,18 @@ class PartRepositoryImpl implements PartRepository {
           quantity: part.quantity,
           minQuantity: part.minQuantity ?? 3,
           imagePath: part.imagePath,
-          status: 'available',
+          status: part.quantity < (part.minQuantity ?? 3) ? 'lowstock' : 'available',
         );
-        await box.add(partModel);
+        
+        // Mavjud bo'lsa, yangilash; yo'q bo'lsa, qo'shish
+        if (existingParts.containsKey(part.id)) {
+          await box.putAt(existingParts[part.id]!, partModel);
+        } else {
+          await box.add(partModel);
+        }
       }
+      
+      debugPrint('✅ PartsBox updated: ${box.length} parts');
     } catch (e) {
       debugPrint('⚠️ Error updating partsBox: $e');
     }

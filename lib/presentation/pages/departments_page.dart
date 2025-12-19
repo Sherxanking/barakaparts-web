@@ -435,6 +435,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: "add_department_fab", // FIX: Unique hero tag
         onPressed: () {
           _nameController.clear();
           _nameValidationError = null;

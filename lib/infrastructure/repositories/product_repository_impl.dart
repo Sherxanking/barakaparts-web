@@ -190,14 +190,27 @@ class ProductRepositoryImpl implements ProductRepository {
   }
   
   /// Update productsBox with domain products
+  /// FIX: ValueListenableBuilder yangilanishi uchun to'g'ri yozish
   Future<void> _updateProductsBox(List<Product> domainProducts) async {
     try {
       if (!Hive.isBoxOpen('productsBox')) {
         await Hive.openBox<model.Product>('productsBox');
       }
       final box = Hive.box<model.Product>('productsBox');
-      await box.clear();
       
+      // FIX: Clear va add o'rniga, mavjud elementlarni yangilash yoki qo'shish
+      final existingKeys = box.keys.toList();
+      final newProductIds = domainProducts.map((p) => p.id).toSet();
+      
+      // Eski elementlarni o'chirish (mavjud bo'lmaganlar)
+      for (var key in existingKeys) {
+        final product = box.get(key);
+        if (product != null && !newProductIds.contains(product.id)) {
+          await box.delete(key);
+        }
+      }
+      
+      // Yangi elementlarni qo'shish yoki yangilash
       for (var domainProduct in domainProducts) {
         final productModel = model.Product(
           id: domainProduct.id,
@@ -205,8 +218,17 @@ class ProductRepositoryImpl implements ProductRepository {
           departmentId: domainProduct.departmentId,
           parts: domainProduct.partsRequired,
         );
-        await box.add(productModel);
+        
+        // Mavjud bo'lsa, yangilash; yo'q bo'lsa, qo'shish
+        final existingIndex = box.values.toList().indexWhere((p) => p.id == domainProduct.id);
+        if (existingIndex >= 0) {
+          await box.putAt(existingIndex, productModel);
+        } else {
+          await box.add(productModel);
+        }
       }
+      
+      debugPrint('✅ ProductsBox updated: ${box.length} products');
     } catch (e) {
       debugPrint('⚠️ Error updating productsBox: $e');
     }
