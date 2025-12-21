@@ -17,6 +17,7 @@ import 'departments_page.dart';
 import 'parts_page.dart';
 import 'products_page.dart';
 import 'settings_page.dart';
+import 'analytics_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -35,14 +36,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     // Har bir sahifa uchun navigator key yaratish
-    _navigatorKeys = List.generate(4, (_) => GlobalKey<NavigatorState>());
+    _navigatorKeys = List.generate(5, (_) => GlobalKey<NavigatorState>());
     
     // Sahifalarni yaratish
     _pages = [
       OrdersPage(key: _navigatorKeys[0]),
       DepartmentsPage(key: _navigatorKeys[1]),
-      ProductsPage(key: _navigatorKeys[2]),
-      PartsPage(key: _navigatorKeys[3]),
+      AnalyticsPage(key: _navigatorKeys[2]),
+      ProductsPage(key: _navigatorKeys[3]),
+      PartsPage(key: _navigatorKeys[4]),
     ];
   }
 
@@ -65,8 +67,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       case 1:
         return l10n.departments;
       case 2:
-        return l10n.products;
+        return 'Analytics';
       case 3:
+        return l10n.products;
+      case 4:
         return l10n.parts;
       default:
         return 'Baraka Parts';
@@ -122,6 +126,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 icon: const Icon(Icons.business),
                 activeIcon: const Icon(Icons.business),
                 label: l10n?.departments ?? 'Departments',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.analytics),
+                activeIcon: const Icon(Icons.analytics),
+                label: 'Analytics',
               ),
               BottomNavigationBarItem(
                 icon: const Icon(Icons.inventory),

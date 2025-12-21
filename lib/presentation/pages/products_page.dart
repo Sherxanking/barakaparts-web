@@ -20,6 +20,11 @@ import '../../data/services/department_service.dart';
 import '../../data/services/part_service.dart';
 import '../../core/di/service_locator.dart';
 import '../../domain/entities/product.dart' as domain;
+import '../../domain/entities/part.dart' as domain;
+import '../../domain/repositories/product_repository.dart';
+import '../../domain/repositories/part_repository.dart';
+import '../../core/errors/failures.dart';
+import '../../core/utils/either.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
@@ -27,6 +32,7 @@ import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
 import 'product_edit_page.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../data/services/excel_import_service.dart';
 import '../../l10n/app_localizations.dart';
 
 class ProductsPage extends StatefulWidget {
@@ -37,11 +43,19 @@ class ProductsPage extends StatefulWidget {
 }
 
 class _ProductsPageState extends State<ProductsPage> {
-  // Services
+  // Repository
+  final ProductRepository _productRepository = ServiceLocator.instance.productRepository;
+  final PartRepository _partRepository = ServiceLocator.instance.partRepository;
+  final ExcelImportService _excelImportService = ExcelImportService();
+  
+  // Services (for backward compatibility - will be removed gradually)
   final HiveBoxService _boxService = HiveBoxService();
   final ProductService _productService = ProductService();
   final DepartmentService _departmentService = DepartmentService();
   final PartService _partService = PartService();
+  
+  // Import state
+  bool _isImporting = false;
   
   /// Check if current user can create products
   bool get _canCreateProducts {
@@ -59,9 +73,8 @@ class _ProductsPageState extends State<ProductsPage> {
   Map<String, int> selectedParts = {};
   SortOption? _selectedSortOption;
   
-  // Chrome uchun state
-  List<Product> _webProducts = [];
-  bool _isLoadingWebProducts = false;
+  // State for initial load only
+  bool _isInitialLoading = true;
   List<PartModel> _webParts = [];
   bool _isLoadingWebParts = false;
   
@@ -70,9 +83,6 @@ class _ProductsPageState extends State<ProductsPage> {
   
   // FIX: Duplicate name validation
   String? _nameValidationError;
-  
-  // Chrome uchun real-time stream subscription
-  StreamSubscription? _productsStreamSubscription;
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
@@ -83,162 +93,18 @@ class _ProductsPageState extends State<ProductsPage> {
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
     
-    // FIX: Real-time duplicate name validation
-    _nameController.addListener(_validateProductName);
+    // Real-time duplicate name validation will be handled in StreamBuilder
     
-    debugPrint('🚀 ProductsPage initState: kIsWeb = $kIsWeb');
-    
-    // FIX: Chrome'da productslarni yuklash
-    if (kIsWeb) {
-      debugPrint('   Chrome detected, loading products...');
-      // PostFrameCallback orqali yuklash - UI render bo'lgandan keyin
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && kIsWeb) {
-          try {
-            _loadWebProducts();
-            _listenToProductsStream();
-          } catch (e) {
-            debugPrint('❌ Error initializing web products: $e');
-          }
+    // Initial load - after first stream event, hide loading
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _isInitialLoading = false;
+          });
         }
       });
-    } else {
-      debugPrint('   Not Chrome, skipping web-specific loading');
-    }
-  }
-  
-  /// Chrome'da products stream'ga quloq solish (real-time updates)
-  void _listenToProductsStream() {
-    // FIX: Faqat Chrome uchun ishlatish, telefon uchun emas
-    if (!kIsWeb) return;
-    
-    // FIX: Oldingi subscription'ni bekor qilish
-    _productsStreamSubscription?.cancel();
-    _productsStreamSubscription = null;
-    
-    try {
-      final repository = ServiceLocator.instance.productRepository;
-      _productsStreamSubscription = repository.watchProducts().listen(
-        (result) {
-          try {
-            result.fold(
-              (failure) {
-                debugPrint('⚠️ Products stream error: ${failure.message}');
-              },
-              (domainProducts) {
-                debugPrint('✅ Products realtime update: ${domainProducts.length} products');
-                // Domain Product'larni Product model'ga o'tkazish
-                try {
-                  final products = domainProducts.map((domainProduct) {
-                    return Product(
-                      id: domainProduct.id,
-                      name: domainProduct.name,
-                      departmentId: domainProduct.departmentId,
-                      parts: domainProduct.partsRequired,
-                    );
-                  }).toList();
-                  
-                  if (mounted) {
-                    setState(() {
-                      _webProducts = products;
-                    });
-                  }
-                } catch (e) {
-                  debugPrint('❌ Error mapping products: $e');
-                }
-              },
-            );
-          } catch (e) {
-            debugPrint('❌ Error in products stream callback: $e');
-          }
-        },
-        onError: (error, stackTrace) {
-          debugPrint('❌ Products stream error: $error');
-          debugPrint('Stack trace: $stackTrace');
-        },
-        cancelOnError: false,
-      );
-      debugPrint('✅ Products realtime stream listener initialized for Chrome');
-    } catch (e, stackTrace) {
-      debugPrint('❌ Failed to initialize products stream: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
-  }
-  
-  /// Chrome'da productslarni yuklash (Supabase'dan)
-  Future<void> _loadWebProducts() async {
-    if (_isLoadingWebProducts) {
-      debugPrint('⚠️ _loadWebProducts: Already loading, skipping...');
-      return;
-    }
-    
-    debugPrint('🔄 _loadWebProducts: Starting to load products from Supabase...');
-    if (mounted) {
-      setState(() {
-        _isLoadingWebProducts = true;
-      });
-    }
-    
-    try {
-      final repository = ServiceLocator.instance.productRepository;
-      debugPrint('   Repository obtained, calling getAllProducts()...');
-      // FIX: Timeout qo'shish - 15 soniyadan keyin to'xtatish
-      final result = await repository.getAllProducts().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          debugPrint('⚠️ _loadWebProducts: Timeout after 15 seconds');
-          throw TimeoutException('Request timeout', const Duration(seconds: 15));
-        },
-      );
-      
-      result.fold(
-        (failure) {
-          // Xatolik bo'lsa bo'sh ro'yxat
-          debugPrint('❌ _loadWebProducts: Failed to load products: ${failure.message}');
-          if (mounted) {
-            setState(() {
-              _webProducts = [];
-              _isLoadingWebProducts = false;
-            });
-          }
-        },
-        (domainProducts) {
-          // Domain Product'larni Product model'ga o'tkazish
-          debugPrint('   Received ${domainProducts.length} domain products');
-          final products = domainProducts.map((domainProduct) {
-            return Product(
-              id: domainProduct.id,
-              name: domainProduct.name,
-              departmentId: domainProduct.departmentId,
-              parts: domainProduct.partsRequired,
-            );
-          }).toList();
-          
-          debugPrint('✅ _loadWebProducts: Loaded ${products.length} products from Supabase');
-          if (mounted) {
-            setState(() {
-              _webProducts = products;
-              _isLoadingWebProducts = false;
-            });
-            debugPrint('   State updated, _webProducts.length = ${_webProducts.length}');
-          } else {
-            debugPrint('   Widget not mounted, skipping setState');
-          }
-        },
-      );
-    } catch (e, stackTrace) {
-      debugPrint('❌ _loadWebProducts: Error loading products: $e');
-      debugPrint('   Stack trace: $stackTrace');
-      if (mounted) {
-        setState(() {
-          _webProducts = [];
-          _isLoadingWebProducts = false;
-        });
-      } else {
-        // FIX: Widget unmounted bo'lsa ham loading'ni to'xtatish
-        _isLoadingWebProducts = false;
-      }
-    }
+    });
   }
   
   /// Chrome'da partslarni yuklash (Supabase'dan)
@@ -296,67 +162,59 @@ class _ProductsPageState extends State<ProductsPage> {
 
   @override
   void dispose() {
-    // FIX: Listener ni olib tashlash dispose dan oldin
     _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _searchController.dispose();
-    // FIX: Chrome'da stream subscription'ni yopish
-    _productsStreamSubscription?.cancel();
     super.dispose();
   }
 
   /// Filtrlangan va tartiblangan productlarni olish
-  /// FIX: Chrome'da state'dan olish
-  List<Product> _getFilteredProducts() {
-    // FIX: Chrome'da Hive box ochilmaydi - state'dan olish
-    if (kIsWeb) {
-      debugPrint('🔍 _getFilteredProducts (Chrome): _webProducts.length = ${_webProducts.length}');
-      // Chrome'da state'dan olish
-      List<Product> products = List.from(_webProducts);
-
-      // Qidiruv
-      if (_searchController.text.isNotEmpty) {
-        final query = _searchController.text.toLowerCase();
-        products = products.where((product) {
-          return product.name.toLowerCase().contains(query);
-        }).toList();
-      }
-
-      // Department filter
-      if (_selectedDepartmentFilter != null) {
-        products = products.where((p) => p.departmentId == _selectedDepartmentFilter).toList();
-      }
-
-      // Tartiblash
-      if (_selectedSortOption != null) {
-        products = _productService.sortProducts(
-          products,
-          _selectedSortOption!.ascending,
-        );
-      }
-
-      return products;
-    }
+  /// Repository pattern - works for both web and mobile
+  /// Manager uchun department filter qo'shildi
+  List<domain.Product> _getFilteredProducts(List<domain.Product> products) {
+    // Start with provided products
     
-    // Mobile/Desktop - service'dan olish
-    List<Product> products = _productService.searchAndFilterProducts(
-      query: _searchController.text.isEmpty ? null : _searchController.text,
-      departmentId: _selectedDepartmentFilter,
-    );
+    // Manager uchun department filter (faqat o'z department'idagi products)
+    final user = AuthStateService().currentUser;
+    if (user != null && user.isManager && user.departmentId != null) {
+      products = products.where((p) => p.departmentId == user.departmentId).toList();
+    }
 
-    // Tartiblash
+    // Search filter
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      products = products.where((product) {
+        return product.name.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // Department filter
+    if (_selectedDepartmentFilter != null) {
+      products = products.where((p) => p.departmentId == _selectedDepartmentFilter).toList();
+    }
+
+    // Sort
     if (_selectedSortOption != null) {
-      products = _productService.sortProducts(
-        products,
-        _selectedSortOption!.ascending,
-      );
+      products.sort((a, b) {
+        final ascending = _selectedSortOption!.ascending;
+        switch (_selectedSortOption!) {
+          case SortOption.nameAsc:
+          case SortOption.nameDesc:
+            return ascending 
+                ? a.name.compareTo(b.name)
+                : b.name.compareTo(a.name);
+          default:
+            return 0;
+        }
+      });
     }
 
     return products;
   }
 
   /// Validate product name for duplicates (case-insensitive, trimmed)
-  void _validateProductName() {
+  /// NOTE: This will be called from StreamBuilder context with products list
+  void _validateProductName(List<domain.Product> products) {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       setState(() {
@@ -365,9 +223,9 @@ class _ProductsPageState extends State<ProductsPage> {
       return;
     }
     
-    // Check for duplicate in Hive
+    // Check for duplicate in provided products
     final normalizedName = name.toLowerCase();
-    final hasDuplicate = _productService.getAllProducts().any((product) {
+    final hasDuplicate = products.any((product) {
       return product.name.trim().toLowerCase() == normalizedName;
     });
     
@@ -379,9 +237,9 @@ class _ProductsPageState extends State<ProductsPage> {
   }
 
   /// Yangi mahsulot qo'shish
-  /// FIX: Duplicate prevention - loading state bilan
+  /// Repository pattern - works for both web and mobile
   Future<void> _addProduct() async {
-    // FIX: Agar yaratish jarayoni davom etayotgan bo'lsa, qayta bosilishini oldini olish
+    // Prevent duplicate creation
     if (_isCreatingProduct) {
       debugPrint('⚠️ Product creation already in progress, ignoring duplicate request');
       return;
@@ -402,7 +260,7 @@ class _ProductsPageState extends State<ProductsPage> {
       return;
     }
 
-    // FIX: Loading state'ni o'rnatish
+    // Set loading state
     if (mounted) {
       setState(() {
         _isCreatingProduct = true;
@@ -410,66 +268,56 @@ class _ProductsPageState extends State<ProductsPage> {
     }
 
     try {
-      final product = Product(
+      final domainProduct = domain.Product(
         id: const Uuid().v4(),
         name: _nameController.text.trim(),
         departmentId: selectedDepartmentId!,
-        parts: Map.from(selectedParts),
+        partsRequired: Map.from(selectedParts),
+        createdAt: DateTime.now(),
       );
 
-      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-      final success = await _productService.addProduct(product);
+      // Use repository to create product
+      final result = await _productRepository.createProduct(domainProduct);
+      
       if (mounted) {
-        if (success) {
-          // Department productIds ni yangilash
-          await _departmentService.assignProductToDepartment(
-            selectedDepartmentId!,
-            product.id,
-          );
+        result.fold(
+          (failure) {
+            // Check if it's a duplicate name error (check error message)
+            if (failure.message.toLowerCase().contains('duplicate') || 
+                failure.message.toLowerCase().contains('already exists')) {
+              setState(() {
+                _nameValidationError = 'A product with this name already exists';
+              });
+            }
+            _showSnackBar('Failed to add product: ${failure.message}', Colors.red);
+          },
+          (createdProduct) {
+            // Department productIds ni yangilash (backward compatibility)
+            _departmentService.assignProductToDepartment(
+              selectedDepartmentId!,
+              createdProduct.id,
+            ).catchError((e) {
+              debugPrint('⚠️ Failed to update department: $e');
+            });
 
-          // Formni tozalash
-          _nameController.clear();
-          selectedDepartmentId = null;
-          selectedParts.clear();
-          _nameValidationError = null;
+            // Formni tozalash
+            _nameController.clear();
+            selectedDepartmentId = null;
+            selectedParts.clear();
+            _nameValidationError = null;
 
-          // FIX: UI ni darhol yangilash - dialog yopilishidan oldin
-          setState(() {});
-          Navigator.pop(context);
-          // FIX: Dialog yopilgandan keyin yana bir marta yangilash
-          if (mounted) {
-            setState(() {});
-          }
-          _showSnackBar(AppLocalizations.of(context)?.translate('productAdded') ?? 'Product added successfully', Colors.green);
-        } else {
-          // Check if it's a duplicate name error
-          final normalizedName = product.name.trim().toLowerCase();
-          final hasDuplicate = _productService.getAllProducts().any((p) {
-            return p.name.trim().toLowerCase() == normalizedName;
-          });
-          
-          if (hasDuplicate) {
-            setState(() {
-              _nameValidationError = 'A product with this name already exists';
-            });
-            // FIX: Dialog yopilgandan keyin xabar ko'rsatish
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _showSnackBar(AppLocalizations.of(context)?.translate('duplicateProductName') ?? 'A product with this name already exists. Please use a different name.', Colors.red);
-              }
-            });
-          } else {
-            // FIX: Dialog yopilgandan keyin xabar ko'rsatish
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddProduct') ?? 'Failed to add product. Please try again.', Colors.red);
-              }
-            });
-          }
-        }
+            Navigator.pop(context);
+            _showSnackBar(AppLocalizations.of(context)?.translate('productAdded') ?? 'Product added successfully', Colors.green);
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error creating product: $e');
+      if (mounted) {
+        _showSnackBar('Unexpected error: ${e.toString()}', Colors.red);
       }
     } finally {
-      // FIX: Loading state'ni tozalash
+      // Clear loading state
       if (mounted) {
         setState(() {
           _isCreatingProduct = false;
@@ -478,62 +326,43 @@ class _ProductsPageState extends State<ProductsPage> {
     }
   }
 
-  /// Product ID bo'yicha Hive box index topish
-  /// FIX: Filtered list index emas, real Hive index qaytaradi
-  int? _findHiveIndexById(String productId) {
-    try {
-      if (!Hive.isBoxOpen('productsBox')) {
-        return null;
-      }
-      final box = _boxService.productsBox;
-      for (int i = 0; i < box.length; i++) {
-        final product = box.getAt(i);
-        if (product != null && product.id == productId) {
-          return i;
-        }
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
+  /// Convert domain Product to Product model (for backward compatibility)
+  Product _domainToModel(domain.Product domainProduct) {
+    return Product(
+      id: domainProduct.id,
+      name: domainProduct.name,
+      departmentId: domainProduct.departmentId,
+      parts: domainProduct.partsRequired,
+    );
   }
 
   /// Mahsulotni o'chirish
-  Future<void> _deleteProduct(Product product) async {
+  /// Repository pattern - works for both web and mobile
+  Future<void> _deleteProduct(domain.Product product) async {
     if (!mounted) return;
     
     try {
-      // FIX: Filtered list index emas, real Hive index ishlatish
-      final hiveIndex = _findHiveIndexById(product.id);
-      
-      if (hiveIndex == null) {
-        if (mounted) {
-          _showSnackBar(AppLocalizations.of(context)?.translate('partNotFoundInStorage')?.replaceAll('part', 'product') ?? 'Product not found in storage', Colors.red);
-        }
-        return;
-      }
-      
-      // Departmentdan olib tashlash
-      await _departmentService.removeProductFromDepartment(
+      // Departmentdan olib tashlash (backward compatibility)
+      _departmentService.removeProductFromDepartment(
         product.departmentId,
         product.id,
-      );
+      ).catchError((e) {
+        debugPrint('⚠️ Failed to remove product from department: $e');
+      });
       
-      // FIX: Real Hive index ishlatish
-      final success = await _productService.deleteProduct(hiveIndex);
-        if (mounted) {
-          if (success) {
-            // FIX: UI ni darhol yangilash
-            setState(() {});
-            // FIX: Chrome'da productslarni qayta yuklash
-            if (kIsWeb) {
-              await _loadWebProducts();
-            }
+      // Use repository to delete product
+      final result = await _productRepository.deleteProduct(product.id);
+      
+      if (mounted) {
+        result.fold(
+          (failure) {
+            _showSnackBar('Failed to delete product: ${failure.message}', Colors.red);
+          },
+          (_) {
             _showSnackBar(AppLocalizations.of(context)?.translate('productDeleted') ?? 'Product deleted', Colors.orange);
-          } else {
-            _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddProduct') ?? 'Failed to delete product. Please try again.', Colors.red);
-          }
-        }
+          },
+        );
+      }
     } catch (e) {
       if (mounted) {
         _showSnackBar('${AppLocalizations.of(context)?.translate('error') ?? 'Error'} deleting product: ${e.toString()}', Colors.red);
@@ -712,141 +541,416 @@ class _ProductsPageState extends State<ProductsPage> {
     );
   }
 
+  /// Import products from Excel file
+  Future<void> _importFromExcel() async {
+    // First, select department
+    String? selectedDeptId;
+    
+    final deptResult = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Department'),
+        content: ValueListenableBuilder(
+          valueListenable: _boxService.departmentsListenable,
+          builder: (context, Box<Department> deptBox, _) {
+            final departments = deptBox.values.toList();
+            if (departments.isEmpty) {
+              return const Text('No departments available. Please create a department first.');
+            }
+            
+            return DropdownButtonFormField<String>(
+              decoration: const InputDecoration(
+                labelText: 'Department',
+                border: OutlineInputBorder(),
+              ),
+              items: departments.map((dept) {
+                return DropdownMenuItem(
+                  value: dept.id,
+                  child: Text(dept.name),
+                );
+              }).toList(),
+              onChanged: (value) {
+                selectedDeptId = value;
+              },
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, selectedDeptId),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (deptResult == null || deptResult.isEmpty) {
+      return; // User cancelled or no department selected
+    }
+
+    setState(() {
+      _isImporting = true;
+    });
+
+    try {
+      // 1. Pick Excel file
+      final fileResult = await _excelImportService.pickExcelFile();
+      
+      if (!mounted) return;
+
+      fileResult.fold(
+        (failure) {
+          setState(() {
+            _isImporting = false;
+          });
+          _showSnackBar('Failed to pick file: ${failure.message}', Colors.red);
+        },
+        (file) async {
+          if (file == null) {
+            // User cancelled
+            setState(() {
+              _isImporting = false;
+            });
+            return;
+          }
+
+          // 2. Parse Excel file
+          final parseResult = await _excelImportService.parseProductsFromExcel(
+            file,
+            deptResult,
+          );
+          
+          if (!mounted) return;
+
+          parseResult.fold(
+            (failure) {
+              setState(() {
+                _isImporting = false;
+              });
+              _showSnackBar('Failed to parse Excel: ${failure.message}', Colors.red);
+            },
+            (products) async {
+              if (products.isEmpty) {
+                setState(() {
+                  _isImporting = false;
+                });
+                _showSnackBar('No products found in Excel file', Colors.orange);
+                return;
+              }
+
+              // 3. Resolve part names to IDs
+              // Get all parts from repository
+              final partsResult = await _partRepository.getAllParts();
+              final allParts = partsResult.fold(
+                (failure) {
+                  debugPrint('⚠️ Failed to load parts: ${failure.message}');
+                  return <domain.Part>[];
+                },
+                (parts) => parts,
+              );
+              
+              final productsWithPartIds = <domain.Product>[];
+
+              for (final product in products) {
+                final resolvedParts = <String, int>{};
+                
+                for (final entry in product.partsRequired.entries) {
+                  final partName = entry.key;
+                  final quantity = entry.value;
+                  
+                  // Find part by name
+                  try {
+                    final part = allParts.firstWhere(
+                      (p) => p.name.toLowerCase() == partName.toLowerCase(),
+                    );
+                    resolvedParts[part.id] = quantity;
+                  } catch (e) {
+                    debugPrint('⚠️ Part not found: $partName');
+                  }
+                }
+
+                productsWithPartIds.add(product.copyWith(
+                  partsRequired: resolvedParts,
+                ));
+              }
+
+              // 4. Show confirmation dialog
+              final shouldImport = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Import Products'),
+                  content: Text(
+                    'Found ${productsWithPartIds.length} products in Excel file.\n\n'
+                    'Do you want to import them?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Import'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (shouldImport != true || !mounted) {
+                setState(() {
+                  _isImporting = false;
+                });
+                return;
+              }
+
+              // 5. Import products one by one
+              int successCount = 0;
+              int failCount = 0;
+
+              for (final product in productsWithPartIds) {
+                final result = await _productRepository.createProduct(product);
+                result.fold(
+                  (failure) {
+                    failCount++;
+                    debugPrint('❌ Failed to import ${product.name}: ${failure.message}');
+                  },
+                  (created) {
+                    successCount++;
+                    debugPrint('✅ Imported: ${created.name}');
+                    
+                    // Update department (backward compatibility)
+                    _departmentService.assignProductToDepartment(
+                      deptResult,
+                      created.id,
+                    ).catchError((e) {
+                      debugPrint('⚠️ Failed to update department: $e');
+                    });
+                  },
+                );
+              }
+
+              if (!mounted) return;
+
+              setState(() {
+                _isImporting = false;
+              });
+
+              // 6. Show result
+              _showSnackBar(
+                'Imported: $successCount, Failed: $failCount',
+                failCount == 0 ? Colors.green : Colors.orange,
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isImporting = false;
+      });
+      _showSnackBar('Import error: ${e.toString()}', Colors.red);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
-        elevation: 2,
-      ),
-      body: Column(
-        children: [
-          // Search, Filter va Sort section
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.surface,
-            child: Column(
-              children: [
-                SearchBarWidget(
-                  controller: _searchController,
-                  hintText: AppLocalizations.of(context)?.translate('searchProducts') ?? 'Search products...',
-                  onChanged: (_) => setState(() {}),
-                  onClear: () => setState(() {}),
+    return StreamBuilder<Either<Failure, List<domain.Product>>>(
+      stream: _productRepository.watchProducts(),
+      builder: (context, snapshot) {
+        // Handle loading state
+        if (_isInitialLoading && !snapshot.hasData) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
+              elevation: 2,
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        
+        // Handle error state
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
+              elevation: 2,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() => _isInitialLoading = true),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        
+        // Handle data
+        final products = snapshot.data?.fold(
+          (failure) {
+            // Show error but don't crash
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('Error: ${failure.message}', Colors.red);
+              }
+            });
+            return <domain.Product>[];
+          },
+          (products) => products,
+        ) ?? <domain.Product>[];
+        
+        // Update validation when products change
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _nameController.text.isNotEmpty) {
+            _validateProductName(products);
+          }
+        });
+        
+        final filteredProducts = _getFilteredProducts(products);
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
+            elevation: 2,
+            actions: [
+              // Excel Import button (only for managers and boss)
+              if (_canCreateProducts)
+                IconButton(
+                  icon: _isImporting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.upload_file),
+                  tooltip: 'Import from Excel',
+                  onPressed: _isImporting ? null : _importFromExcel,
                 ),
-                const SizedBox(height: 12),
-                // Department filter
-                ValueListenableBuilder(
-                  valueListenable: _boxService.departmentsListenable,
-                  builder: (context, Box<Department> box, _) {
-                    final departments = box.values.toList();
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          FilterChipWidget(
-                            label: AppLocalizations.of(context)?.translate('allDepartments') ?? 'All Departments',
-                            selected: _selectedDepartmentFilter == null,
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedDepartmentFilter = selected ? null : _selectedDepartmentFilter;
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          ...departments.map((dept) {
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: FilterChipWidget(
-                                label: dept.name,
-                                selected: _selectedDepartmentFilter == dept.id,
+            ],
+          ),
+          body: Column(
+            children: [
+              // Search, Filter va Sort section
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).colorScheme.surface,
+                child: Column(
+                  children: [
+                    SearchBarWidget(
+                      controller: _searchController,
+                      hintText: AppLocalizations.of(context)?.translate('searchProducts') ?? 'Search products...',
+                      onChanged: (_) => setState(() {}),
+                      onClear: () => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    // Department filter
+                    ValueListenableBuilder(
+                      valueListenable: _boxService.departmentsListenable,
+                      builder: (context, Box<Department> box, _) {
+                        final departments = box.values.toList();
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              FilterChipWidget(
+                                label: AppLocalizations.of(context)?.translate('allDepartments') ?? 'All Departments',
+                                selected: _selectedDepartmentFilter == null,
                                 onSelected: (selected) {
                                   setState(() {
-                                    _selectedDepartmentFilter = selected ? dept.id : null;
+                                    _selectedDepartmentFilter = selected ? null : _selectedDepartmentFilter;
                                   });
                                 },
                               ),
-                            );
-                          }),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                SortDropdownWidget(
-                  selectedOption: _selectedSortOption,
-                  onChanged: (option) {
-                    setState(() {
-                      _selectedSortOption = option;
-                    });
-                  },
-                  options: const [
-                    SortOption.nameAsc,
-                    SortOption.nameDesc,
+                              const SizedBox(width: 8),
+                              ...departments.map((dept) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: FilterChipWidget(
+                                    label: dept.name,
+                                    selected: _selectedDepartmentFilter == dept.id,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        _selectedDepartmentFilter = selected ? dept.id : null;
+                                      });
+                                    },
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SortDropdownWidget(
+                      selectedOption: _selectedSortOption,
+                      onChanged: (option) {
+                        setState(() {
+                          _selectedSortOption = option;
+                        });
+                      },
+                      options: const [
+                        SortOption.nameAsc,
+                        SortOption.nameDesc,
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
 
-          // Products list
-          Expanded(
-            child: Builder(
-              builder: (context) {
-                // FIX: Chrome'da Hive ishlamaydi - fallback qo'shish
-                // FIX: Faqat Chrome uchun fallback ishlatish, telefon uchun ValueListenableBuilder
-                if (kIsWeb) {
-                  // Chrome - to'g'ridan-to'g'ri state'dan olish
-                  return _buildWebProductsFallback();
-                }
-                
-                // FIX: Telefon uchun Hive box ochilmagan bo'lsa, bo'sh ko'rsatish
-                if (!Hive.isBoxOpen('productsBox')) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-                
-                // Mobile/Desktop - ValueListenableBuilder ishlatish
-                return ValueListenableBuilder(
-                  valueListenable: _boxService.productsListenable,
-                  builder: (context, Box<Product> box, _) {
-                    final products = _getFilteredProducts();
+              // Products list
+              Expanded(
+                child: Builder(
+                  builder: (context) {
 
-                if (products.isEmpty) {
-                  return RefreshIndicator(
-                    onRefresh: () async {
-                      setState(() {});
-                      await Future.delayed(const Duration(milliseconds: 500));
-                    },
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.6,
-                        child: EmptyStateWidget(
-                          icon: Icons.inventory,
-                          title: box.isEmpty 
-                              ? 'No products yet' 
-                              : 'No products match your filters',
-                          subtitle: box.isEmpty
-                              ? 'Tap the + button to add a product'
-                              : 'Try adjusting your search or filters',
+                    if (filteredProducts.isEmpty) {
+                      return RefreshIndicator(
+                        onRefresh: () async {
+                          setState(() => _isInitialLoading = true);
+                          await Future.delayed(const Duration(milliseconds: 500));
+                          setState(() => _isInitialLoading = false);
+                        },
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: EmptyStateWidget(
+                              icon: Icons.inventory,
+                              title: products.isEmpty 
+                                  ? 'No products yet' 
+                                  : 'No products match your filters',
+                              subtitle: products.isEmpty
+                                  ? 'Tap the + button to add a product'
+                                  : 'Try adjusting your search or filters',
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                }
+                      );
+                    }
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    setState(() {});
-                    await Future.delayed(const Duration(milliseconds: 500));
-                  },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: products.length,
-                    itemBuilder: (context, index) {
-                    final product = products[index];
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        setState(() => _isInitialLoading = true);
+                        await Future.delayed(const Duration(milliseconds: 500));
+                        setState(() => _isInitialLoading = false);
+                      },
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(8),
+                        itemCount: filteredProducts.length,
+                        itemBuilder: (context, index) {
+                        final domainProduct = filteredProducts[index];
+                    final product = _domainToModel(domainProduct);
                     final department = _departmentService.getDepartmentById(product.departmentId);
 
                     return AnimatedListItem(
@@ -889,7 +993,7 @@ class _ProductsPageState extends State<ProductsPage> {
                               builder: (context) => ProductEditPage(product: product),
                             ),
                           );
-                          // FIX: Refresh if product was updated
+                          // StreamBuilder will automatically refresh
                           if (result == true && mounted) {
                             setState(() {});
                           }
@@ -912,7 +1016,7 @@ class _ProductsPageState extends State<ProductsPage> {
                                   TextButton(
                                     onPressed: () {
                                       Navigator.pop(context);
-                                      _deleteProduct(product);
+                                      _deleteProduct(domainProduct);
                                     },
                                     child: Text(
                                       AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
@@ -930,8 +1034,6 @@ class _ProductsPageState extends State<ProductsPage> {
                     );
                   },
                   ),
-                );
-                  },
                 );
               },
             ),
@@ -1033,176 +1135,8 @@ class _ProductsPageState extends State<ProductsPage> {
         child: const Icon(Icons.add),
       )
           : null, // Hide button if user can't create products
-    );
-  }
-
-  /// Chrome/Web uchun fallback widget
-  /// FIX: Chrome'da Hive ishlamaydi - to'g'ridan-to'g'ri state'dan olish
-  Widget _buildWebProductsFallback() {
-    debugPrint('🔍 _buildWebProductsFallback called');
-    debugPrint('   _isLoadingWebProducts: $_isLoadingWebProducts');
-    debugPrint('   _webProducts.length: ${_webProducts.length}');
-    
-    // FIX: Chrome'da productslar yuklanayotgan bo'lsa, loading ko'rsatish
-    if (kIsWeb && _isLoadingWebProducts) {
-      debugPrint('   Showing loading indicator');
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-    
-    // FIX: Agar productslar bo'sh bo'lsa va yuklanayotgan bo'lmasa, yuklashga harakat qilish
-    if (kIsWeb && _webProducts.isEmpty && !_isLoadingWebProducts) {
-      debugPrint('   Products empty, attempting to load...');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _loadWebProducts();
-        }
-      });
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-    
-    final products = _getFilteredProducts();
-    debugPrint('   Filtered products.length: ${products.length}');
-
-    if (products.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: () async {
-          if (mounted) {
-            // FIX: Chrome'da productslarni qayta yuklash
-            if (kIsWeb) {
-              await _loadWebProducts();
-            }
-            setState(() {});
-          }
-          await Future.delayed(const Duration(milliseconds: 500));
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
-            child: const EmptyStateWidget(
-              icon: Icons.inventory,
-              title: 'No products yet',
-              subtitle: 'Tap the + button to add a product',
-            ),
-          ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () async {
-        if (mounted) {
-          // FIX: Chrome'da productslarni qayta yuklash
-          if (kIsWeb) {
-            await _loadWebProducts();
-          }
-          setState(() {});
-        }
-        await Future.delayed(const Duration(milliseconds: 500));
+        );
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.all(8),
-        itemCount: products.length,
-        itemBuilder: (context, index) {
-          if (!mounted) {
-            return const SizedBox.shrink();
-          }
-          
-          try {
-            final product = products[index];
-            final department = _departmentService.getDepartmentById(product.departmentId);
-
-            return AnimatedListItem(
-              delay: index * 50,
-              child: Card(
-                margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                elevation: 2,
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.inventory),
-                  ),
-                  title: Text(
-                    product.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${AppLocalizations.of(context)?.translate('department') ?? 'Department'}: ${department?.name ?? AppLocalizations.of(context)?.translate('unknown') ?? 'Unknown'}'),
-                      Text('${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'}: ${product.parts.length}'),
-                      if (product.parts.isNotEmpty)
-                        Text(
-                          product.parts.entries
-                              .map((e) {
-                                final part = _partService.getPartById(e.key);
-                                return '${part?.name ?? e.key}: ${e.value}';
-                              })
-                              .join(', '),
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                  onTap: () async {
-                    // Navigate to edit page
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProductEditPage(product: product),
-                      ),
-                    );
-                    // FIX: Refresh if product was updated
-                    if (result == true && mounted) {
-                      if (kIsWeb) {
-                        await _loadWebProducts();
-                      }
-                      setState(() {});
-                    }
-                  },
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: Text(AppLocalizations.of(context)?.translate('deleteProduct') ?? 'Delete Product'),
-                          content: Text(
-                            '${AppLocalizations.of(context)?.translate('deleteProductConfirm') ?? 'Are you sure you want to delete this product'}?',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _deleteProduct(product);
-                              },
-                              child: Text(
-                                AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    tooltip: 'Delete',
-                  ),
-                ),
-              ),
-            );
-          } catch (e) {
-            return const SizedBox.shrink();
-          }
-        },
-      ),
     );
   }
 }

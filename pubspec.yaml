@@ -33,6 +33,11 @@ dependencies:
   riverpod_annotation: ^2.3.5
   # HTTP client
   dio: ^5.4.1
+  # Excel import
+  excel: ^4.0.4
+  file_picker: ^8.0.0+1
+  # Charts
+  fl_chart: ^0.68.0
 
 dev_dependencies:
   flutter_test:

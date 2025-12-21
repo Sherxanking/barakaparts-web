@@ -40,7 +40,7 @@ final currentUserStreamProvider = AutoDisposeStreamProvider<User?>.internal(
 );
 
 typedef CurrentUserStreamRef = AutoDisposeStreamProviderRef<User?>;
-String _$authStateHash() => r'4d8deff486e9681937d861dea1b1e0eb856f19eb';
+String _$authStateHash() => r'f87e7827f92110ccf70cc3436ccea9dca0e4b45b';
 
 /// Auth state provider (loading, error, user)
 ///

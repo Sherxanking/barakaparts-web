@@ -50,3 +50,9 @@ Siz Supabase Dashboard'da `FINAL_COMPLETE_FIX.sql` ni bajarishingiz kerak.
 
 
 
+
+
+
+
+
+

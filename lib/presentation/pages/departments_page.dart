@@ -6,11 +6,19 @@
 /// - Qidiruv va tartiblash
 /// - Real-time yangilanishlar
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:async';
 import '../../data/models/department_model.dart';
 import '../../data/services/hive_box_service.dart';
 import '../../data/services/department_service.dart';
+import '../../core/di/service_locator.dart';
+import '../../core/services/auth_state_service.dart';
+import '../../domain/repositories/department_repository.dart';
+import '../../domain/entities/department.dart' as domain;
+import '../../core/errors/failures.dart';
+import '../../core/utils/either.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
@@ -26,9 +34,30 @@ class DepartmentsPage extends StatefulWidget {
 }
 
 class _DepartmentsPageState extends State<DepartmentsPage> {
-  // Services
+  // Repository
+  final DepartmentRepository _departmentRepository = ServiceLocator.instance.departmentRepository;
+  
+  // Services (for backward compatibility)
   final HiveBoxService _boxService = HiveBoxService();
   final DepartmentService _departmentService = DepartmentService();
+  
+  /// Check if current user can create departments
+  bool get _canCreateDepartments {
+    final user = AuthStateService().currentUser;
+    return user != null && (user.isManager || user.isBoss);
+  }
+  
+  /// Check if current user can edit departments
+  bool get _canEditDepartments {
+    final user = AuthStateService().currentUser;
+    return user != null && (user.isManager || user.isBoss);
+  }
+  
+  /// Check if current user can delete departments
+  bool get _canDeleteDepartments {
+    final user = AuthStateService().currentUser;
+    return user != null && user.isBoss;
+  }
 
   // Controllers
   final TextEditingController _nameController = TextEditingController();
@@ -36,6 +65,9 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
 
   // State
   SortOption? _selectedSortOption;
+  
+  // State for initial load only
+  bool _isInitialLoading = true;
   
   // FIX: Duplicate name validation
   String? _nameValidationError;
@@ -50,12 +82,23 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
     
-    // FIX: Real-time duplicate name validation
-    _nameController.addListener(_validateDepartmentName);
+    // Real-time duplicate name validation will be handled in StreamBuilder
+    
+    // Initial load - after first stream event, hide loading
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _isInitialLoading = false;
+          });
+        }
+      });
+    });
   }
   
   /// Validate department name for duplicates (case-insensitive, trimmed)
-  void _validateDepartmentName() {
+  /// NOTE: This will be called from StreamBuilder context with departments list
+  void _validateDepartmentName(List<domain.Department> departments) {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       setState(() {
@@ -65,9 +108,9 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
       return;
     }
     
-    // Check for duplicate in Hive
+    // Check for duplicate in provided departments
     final normalizedName = name.toLowerCase();
-    final hasDuplicate = _departmentService.getAllDepartments().any((dept) {
+    final hasDuplicate = departments.any((dept) {
       return dept.name.trim().toLowerCase() == normalizedName;
     });
     
@@ -83,7 +126,6 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
 
   @override
   void dispose() {
-    // FIX: Listener ni olib tashlash dispose dan oldin
     _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _searchController.dispose();
@@ -91,95 +133,109 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
   }
 
   /// Filtrlangan va tartiblangan departmentlarni olish
-  List<Department> _getFilteredDepartments() {
-    List<Department> departments = _departmentService.searchDepartments(
-      _searchController.text,
-    );
+  /// Repository pattern - works for both web and mobile
+  List<domain.Department> _getFilteredDepartments(List<domain.Department> departments) {
+    // Start with provided departments
 
-    // Tartiblash
+    // Search filter
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      departments = departments.where((dept) {
+        return dept.name.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // Sort
     if (_selectedSortOption != null) {
-      departments = _departmentService.sortDepartments(
-        departments,
-        _selectedSortOption!.ascending,
-      );
+      departments.sort((a, b) {
+        final ascending = _selectedSortOption!.ascending;
+        switch (_selectedSortOption!) {
+          case SortOption.nameAsc:
+          case SortOption.nameDesc:
+            return ascending 
+                ? a.name.compareTo(b.name)
+                : b.name.compareTo(a.name);
+          default:
+            return 0;
+        }
+      });
     }
 
     return departments;
   }
+  
+  /// Convert domain Department to Department model (for backward compatibility)
+  Department _domainToModel(domain.Department domainDepartment) {
+    return Department(
+      id: domainDepartment.id,
+      name: domainDepartment.name,
+      productIds: [], // Will be loaded separately if needed
+      productParts: {},
+    );
+  }
 
   /// Yangi bo'lim qo'shish
+  /// Repository pattern - works for both web and mobile
   Future<void> _addDepartment() async {
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar(AppLocalizations.of(context)?.translate('enterProductName')?.replaceAll('product', 'department') ?? 'Please enter a department name', Colors.red);
       return;
     }
 
-    final department = Department(
+    final domainDepartment = domain.Department(
       id: const Uuid().v4(),
       name: _nameController.text.trim(),
-      productIds: [],
-      productParts: {},
+      createdAt: DateTime.now(),
     );
 
-    // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _departmentService.addDepartment(department);
+    // Use repository to create department
+    final result = await _departmentRepository.createDepartment(domainDepartment);
+    
     if (mounted) {
-      if (success) {
-        _nameController.clear();
-        _nameValidationError = null;
-        _showSnackBar(AppLocalizations.of(context)?.translate('productAdded')?.replaceAll('product', 'department') ?? 'Department added successfully', Colors.green);
-        Navigator.pop(context); // Dialog yopish
-      } else {
-        // Check if it's a duplicate name error
-        final normalizedName = department.name.trim().toLowerCase();
-        final hasDuplicate = _departmentService.getAllDepartments().any((d) {
-          return d.name.trim().toLowerCase() == normalizedName;
-        });
-        
-        if (hasDuplicate) {
-          setState(() {
-            _nameValidationError = 'A department with this name already exists';
-          });
-          // FIX: Dialog yopilgandan keyin xabar ko'rsatish
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _showSnackBar(AppLocalizations.of(context)?.translate('duplicateDepartmentName') ?? 'A department with this name already exists. Please use a different name.', Colors.red);
-            }
-          });
-        } else {
-          // FIX: Dialog yopilgandan keyin xabar ko'rsatish
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddDepartment') ?? 'Failed to add department. Please try again.', Colors.red);
-            }
-          });
-        }
-      }
+      result.fold(
+        (failure) {
+          // Check if it's a duplicate name error (check error message)
+          if (failure.message.toLowerCase().contains('duplicate') || 
+              failure.message.toLowerCase().contains('already exists')) {
+            setState(() {
+              _nameValidationError = 'A department with this name already exists';
+            });
+          }
+          _showSnackBar('Failed to add department: ${failure.message}', Colors.red);
+        },
+        (createdDepartment) {
+          _nameController.clear();
+          _nameValidationError = null;
+          Navigator.pop(context);
+          _showSnackBar(AppLocalizations.of(context)?.translate('productAdded')?.replaceAll('product', 'department') ?? 'Department added successfully', Colors.green);
+        },
+      );
     }
   }
 
   /// Bo'limni o'chirish
-  Future<void> _deleteDepartment(Department department) async {
-    final departments = _getFilteredDepartments();
-    final index = departments.indexOf(department);
+  /// Repository pattern - works for both web and mobile
+  Future<void> _deleteDepartment(domain.Department department) async {
+    // Use repository to delete department
+    final result = await _departmentRepository.deleteDepartment(department.id);
     
-    if (index >= 0) {
-      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-      final success = await _departmentService.deleteDepartment(index);
-      if (mounted) {
-        if (success) {
+    if (mounted) {
+      result.fold(
+        (failure) {
+          _showSnackBar('Failed to delete department: ${failure.message}', Colors.red);
+        },
+        (_) {
           _showSnackBar(AppLocalizations.of(context)?.translate('departmentDeleted') ?? 'Department deleted', Colors.orange);
-        } else {
-          _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddDepartment') ?? 'Failed to delete department. Please try again.', Colors.red);
-        }
-      }
+        },
+      );
     }
   }
 
   /// Bo'limni tahrirlash
-  Future<void> _editDepartment(Department department) async {
+  /// Repository pattern - works for both web and mobile
+  Future<void> _editDepartment(domain.Department department) async {
     _nameController.text = department.name;
-    _editNameValidationError = null; // Reset validation error
+    _editNameValidationError = null;
 
     if (!mounted) return;
     
@@ -213,45 +269,27 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                 return;
               }
               
-              // Check for duplicate (exclude current department)
-              final normalizedName = _nameController.text.trim().toLowerCase();
-              final hasDuplicate = _departmentService.getAllDepartments().any((d) {
-                return d.id != department.id && d.name.trim().toLowerCase() == normalizedName;
-              });
+              // Validation will be handled by repository error message
               
-              if (hasDuplicate) {
-                setState(() {
-                  _editNameValidationError = 'A department with this name already exists';
-                });
-                _showSnackBar(AppLocalizations.of(context)?.translate('duplicateDepartmentName') ?? 'A department with this name already exists. Please use a different name.', Colors.red);
-                return;
-              }
+              final updatedDepartment = department.copyWith(
+                name: _nameController.text.trim(),
+              );
               
-              department.name = _nameController.text.trim();
-              // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-              final success = await _departmentService.updateDepartment(department);
+              // Use repository to update department
+              final result = await _departmentRepository.updateDepartment(updatedDepartment);
+              
               if (mounted) {
-                if (success) {
-                  _nameController.clear();
-                  _editNameValidationError = null;
-                  Navigator.pop(context);
-                  _showSnackBar(AppLocalizations.of(context)?.translate('departmentUpdated') ?? 'Department updated', Colors.green);
-                } else {
-                  // Check if it's a duplicate name error
-                  final normalizedName = department.name.trim().toLowerCase();
-                  final hasDuplicate = _departmentService.getAllDepartments().any((d) {
-                    return d.id != department.id && d.name.trim().toLowerCase() == normalizedName;
-                  });
-                  
-                  if (hasDuplicate) {
-                    setState(() {
-                      _editNameValidationError = 'A department with this name already exists';
-                    });
-                    _showSnackBar(AppLocalizations.of(context)?.translate('duplicateDepartmentName') ?? 'A department with this name already exists. Please use a different name.', Colors.red);
-                  } else {
-                    _showSnackBar(AppLocalizations.of(context)?.translate('failedToAddDepartment') ?? 'Failed to update department. Please try again.', Colors.red);
-                  }
-                }
+                result.fold(
+                  (failure) {
+                    _showSnackBar('Failed to update department: ${failure.message}', Colors.red);
+                  },
+                  (updated) {
+                    _nameController.clear();
+                    _editNameValidationError = null;
+                    Navigator.pop(context);
+                    _showSnackBar(AppLocalizations.of(context)?.translate('departmentUpdated') ?? 'Department updated', Colors.green);
+                  },
+                );
               }
             },
             child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
@@ -274,83 +312,144 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
-        elevation: 2,
-      ),
-      body: Column(
-        children: [
-          // Search va Sort section
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.surface,
-            child: Column(
-              children: [
-                SearchBarWidget(
-                  controller: _searchController,
-                  hintText: AppLocalizations.of(context)?.translate('searchDepartments') ?? 'Search departments...',
-                  onChanged: (_) => setState(() {}),
-                  onClear: () => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                SortDropdownWidget(
-                  selectedOption: _selectedSortOption,
-                  onChanged: (option) {
-                    setState(() {
-                      _selectedSortOption = option;
-                    });
-                  },
-                  options: const [
-                    SortOption.nameAsc,
-                    SortOption.nameDesc,
+    return StreamBuilder<Either<Failure, List<domain.Department>>>(
+      stream: _departmentRepository.watchDepartments(),
+      builder: (context, snapshot) {
+        // Handle loading state
+        if (_isInitialLoading && !snapshot.hasData) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
+              elevation: 2,
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        
+        // Handle error state
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
+              elevation: 2,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() => _isInitialLoading = true),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        
+        // Handle data
+        final departments = snapshot.data?.fold(
+          (failure) {
+            // Show error but don't crash
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('Error: ${failure.message}', Colors.red);
+              }
+            });
+            return <domain.Department>[];
+          },
+          (departments) => departments,
+        ) ?? <domain.Department>[];
+        
+        // Update validation when departments change
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _nameController.text.isNotEmpty) {
+            _validateDepartmentName(departments);
+          }
+        });
+        
+        final filteredDepartments = _getFilteredDepartments(departments);
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
+            elevation: 2,
+          ),
+          body: Column(
+            children: [
+              // Search va Sort section
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).colorScheme.surface,
+                child: Column(
+                  children: [
+                    SearchBarWidget(
+                      controller: _searchController,
+                      hintText: AppLocalizations.of(context)?.translate('searchDepartments') ?? 'Search departments...',
+                      onChanged: (_) => setState(() {}),
+                      onClear: () => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    SortDropdownWidget(
+                      selectedOption: _selectedSortOption,
+                      onChanged: (option) {
+                        setState(() {
+                          _selectedSortOption = option;
+                        });
+                      },
+                      options: const [
+                        SortOption.nameAsc,
+                        SortOption.nameDesc,
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
 
-          // Departments list
-          Expanded(
-            child: ValueListenableBuilder(
-              valueListenable: _boxService.departmentsListenable,
-              builder: (context, Box<Department> box, _) {
-                final departments = _getFilteredDepartments();
+              // Departments list
+              Expanded(
+                child: Builder(
+                  builder: (context) {
 
-                if (departments.isEmpty) {
-                  return RefreshIndicator(
-                    onRefresh: () async {
-                      setState(() {});
-                      await Future.delayed(const Duration(milliseconds: 500));
-                    },
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.6,
-                        child: EmptyStateWidget(
-                          icon: Icons.business,
-                          title: box.isEmpty 
-                              ? 'No departments yet' 
-                              : 'No departments match your search',
-                          subtitle: box.isEmpty
-                              ? 'Tap the + button to add a department'
-                              : 'Try adjusting your search',
+                    if (filteredDepartments.isEmpty) {
+                      return RefreshIndicator(
+                        onRefresh: () async {
+                          setState(() => _isInitialLoading = true);
+                          await Future.delayed(const Duration(milliseconds: 500));
+                          setState(() => _isInitialLoading = false);
+                        },
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: EmptyStateWidget(
+                              icon: Icons.business,
+                              title: departments.isEmpty 
+                                  ? 'No departments yet' 
+                                  : 'No departments match your search',
+                              subtitle: departments.isEmpty
+                                  ? 'Tap the + button to add a department'
+                                  : 'Try adjusting your search',
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                }
+                      );
+                    }
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    setState(() {});
-                    await Future.delayed(const Duration(milliseconds: 500));
-                  },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: departments.length,
-                    itemBuilder: (context, index) {
-                    final department = departments[index];
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        setState(() => _isInitialLoading = true);
+                        await Future.delayed(const Duration(milliseconds: 500));
+                        setState(() => _isInitialLoading = false);
+                      },
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(8),
+                        itemCount: filteredDepartments.length,
+                        itemBuilder: (context, index) {
+                        final domainDepartment = filteredDepartments[index];
+                    final department = _domainToModel(domainDepartment);
 
                     return AnimatedListItem(
                       delay: index * 50,
@@ -382,47 +481,53 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                             ),
                           );
                         },
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.blue),
-                              onPressed: () => _editDepartment(department),
-                              tooltip: 'Edit',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: Text(AppLocalizations.of(context)?.translate('deleteDepartment') ?? 'Delete Department'),
-                                    content: Text(
-                                      '${AppLocalizations.of(context)?.translate('deleteDepartmentConfirm') ?? 'Are you sure you want to delete this department'}?',
+                        trailing: (_canEditDepartments || _canDeleteDepartments)
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_canEditDepartments)
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Colors.blue),
+                                      onPressed: () => _editDepartment(domainDepartment),
+                                      tooltip: 'Edit',
                                     ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context),
-                                        child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          _deleteDepartment(department);
-                                        },
-                                        child: Text(
-                                          AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
-                                          style: const TextStyle(color: Colors.red),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              tooltip: 'Delete',
-                            ),
-                          ],
-                        ),
+                                  if (_canEditDepartments && _canDeleteDepartments)
+                                    const SizedBox(width: 4),
+                                  if (_canDeleteDepartments)
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () {
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: Text(AppLocalizations.of(context)?.translate('deleteDepartment') ?? 'Delete Department'),
+                                            content: Text(
+                                              '${AppLocalizations.of(context)?.translate('deleteDepartmentConfirm') ?? 'Are you sure you want to delete this department'}?',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(context),
+                                                child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () {
+                                                  Navigator.pop(context);
+                                                  _deleteDepartment(domainDepartment);
+                                                },
+                                                child: Text(
+                                                  AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+                                                  style: const TextStyle(color: Colors.red),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                      tooltip: 'Delete',
+                                    ),
+                                ],
+                              )
+                            : null,
                       ),
                     ),
                     );
@@ -434,9 +539,10 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: "add_department_fab", // FIX: Unique hero tag
-        onPressed: () {
+      floatingActionButton: _canCreateDepartments
+          ? FloatingActionButton(
+              heroTag: "add_department_fab", // FIX: Unique hero tag
+              onPressed: () {
           _nameController.clear();
           _nameValidationError = null;
           showDialog(
@@ -477,7 +583,10 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
           );
         },
         child: const Icon(Icons.add),
-      ),
+      )
+          : null, // Hide button if user can't create departments
+        );
+      },
     );
   }
 }

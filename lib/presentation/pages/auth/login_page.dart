@@ -11,10 +11,7 @@ import '../../../infrastructure/datasources/supabase_user_datasource.dart';
 import '../../../infrastructure/datasources/supabase_client.dart';
 import '../../../infrastructure/repositories/user_repository_impl.dart';
 import '../../pages/home_page.dart';
-// RegisterPage removed - registration not supported in MVP
-// import 'register_page.dart';
-// ResetPasswordPage removed - password reset not supported in MVP
-// import 'reset_password_page.dart';
+import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -354,8 +351,21 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Google Sign-In and Registration removed - only email/password authentication is supported
-                  // Users must be created by admin via Supabase Dashboard
+                  // Sign up link
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Don\'t have an account? '),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const SignupPage()),
+                          );
+                        },
+                        child: const Text('Sign Up'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

@@ -290,3 +290,9 @@ Agar muammo bo'lsa:
 
 
 
+
+
+
+
+
+

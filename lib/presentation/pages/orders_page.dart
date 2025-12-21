@@ -21,6 +21,13 @@ import '../../data/services/product_service.dart';
 import '../../data/services/part_calculator_service.dart';
 import '../../data/services/part_service.dart';
 import '../../core/di/service_locator.dart';
+import '../../core/utils/either.dart';
+import '../../core/errors/failures.dart';
+import '../../core/services/auth_state_service.dart';
+import '../../domain/entities/order.dart' as domain;
+import '../../domain/entities/user.dart' as domain;
+import '../../domain/repositories/order_repository.dart';
+import '../../infrastructure/cache/hive_order_cache.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
@@ -36,7 +43,10 @@ class OrdersPage extends StatefulWidget {
 }
 
 class _OrdersPageState extends State<OrdersPage> {
-  // Services
+  // Repository
+  final OrderRepository _orderRepository = ServiceLocator.instance.orderRepository;
+  
+  // Services (for backward compatibility - will be removed gradually)
   final HiveBoxService _boxService = HiveBoxService();
   final OrderService _orderService = OrderService();
   final DepartmentService _departmentService = DepartmentService();
@@ -55,15 +65,32 @@ class _OrdersPageState extends State<OrdersPage> {
   String? _selectedDepartmentFilter;
   SortOption? _selectedSortOption;
   
-  // Chrome uchun state
-  List<Order> _webOrders = [];
-  bool _isLoadingWebOrders = false;
-  
-  // Chrome uchun real-time stream subscription
-  StreamSubscription? _ordersStreamSubscription;
+  // State for initial load only
+  bool _isInitialLoading = true;
   
   // Order completion loading state (optimization)
   String? _completingOrderId;
+  
+  /// Check if current user can create orders
+  bool get _canCreateOrders {
+    final user = AuthStateService().currentUser;
+    return user != null; // All authenticated users can create orders
+  }
+  
+  /// Check if current user can complete orders
+  bool get _canCompleteOrders {
+    final user = AuthStateService().currentUser;
+    return user != null && (user.isManager || user.isBoss);
+  }
+  
+  /// Check if current user can delete orders
+  bool get _canDeleteOrders {
+    final user = AuthStateService().currentUser;
+    return user != null && user.isBoss;
+  }
+  
+  /// Get current user for department filtering (Manager only)
+  domain.User? get _currentUser => AuthStateService().currentUser;
 
   @override
   void initState() {
@@ -72,174 +99,24 @@ class _OrdersPageState extends State<OrdersPage> {
     // FIX: PartCalculatorService ni ishga tushirish
     _partCalculatorService = PartCalculatorService(_partService);
     
-    // FIX: Chrome'da orderslarni yuklash
-    // FIX: Faqat Chrome uchun, telefon uchun emas
-    if (kIsWeb) {
-      // PostFrameCallback orqali yuklash - UI render bo'lgandan keyin
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && kIsWeb) {
-          try {
-            _loadWebOrders();
-            _listenToOrdersStream();
-          } catch (e) {
-            debugPrint('❌ Error initializing web orders: $e');
-          }
+    // Initial load - after first stream event, hide loading
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _isInitialLoading = false;
+          });
         }
       });
-    }
-  }
-  
-  /// Chrome'da orderslarni yuklash (Supabase'dan)
-  Future<void> _loadWebOrders() async {
-    if (_isLoadingWebOrders) {
-      debugPrint('⚠️ _loadWebOrders: Already loading, skipping...');
-      return;
-    }
-    
-    debugPrint('🔄 _loadWebOrders: Starting to load orders from Supabase...');
-    if (mounted) {
-      setState(() {
-        _isLoadingWebOrders = true;
-      });
-    }
-    
-    try {
-      final repository = ServiceLocator.instance.orderRepository;
-      debugPrint('   Repository obtained, calling getAllOrders()...');
-      // FIX: Timeout qo'shish - 15 soniyadan keyin to'xtatish
-      final result = await repository.getAllOrders().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          debugPrint('⚠️ _loadWebOrders: Timeout after 15 seconds');
-          throw TimeoutException('Request timeout', const Duration(seconds: 15));
-        },
-      );
-      
-      result.fold(
-        (failure) {
-          // Xatolik bo'lsa bo'sh ro'yxat
-          debugPrint('❌ _loadWebOrders: Failed to load orders: ${failure.message}');
-          if (mounted) {
-            setState(() {
-              _webOrders = [];
-              _isLoadingWebOrders = false;
-            });
-          }
-        },
-        (domainOrders) {
-          // Domain Order'larni Order model'ga o'tkazish
-          debugPrint('   Received ${domainOrders.length} domain orders');
-          final orders = domainOrders.map((domainOrder) {
-            // FIX: Order model'da productId yo'q, productName bor
-            // Domain Order'dan productName to'g'ridan-to'g'ri olish
-            return Order(
-              id: domainOrder.id,
-              departmentId: domainOrder.departmentId,
-              productName: domainOrder.productName,
-              quantity: domainOrder.quantity,
-              status: domainOrder.status, // FIX: status allaqachon String
-              createdAt: domainOrder.createdAt,
-            );
-          }).toList();
-          
-          debugPrint('✅ _loadWebOrders: Loaded ${orders.length} orders from Supabase');
-          if (mounted) {
-            setState(() {
-              _webOrders = orders;
-              _isLoadingWebOrders = false;
-            });
-            debugPrint('   State updated, _webOrders.length = ${_webOrders.length}');
-          } else {
-            debugPrint('   Widget not mounted, skipping setState');
-          }
-        },
-      );
-    } catch (e, stackTrace) {
-      debugPrint('❌ _loadWebOrders: Error loading orders: $e');
-      debugPrint('   Stack trace: $stackTrace');
-      if (mounted) {
-        setState(() {
-          _webOrders = [];
-          _isLoadingWebOrders = false;
-        });
-      } else {
-        // FIX: Widget unmounted bo'lsa ham loading'ni to'xtatish
-        _isLoadingWebOrders = false;
-      }
-    }
-  }
-  
-  /// Chrome'da orders stream'ga quloq solish (real-time updates)
-  void _listenToOrdersStream() {
-    // FIX: Faqat Chrome uchun ishlatish, telefon uchun emas
-    if (!kIsWeb) return;
-    
-    // FIX: Oldingi subscription'ni bekor qilish
-    _ordersStreamSubscription?.cancel();
-    _ordersStreamSubscription = null;
-    
-    try {
-      final repository = ServiceLocator.instance.orderRepository;
-      _ordersStreamSubscription = repository.watchOrders().listen(
-        (result) {
-          try {
-            result.fold(
-              (failure) {
-                debugPrint('⚠️ Orders stream error: ${failure.message}');
-              },
-              (domainOrders) {
-                debugPrint('✅ Orders realtime update: ${domainOrders.length} orders');
-                // Domain Order'larni Order model'ga o'tkazish
-                try {
-                  final orders = domainOrders.map((domainOrder) {
-                    // FIX: Order model'da productId yo'q, productName bor
-                    // Domain Order'dan productName to'g'ridan-to'g'ri olish
-                    return Order(
-                      id: domainOrder.id,
-                      departmentId: domainOrder.departmentId,
-                      productName: domainOrder.productName,
-                      quantity: domainOrder.quantity,
-                      status: domainOrder.status, // FIX: status allaqachon String
-                      createdAt: domainOrder.createdAt,
-                    );
-                  }).toList();
-                  
-                  if (mounted) {
-                    setState(() {
-                      _webOrders = orders;
-                    });
-                  }
-                } catch (e) {
-                  debugPrint('❌ Error mapping orders: $e');
-                }
-              },
-            );
-          } catch (e) {
-            debugPrint('❌ Error in orders stream callback: $e');
-          }
-        },
-        onError: (error, stackTrace) {
-          debugPrint('❌ Orders stream error: $error');
-          debugPrint('Stack trace: $stackTrace');
-        },
-        cancelOnError: false,
-      );
-      debugPrint('✅ Orders realtime stream listener initialized for Chrome');
-    } catch (e, stackTrace) {
-      debugPrint('❌ Failed to initialize orders stream: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
+    });
   }
 
   @override
   void dispose() {
-    // FIX: Listener ni olib tashlash dispose dan oldin
-    // Bu '_dependents.isEmpty' xatoligini oldini oladi
+    // Cancel listener and subscription
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    // FIX: Chrome'da stream subscription'ni yopish
-    _ordersStreamSubscription?.cancel();
-    _ordersStreamSubscription = null;
+    // StreamBuilder handles subscription automatically
     super.dispose();
   }
 
@@ -249,68 +126,73 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   /// Filtrlangan va tartiblangan orderlarni olish
-  /// Filtrlangan va tartiblangan orderlarni olish
-  /// FIX: Chrome'da state'dan olish
-  List<Order> _getFilteredOrders() {
-    // FIX: Chrome'da Hive box ochilmaydi - state'dan olish
-    if (kIsWeb) {
-      debugPrint('🔍 _getFilteredOrders (Chrome): _webOrders.length = ${_webOrders.length}');
-      // Chrome'da state'dan olish
-      List<Order> orders = List.from(_webOrders);
-
-      // Qidiruv
-      if (_searchController.text.isNotEmpty) {
-        final query = _searchController.text.toLowerCase();
-        orders = orders.where((order) {
-          // FIX: Order model'da productId yo'q, productName bor
-          return order.productName.toLowerCase().contains(query);
-        }).toList();
-      }
-
-      // Status filter
-      if (_selectedStatusFilter != null) {
-        orders = orders.where((o) => o.status == _selectedStatusFilter).toList();
-      }
-
-      // Department filter
-      if (_selectedDepartmentFilter != null) {
-        orders = orders.where((o) => o.departmentId == _selectedDepartmentFilter).toList();
-      }
-
-      // Tartiblash
-      if (_selectedSortOption != null) {
-        orders = _orderService.sortOrders(
-          orders,
-          byDate: _selectedSortOption == SortOption.dateAsc || 
-                  _selectedSortOption == SortOption.dateDesc,
-          ascending: _selectedSortOption!.ascending,
-        );
-      }
-
-      return orders;
-    }
+  /// Repository pattern - works for both web and mobile
+  /// Manager uchun department filter qo'shildi
+  List<domain.Order> _getFilteredOrders(List<domain.Order> orders) {
+    // Start with provided orders
     
-    // Mobile/Desktop - service'dan olish
-    List<Order> orders = _orderService.searchAndFilterOrders(
-      query: _searchController.text.isEmpty ? null : _searchController.text,
-      status: _selectedStatusFilter,
-      departmentId: _selectedDepartmentFilter,
-    );
+    // Manager uchun department filter (faqat o'z department'idagi orders)
+    final user = _currentUser;
+    if (user != null && user.isManager && user.departmentId != null) {
+      orders = orders.where((o) => o.departmentId == user.departmentId).toList();
+    }
 
-    // Tartiblash
+    // Search filter
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      orders = orders.where((order) {
+        return order.productName.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // Status filter
+    if (_selectedStatusFilter != null) {
+      orders = orders.where((o) => o.status == _selectedStatusFilter).toList();
+    }
+
+    // Department filter
+    if (_selectedDepartmentFilter != null) {
+      orders = orders.where((o) => o.departmentId == _selectedDepartmentFilter).toList();
+    }
+
+    // Sort
     if (_selectedSortOption != null) {
-      orders = _orderService.sortOrders(
-        orders,
-        byDate: _selectedSortOption == SortOption.dateAsc || 
-                _selectedSortOption == SortOption.dateDesc,
-        ascending: _selectedSortOption!.ascending,
-      );
+      orders.sort((a, b) {
+        final ascending = _selectedSortOption!.ascending;
+        switch (_selectedSortOption!) {
+          case SortOption.dateAsc:
+          case SortOption.dateDesc:
+            return ascending 
+                ? a.createdAt.compareTo(b.createdAt)
+                : b.createdAt.compareTo(a.createdAt);
+          case SortOption.nameAsc:
+          case SortOption.nameDesc:
+            return ascending 
+                ? a.productName.compareTo(b.productName)
+                : b.productName.compareTo(a.productName);
+          default:
+            return 0;
+        }
+      });
     }
 
     return orders;
   }
+  
+  /// Convert domain Order to Order model (for backward compatibility)
+  Order _domainToModel(domain.Order domainOrder) {
+    return Order(
+      id: domainOrder.id,
+      departmentId: domainOrder.departmentId,
+      productName: domainOrder.productName,
+      quantity: domainOrder.quantity,
+      status: domainOrder.status,
+      createdAt: domainOrder.createdAt,
+    );
+  }
 
   /// Yangi buyurtma yaratish
+  /// Repository pattern - works for both web and mobile
   Future<void> _createOrder() async {
     // Validatsiya
     if (selectedDepartmentId == null || selectedProductId == null) {
@@ -326,7 +208,7 @@ class _OrdersPageState extends State<OrdersPage> {
       return;
     }
 
-    // FIX: Qismlar yetishmovchiligini hisoblash va dialog ko'rsatish
+    // Qismlar yetishmovchiligini hisoblash va dialog ko'rsatish
     final calculationResult = _partCalculatorService.calculateShortage(product, quantity);
     
     // Yetishmovchilik bor bo'lsa, dialog ko'rsatish
@@ -337,42 +219,44 @@ class _OrdersPageState extends State<OrdersPage> {
       }
     }
 
-    // Order yaratish
-    final order = Order(
+    // Domain Order yaratish
+    final domainOrder = domain.Order(
       id: const Uuid().v4(),
-      departmentId: department.id,
+      productId: product.id,
       productName: product.name,
+      departmentId: department.id,
       quantity: quantity,
       status: 'pending',
+      createdAt: DateTime.now(),
     );
 
-    // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _orderService.addOrder(order);
+    // Use repository to create order
+    final result = await _orderRepository.createOrder(domainOrder);
+    
     if (mounted) {
-      if (success) {
-        // Formni tozalash
-        setState(() {
-          selectedDepartmentId = null;
-          selectedProductId = null;
-          quantity = 1;
-        });
-        // FIX: Chrome'da orderslarni qayta yuklash
-        if (kIsWeb) {
-          await _loadWebOrders();
-        }
-        // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
-        if (!calculationResult.hasShortage) {
-          _showSnackBar(AppLocalizations.of(context)?.translate('orderCreated') ?? 'Order created successfully', Colors.green);
-        }
-      } else {
-        _showSnackBar(AppLocalizations.of(context)?.translate('failedToCreateOrder') ?? 'Failed to create order. Please try again.', Colors.red);
-      }
+      result.fold(
+        (failure) {
+          _showSnackBar('Failed to create order: ${failure.message}', Colors.red);
+        },
+        (createdOrder) {
+          // Formni tozalash
+          setState(() {
+            selectedDepartmentId = null;
+            selectedProductId = null;
+            quantity = 1;
+          });
+          // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
+          if (!calculationResult.hasShortage) {
+            _showSnackBar(AppLocalizations.of(context)?.translate('orderCreated') ?? 'Order created successfully', Colors.green);
+          }
+        },
+      );
     }
   }
 
   /// Buyurtmani complete qilish
-  /// OPTIMIZATION: Loading indicator va background refresh
-  Future<void> _completeOrder(Order order) async {
+  /// Repository pattern - works for both web and mobile
+  Future<void> _completeOrder(domain.Order order) async {
     // Loading state
     if (mounted) {
       setState(() {
@@ -381,22 +265,18 @@ class _OrdersPageState extends State<OrdersPage> {
     }
     
     try {
-      // OPTIMIZATION: Batch update bilan tezroq ishlaydi
-      final success = await _orderService.completeOrder(order);
+      // Use repository to complete order
+      final result = await _orderRepository.completeOrder(order.id);
       
       if (mounted) {
-        if (success) {
-          // OPTIMIZATION: Chrome'da background'da refresh (blocking emas)
-          if (kIsWeb) {
-            // Background'da refresh - UI'ni bloklamaydi
-            _loadWebOrders().catchError((e) {
-              debugPrint('⚠️ Background refresh failed: $e');
-            });
-          }
-          _showSnackBar(AppLocalizations.of(context)?.translate('orderCompleted') ?? 'Order completed successfully', Colors.green);
-        } else {
-          _showSnackBar(AppLocalizations.of(context)?.translate('failedToCompleteOrder') ?? 'Failed to complete order. Check parts availability.', Colors.red);
-        }
+        result.fold(
+          (failure) {
+            _showSnackBar('Failed to complete order: ${failure.message}', Colors.red);
+          },
+          (completedOrder) {
+            _showSnackBar(AppLocalizations.of(context)?.translate('orderCompleted') ?? 'Order completed successfully', Colors.green);
+          },
+        );
       }
     } finally {
       // Loading state'ni tozalash
@@ -409,7 +289,8 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   /// Buyurtmani o'chirish
-  Future<void> _deleteOrder(Order order) async {
+  /// Repository pattern - works for both web and mobile
+  Future<void> _deleteOrder(domain.Order order) async {
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -431,18 +312,18 @@ class _OrdersPageState extends State<OrdersPage> {
     );
 
     if (confirmed == true) {
-      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-      final success = await _orderService.deleteOrderById(order.id);
+      // Use repository to delete order
+      final result = await _orderRepository.deleteOrder(order.id);
+      
       if (mounted) {
-        if (success) {
-          // FIX: Chrome'da orderslarni qayta yuklash
-          if (kIsWeb) {
-            await _loadWebOrders();
-          }
-          _showSnackBar(AppLocalizations.of(context)?.translate('orderDeleted') ?? 'Order deleted', Colors.orange);
-        } else {
-          _showSnackBar(AppLocalizations.of(context)?.translate('failedToDeleteOrder') ?? 'Failed to delete order. Please try again.', Colors.red);
-        }
+        result.fold(
+          (failure) {
+            _showSnackBar('Failed to delete order: ${failure.message}', Colors.red);
+          },
+          (_) {
+            _showSnackBar(AppLocalizations.of(context)?.translate('orderDeleted') ?? 'Order deleted', Colors.orange);
+          },
+        );
       }
     }
   }
@@ -593,120 +474,152 @@ class _OrdersPageState extends State<OrdersPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
-        elevation: 2,
-      ),
-      body: Column(
-        children: [
-          // Search va Filter section
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.surface,
-            child: Column(
-              children: [
-                // Search bar
-                SearchBarWidget(
-                  controller: _searchController,
-                  hintText: 'Search orders...',
-                  onChanged: (_) => setState(() {}),
-                  onClear: () => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                // Filter chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      // Status filter
-                      FilterChipWidget(
-                        label: 'All',
-                        selected: _selectedStatusFilter == null,
-                        onSelected: (selected) {
-              setState(() {
-                            _selectedStatusFilter = selected ? null : _selectedStatusFilter;
-              });
-            },
-          ),
-                      const SizedBox(width: 8),
-                      FilterChipWidget(
-                        label: AppLocalizations.of(context)?.translate('pending') ?? 'Pending',
-                        selected: _selectedStatusFilter == 'pending',
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedStatusFilter = selected ? 'pending' : null;
-                          });
-                        },
-                        icon: Icons.pending,
-                      ),
-                      const SizedBox(width: 8),
-                      FilterChipWidget(
-                        label: AppLocalizations.of(context)?.translate('completed') ?? 'Completed',
-                        selected: _selectedStatusFilter == 'completed',
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedStatusFilter = selected ? 'completed' : null;
-                          });
-                        },
-                        icon: Icons.check_circle,
-                      ),
-                    ],
+    return StreamBuilder<Either<Failure, List<domain.Order>>>(
+      stream: _orderRepository.watchOrders(),
+      builder: (context, snapshot) {
+        // Handle loading state
+        if (_isInitialLoading && !snapshot.hasData) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
+              elevation: 2,
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        
+        // Handle error state
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
+              elevation: 2,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() => _isInitialLoading = true),
+                    child: const Text('Retry'),
                   ),
-                ),
-                const SizedBox(height: 12),
-                // Sort dropdown
-                SortDropdownWidget(
-                  selectedOption: _selectedSortOption,
-                  onChanged: (option) {
-                    setState(() {
-                      _selectedSortOption = option;
-                    });
-                  },
-                  options: const [
-                    SortOption.dateDesc,
-                    SortOption.dateAsc,
-                    SortOption.nameAsc,
-                    SortOption.nameDesc,
+                ],
+              ),
+            ),
+          );
+        }
+        
+        // Handle data
+        final orders = snapshot.data?.fold(
+          (failure) {
+            // Show error but don't crash
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showSnackBar('Error: ${failure.message}', Colors.red);
+              }
+            });
+            return <domain.Order>[];
+          },
+          (orders) => orders,
+        ) ?? <domain.Order>[];
+        
+        final filteredOrders = _getFilteredOrders(orders);
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
+            elevation: 2,
+          ),
+          body: Column(
+            children: [
+              // Search va Filter section
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).colorScheme.surface,
+                child: Column(
+                  children: [
+                    // Search bar
+                    SearchBarWidget(
+                      controller: _searchController,
+                      hintText: 'Search orders...',
+                      onChanged: (_) => setState(() {}),
+                      onClear: () => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    // Filter chips
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          // Status filter
+                          FilterChipWidget(
+                            label: 'All',
+                            selected: _selectedStatusFilter == null,
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedStatusFilter = selected ? null : _selectedStatusFilter;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          FilterChipWidget(
+                            label: AppLocalizations.of(context)?.translate('pending') ?? 'Pending',
+                            selected: _selectedStatusFilter == 'pending',
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedStatusFilter = selected ? 'pending' : null;
+                              });
+                            },
+                            icon: Icons.pending,
+                          ),
+                          const SizedBox(width: 8),
+                          FilterChipWidget(
+                            label: AppLocalizations.of(context)?.translate('completed') ?? 'Completed',
+                            selected: _selectedStatusFilter == 'completed',
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedStatusFilter = selected ? 'completed' : null;
+                              });
+                            },
+                            icon: Icons.check_circle,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Sort dropdown
+                    SortDropdownWidget(
+                      selectedOption: _selectedSortOption,
+                      onChanged: (option) {
+                        setState(() {
+                          _selectedSortOption = option;
+                        });
+                      },
+                      options: const [
+                        SortOption.dateDesc,
+                        SortOption.dateAsc,
+                        SortOption.nameAsc,
+                        SortOption.nameDesc,
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
 
-          // FIX: Main content - CustomScrollView + SliverList ishlatish
-          // Bu nested scroll muammosini hal qiladi va performance ni yaxshilaydi
-          Expanded(
-            child: Builder(
-              builder: (context) {
-                // FIX: Chrome'da Hive ishlamaydi - fallback qo'shish
-                // FIX: Faqat Chrome uchun fallback ishlatish, telefon uchun ValueListenableBuilder
-                if (kIsWeb) {
-                  // Chrome - to'g'ridan-to'g'ri state'dan olish
-                  return _buildWebOrdersFallback();
-                }
-                
-                // FIX: Telefon uchun Hive box ochilmagan bo'lsa, loading ko'rsatish
-                if (!Hive.isBoxOpen('ordersBox')) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-                
-                // Mobile/Desktop - ValueListenableBuilder ishlatish
-                return ValueListenableBuilder<Box<Order>>(
-                  valueListenable: _boxService.ordersListenable,
-                  builder: (context, box, _) {
-                    final orders = _getFilteredOrders();
-                
-                // FIX: RefreshIndicator faqat list boshida ishlashi uchun
-                // CustomScrollView + SliverList ishlatish
-                return RefreshIndicator(
-                  // FIX: RefreshIndicator faqat list boshida ishlashi uchun physics
-                  onRefresh: () async {
-                    setState(() {});
-                    await Future.delayed(const Duration(milliseconds: 300));
-                  },
+              // FIX: Main content - CustomScrollView + SliverList ishlatish
+              // Bu nested scroll muammosini hal qiladi va performance ni yaxshilaydi
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    // RefreshIndicator with CustomScrollView + SliverList
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        setState(() => _isInitialLoading = true);
+                        await Future.delayed(const Duration(milliseconds: 500));
+                        setState(() => _isInitialLoading = false);
+                      },
                   // FIX: BouncingScrollPhysics + AlwaysScrollableScrollPhysics
                   // Bu scroll ni silliq qiladi va refresh ni to'g'ri ishlatadi
                   child: CustomScrollView(
@@ -860,17 +773,16 @@ class _OrdersPageState extends State<OrdersPage> {
                         ),
                       ),
                       
-                      // FIX: Orders list - SliverList ishlatish
-                      // Bu ListView.builder o'rniga ishlatiladi va performance ni yaxshilaydi
-                      if (orders.isEmpty)
+                      // Orders list - SliverList
+                      if (filteredOrders.isEmpty)
                         SliverFillRemaining(
                           hasScrollBody: false,
                           child: EmptyStateWidget(
                             icon: Icons.shopping_cart_outlined,
-                            title: box.isEmpty 
+                            title: orders.isEmpty 
                                 ? 'No orders yet' 
                                 : 'No orders match your filters',
-                            subtitle: box.isEmpty
+                            subtitle: orders.isEmpty
                                 ? 'Create your first order using the form above'
                                 : 'Try adjusting your search or filters',
                           ),
@@ -879,232 +791,31 @@ class _OrdersPageState extends State<OrdersPage> {
                         SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
-                              final order = orders[index];
+                              final domainOrder = filteredOrders[index];
+                              final order = _domainToModel(domainOrder);
                               final department = _departmentService.getDepartmentById(order.departmentId);
                               
-                              // FIX: OrderItemWidget ishlatish - rebuild optimizatsiyasi
-                              // OPTIMIZATION: Loading state uzatish
                               return OrderItemWidget(
                                 order: order,
                                 department: department,
-                                onComplete: () => _completeOrder(order),
-                                onDelete: () => _deleteOrder(order),
-                                isCompleting: _completingOrderId == order.id, // Loading state
+                                onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
+                                onDelete: _canDeleteOrders ? () => _deleteOrder(domainOrder) : null,
+                                isCompleting: _completingOrderId == domainOrder.id,
                               );
                             },
-                            childCount: orders.length,
+                            childCount: filteredOrders.length,
                           ),
                         ),
                     ],
                   ),
-                );
-                  },
                 );
               },
             ),
           ),
         ],
       ),
-    );
-  }
-
-  /// Chrome/Web uchun fallback widget
-  /// FIX: Chrome'da Hive ishlamaydi - to'g'ridan-to'g'ri state'dan olish
-  Widget _buildWebOrdersFallback() {
-    debugPrint('🔍 _buildWebOrdersFallback called');
-    debugPrint('   _isLoadingWebOrders: $_isLoadingWebOrders');
-    debugPrint('   _webOrders.length: ${_webOrders.length}');
-    
-    // FIX: Chrome'da orderslar yuklanayotgan bo'lsa, loading ko'rsatish
-    if (kIsWeb && _isLoadingWebOrders) {
-      debugPrint('   Showing loading indicator');
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-    
-    // FIX: Agar orderslar bo'sh bo'lsa va yuklanayotgan bo'lmasa, yuklashga harakat qilish
-    if (kIsWeb && _webOrders.isEmpty && !_isLoadingWebOrders) {
-      debugPrint('   Orders empty, attempting to load...');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _loadWebOrders();
-        }
-      });
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-    
-    final orders = _getFilteredOrders();
-    debugPrint('   Filtered orders.length: ${orders.length}');
-    
-    return RefreshIndicator(
-      onRefresh: () async {
-        if (mounted) {
-          // FIX: Chrome'da orderslarni qayta yuklash
-          if (kIsWeb) {
-            await _loadWebOrders();
-          }
-          setState(() {});
-        }
-        await Future.delayed(const Duration(milliseconds: 500));
+        );
       },
-      child: CustomScrollView(
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        slivers: [
-          // Create Order Section
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Card(
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Department dropdown
-                      ValueListenableBuilder(
-                        valueListenable: _boxService.departmentsListenable,
-                        builder: (context, Box<Department> deptBox, _) {
-                          final departments = deptBox.values.toList();
-                          return DropdownButtonFormField<String>(
-                            initialValue: selectedDepartmentId,
-                            decoration: InputDecoration(
-                              labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
-                              border: const OutlineInputBorder(),
-                              prefixIcon: const Icon(Icons.business),
-                            ),
-                            items: departments.map((dept) {
-                              return DropdownMenuItem(
-                                value: dept.id,
-                                child: Text(dept.name),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                selectedDepartmentId = value;
-                                selectedProductId = null; // Reset product
-                              });
-                            },
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // Product dropdown (filtered by department)
-                      if (selectedDepartmentId != null)
-                        ValueListenableBuilder(
-                          valueListenable: _boxService.productsListenable,
-                          builder: (context, Box<Product> prodBox, _) {
-                            final products = _productService.getProductsByDepartment(selectedDepartmentId!);
-                            
-                            return DropdownButtonFormField<String>(
-                              key: ValueKey('product_${selectedDepartmentId}_${selectedProductId}'), // FIX: Key qo'shish - dropdown yangilanishi uchun
-                              initialValue: selectedProductId,
-                              decoration: InputDecoration(
-                                labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
-                                border: const OutlineInputBorder(),
-                                prefixIcon: const Icon(Icons.inventory),
-                              ),
-                              items: products.map((product) {
-                                return DropdownMenuItem(
-                                  value: product.id,
-                                  child: Text(product.name),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedProductId = value;
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      const SizedBox(height: 16),
-                      // Quantity input
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Quantity',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          setState(() {
-                            quantity = int.tryParse(value) ?? 1;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // Create button
-                      ElevatedButton(
-                        onPressed: selectedDepartmentId != null &&
-                                selectedProductId != null
-                            ? _createOrder
-                            : null,
-                        child: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          
-          // Orders List Header
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          
-          // Orders list
-          if (orders.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: const EmptyStateWidget(
-                icon: Icons.shopping_cart_outlined,
-                title: 'No orders yet',
-                subtitle: 'Create your first order using the form above',
-              ),
-            )
-          else
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final order = orders[index];
-                  final department = _departmentService.getDepartmentById(order.departmentId);
-                  
-                  return OrderItemWidget(
-                    order: order,
-                    department: department,
-                    onComplete: () => _completeOrder(order),
-                    onDelete: () => _deleteOrder(order),
-                    isCompleting: _completingOrderId == order.id, // Loading state
-                  );
-                },
-                childCount: orders.length,
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

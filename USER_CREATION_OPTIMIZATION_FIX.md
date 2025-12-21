@@ -208,3 +208,9 @@ Barcha 3 ta muammo hal qilindi:
 
 
 
+
+
+
+
+
+

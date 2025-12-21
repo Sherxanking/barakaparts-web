@@ -72,6 +72,27 @@ class User {
     return isSupplier || isBoss;
   }
 
+  /// Create a copy of this user with updated fields
+  User copyWith({
+    String? id,
+    String? name,
+    String? phone,
+    String? email,
+    String? role,
+    String? departmentId,
+    DateTime? createdAt,
+  }) {
+    return User(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      role: role ?? this.role,
+      departmentId: departmentId ?? this.departmentId,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
