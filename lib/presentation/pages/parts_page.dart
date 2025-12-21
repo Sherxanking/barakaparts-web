@@ -24,6 +24,7 @@ import '../widgets/animated_list_item.dart';
 import '../widgets/image_picker_widget.dart';
 import '../../l10n/app_localizations.dart';
 import '../../core/services/auth_state_service.dart';
+import 'part_history_page.dart';
 
 class PartsPage extends StatefulWidget {
   const PartsPage({super.key});
@@ -47,6 +48,7 @@ class _PartsPageState extends State<PartsPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _minQuantityController = TextEditingController();
+  final TextEditingController _broughtByController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
   // State
@@ -82,6 +84,7 @@ class _PartsPageState extends State<PartsPage> {
     _nameController.dispose();
     _quantityController.dispose();
     _minQuantityController.dispose();
+    _broughtByController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -157,6 +160,9 @@ class _PartsPageState extends State<PartsPage> {
 
       final partId = const Uuid().v4();
       String? imagePath;
+      final broughtBy = _broughtByController.text.trim().isEmpty 
+          ? null 
+          : _broughtByController.text.trim();
 
       // Rasmni saqlash (try/catch bilan)
       try {
@@ -182,6 +188,7 @@ class _PartsPageState extends State<PartsPage> {
         minQuantity: minQuantity,
         imagePath: imagePath,
         createdBy: currentUserId, // Set created_by for RLS policy
+        broughtBy: broughtBy,
         createdAt: DateTime.now(),
       );
 
@@ -199,6 +206,7 @@ class _PartsPageState extends State<PartsPage> {
             _nameController.clear();
             _quantityController.clear();
             _minQuantityController.clear();
+            _broughtByController.clear();
             _selectedImage = null;
             _showSnackBar('Part added successfully', Colors.green);
             Navigator.pop(context);
@@ -312,8 +320,13 @@ class _PartsPageState extends State<PartsPage> {
                     decoration: const InputDecoration(
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
+                      helperText: '⚠️ Miqdorni o\'zgartirish tasdiqlash talab qiladi',
+                      helperMaxLines: 2,
                     ),
                     keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -349,6 +362,50 @@ class _PartsPageState extends State<PartsPage> {
                     return;
                   }
 
+                  // Quantity o'zgarganda confirmation so'rash
+                  final newQuantity = int.tryParse(_quantityController.text) ?? part.quantity;
+                  final quantityChanged = newQuantity != part.quantity;
+                  
+                  if (quantityChanged) {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Miqdorni o\'zgartirish'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Eski miqdor: ${part.quantity}'),
+                            Text('Yangi miqdor: $newQuantity'),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Miqdorni o\'zgartirish part hisobini o\'zgartirishi mumkin. '
+                              'Davom etasizmi?',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Bekor qilish'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                            ),
+                            child: const Text('Tasdiqlash'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirmed != true) {
+                      return; // User cancelled
+                    }
+                  }
+
                   // Eski rasmini o'chirish (agar yangi rasm tanlangan bo'lsa)
                   if (_selectedImage != null && part.imagePath != null) {
                     await ImageService.deleteImage(part.imagePath);
@@ -368,8 +425,7 @@ class _PartsPageState extends State<PartsPage> {
 
                   final updatedPart = part.copyWith(
                     name: _nameController.text.trim(),
-                    quantity: (int.tryParse(_quantityController.text) ??
-                        part.quantity).clamp(0, double.infinity).toInt(),
+                    quantity: newQuantity.clamp(0, double.infinity).toInt(),
                     minQuantity: (int.tryParse(_minQuantityController.text) ??
                         part.minQuantity).clamp(0, double.infinity).toInt(),
                     imagePath: newImagePath,
@@ -1275,6 +1331,36 @@ class _PartsPageState extends State<PartsPage> {
                                                   ],
                                                 ),
                                               ),
+                                            if (part.broughtBy != null && part.broughtBy!.isNotEmpty)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.purple.withOpacity(0.2),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.person,
+                                                      size: 14,
+                                                      color: Colors.purple,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '${part.broughtBy}',
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.purple,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ],
@@ -1284,13 +1370,33 @@ class _PartsPageState extends State<PartsPage> {
                                   PopupMenuButton<String>(
                                     icon: const Icon(Icons.more_vert),
                                     onSelected: (value) {
-                                      if (value == 'edit') {
+                                      if (value == 'history') {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => PartHistoryPage(
+                                              partId: part.id,
+                                              partName: part.name,
+                                            ),
+                                          ),
+                                        );
+                                      } else if (value == 'edit') {
                                         _editPart(part);
                                       } else if (value == 'delete') {
                                         _deletePart(part);
                                       }
                                     },
                                     itemBuilder: (context) => [
+                                      PopupMenuItem(
+                                        value: 'history',
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.history, size: 20, color: Colors.purple),
+                                            const SizedBox(width: 8),
+                                            const Text('History'),
+                                          ],
+                                        ),
+                                      ),
                                       PopupMenuItem(
                                         value: 'edit',
                                         child: Row(
@@ -1332,6 +1438,7 @@ class _PartsPageState extends State<PartsPage> {
           _nameController.clear();
           _quantityController.clear();
           _minQuantityController.clear();
+          _broughtByController.clear();
           _selectedImage = null;
           showDialog(
             context: context,
@@ -1388,6 +1495,19 @@ class _PartsPageState extends State<PartsPage> {
                       keyboardType: TextInputType.number,
                       onSubmitted: (_) => _addPart(),
                     ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _broughtByController,
+                      decoration: const InputDecoration(
+                        labelText: 'Kim olib kelgan (Ixtiyoriy)',
+                        border: OutlineInputBorder(),
+                        hintText: 'Masalan: Ahmad, Boss, va hokazo',
+                        prefixIcon: Icon(Icons.person_add),
+                        helperText: 'Qismni kim olib kelganini kiriting',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                      onSubmitted: (_) => _addPart(),
+                    ),
                   ],
                 ),
               ),
@@ -1395,6 +1515,7 @@ class _PartsPageState extends State<PartsPage> {
                 TextButton(
                   onPressed: () {
                     _nameController.clear();
+                    _broughtByController.clear();
                     _quantityController.clear();
                     _minQuantityController.clear();
                     _selectedImage = null;

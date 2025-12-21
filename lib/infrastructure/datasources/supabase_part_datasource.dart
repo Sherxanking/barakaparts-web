@@ -9,9 +9,11 @@ import '../../domain/entities/part.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import 'supabase_client.dart';
+import 'supabase_part_history_datasource.dart';
 
 class SupabasePartDatasource {
   final AppSupabaseClient _client = AppSupabaseClient.instance;
+  final SupabasePartHistoryDatasource _historyDatasource = SupabasePartHistoryDatasource();
   
   String get _tableName => 'parts';
   
@@ -117,7 +119,23 @@ class SupabasePartDatasource {
           .single();
       
       debugPrint('✅ Part created successfully: ${response['id']}');
-      return Right(_mapFromJson(response));
+      
+      // Create history entry
+      final createdPart = _mapFromJson(response);
+      final historyResult = await _historyDatasource.createHistory(
+        partId: createdPart.id,
+        userId: currentUserId,
+        actionType: 'create',
+        quantityBefore: 0,
+        quantityAfter: createdPart.quantity,
+        notes: 'Part yaratildi',
+      );
+      historyResult.fold(
+        (failure) => debugPrint('⚠️ Failed to create history: ${failure.message}'),
+        (_) => debugPrint('✅ History created'),
+      );
+      
+      return Right(createdPart);
     } catch (e) {
       debugPrint('❌ Failed to create part: $e');
       final errorStr = e.toString();
@@ -143,6 +161,13 @@ class SupabasePartDatasource {
   /// Update part
   Future<Either<Failure, Part>> updatePart(Part part) async {
     try {
+      // Get old part to track quantity changes
+      final oldPartResult = await getPartById(part.id);
+      final oldPart = oldPartResult.fold(
+        (failure) => null,
+        (p) => p,
+      );
+      
       final json = _mapToJson(part);
       json['updated_at'] = DateTime.now().toIso8601String();
       json['updated_by'] = _client.currentUserId;
@@ -154,7 +179,33 @@ class SupabasePartDatasource {
           .select()
           .single();
       
-      return Right(_mapFromJson(response));
+      final updatedPart = _mapFromJson(response);
+      
+      // Create history entry if quantity changed
+      if (oldPart != null && oldPart.quantity != updatedPart.quantity) {
+        final currentUserId = _client.currentUserId;
+        if (currentUserId != null) {
+          final quantityChange = updatedPart.quantity - oldPart.quantity;
+          final actionType = quantityChange > 0 ? 'add' : 'update';
+          
+          final historyResult = await _historyDatasource.createHistory(
+            partId: updatedPart.id,
+            userId: currentUserId,
+            actionType: actionType,
+            quantityBefore: oldPart.quantity,
+            quantityAfter: updatedPart.quantity,
+            notes: quantityChange > 0 
+                ? 'Miqdor qo\'shildi: +$quantityChange'
+                : 'Miqdor yangilandi: ${oldPart.quantity} → ${updatedPart.quantity}',
+          );
+          historyResult.fold(
+            (failure) => debugPrint('⚠️ Failed to create history: ${failure.message}'),
+            (_) => debugPrint('✅ History created'),
+          );
+        }
+      }
+      
+      return Right(updatedPart);
     } catch (e) {
       return Left(ServerFailure('Failed to update part: $e'));
     }
@@ -250,6 +301,7 @@ class SupabasePartDatasource {
   
   /// Map JSON to Part entity
   Part _mapFromJson(Map<String, dynamic> json) {
+    // brought_by field'ni olish (agar mavjud bo'lsa)
     return Part(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -258,6 +310,7 @@ class SupabasePartDatasource {
       imagePath: json['image_path'] as String?,
       createdBy: json['created_by'] as String?,
       updatedBy: json['updated_by'] as String?,
+      broughtBy: json['brought_by'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -278,6 +331,7 @@ class SupabasePartDatasource {
       'image_path': part.imagePath,
       'created_by': part.createdBy ?? currentUserId, // Ensure created_by is set
       'updated_by': part.updatedBy,
+      'brought_by': part.broughtBy,
       'created_at': part.createdAt.toIso8601String(),
       if (part.updatedAt != null) 'updated_at': part.updatedAt!.toIso8601String(),
     };

@@ -244,6 +244,7 @@ class SupabaseOrderDatasource {
       status: json['status'] as String,
       createdBy: json['created_by'] as String?,
       approvedBy: json['approved_by'] as String?,
+      soldTo: json['sold_to'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -261,6 +262,7 @@ class SupabaseOrderDatasource {
       'status': order.status,
       'created_by': order.createdBy ?? _client.currentUserId,
       'approved_by': order.approvedBy,
+      'sold_to': order.soldTo,
       'created_at': order.createdAt.toIso8601String(),
       'updated_at': order.updatedAt?.toIso8601String(),
     };

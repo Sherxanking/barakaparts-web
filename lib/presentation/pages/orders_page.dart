@@ -33,6 +33,7 @@ import '../widgets/filter_chip_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/order_item_widget.dart';
+import 'order_history_page.dart';
 import '../../l10n/app_localizations.dart';
 
 class OrdersPage extends StatefulWidget {
@@ -58,6 +59,7 @@ class _OrdersPageState extends State<OrdersPage> {
   String? selectedDepartmentId;
   String? selectedProductId;
   int quantity = 1;
+  final TextEditingController _soldToController = TextEditingController();
 
   // Search, Filter, Sort state
   final TextEditingController _searchController = TextEditingController();
@@ -116,6 +118,7 @@ class _OrdersPageState extends State<OrdersPage> {
     // Cancel listener and subscription
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _soldToController.dispose();
     // StreamBuilder handles subscription automatically
     super.dispose();
   }
@@ -220,6 +223,10 @@ class _OrdersPageState extends State<OrdersPage> {
     }
 
     // Domain Order yaratish
+    final soldTo = _soldToController.text.trim().isEmpty 
+        ? null 
+        : _soldToController.text.trim();
+
     final domainOrder = domain.Order(
       id: const Uuid().v4(),
       productId: product.id,
@@ -227,6 +234,7 @@ class _OrdersPageState extends State<OrdersPage> {
       departmentId: department.id,
       quantity: quantity,
       status: 'pending',
+      soldTo: soldTo,
       createdAt: DateTime.now(),
     );
 
@@ -244,6 +252,7 @@ class _OrdersPageState extends State<OrdersPage> {
             selectedDepartmentId = null;
             selectedProductId = null;
             quantity = 1;
+            _soldToController.clear();
           });
           // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
           if (!calculationResult.hasShortage) {
@@ -531,6 +540,21 @@ class _OrdersPageState extends State<OrdersPage> {
           appBar: AppBar(
             title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
             elevation: 2,
+            actions: [
+              // Order History button
+              IconButton(
+                icon: const Icon(Icons.history),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => OrderHistoryPage(orders: orders),
+                    ),
+                  );
+                },
+                tooltip: 'Order History',
+              ),
+            ],
           ),
           body: Column(
             children: [
@@ -741,6 +765,20 @@ class _OrdersPageState extends State<OrdersPage> {
               ),
             ],
           ),
+                                  const SizedBox(height: 16),
+                                  
+                                  // Sold To input (Ixtiyoriy)
+                                  TextField(
+                                    controller: _soldToController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Kimga sotilgan (Ixtiyoriy)',
+                                      hintText: 'Masalan: Ahmad, Mijoz nomi, va hokazo',
+                                      border: const OutlineInputBorder(),
+                                      prefixIcon: const Icon(Icons.person),
+                                      helperText: 'Mahsulot kimga sotilganini kiriting',
+                                    ),
+                                    textCapitalization: TextCapitalization.words,
+                                  ),
                                   const SizedBox(height: 16),
                                   
                                   // Create order button

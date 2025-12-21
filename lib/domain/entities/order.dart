@@ -11,6 +11,7 @@ class Order {
   final String status; // pending, completed, rejected
   final String? createdBy;
   final String? approvedBy;
+  final String? soldTo; // Kimga sotilgan
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -23,6 +24,7 @@ class Order {
     required this.status,
     this.createdBy,
     this.approvedBy,
+    this.soldTo,
     required this.createdAt,
     this.updatedAt,
   });
@@ -51,6 +53,7 @@ class Order {
     String? status,
     String? createdBy,
     String? approvedBy,
+    String? soldTo,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -63,6 +66,7 @@ class Order {
       status: status ?? this.status,
       createdBy: createdBy ?? this.createdBy,
       approvedBy: approvedBy ?? this.approvedBy,
+      soldTo: soldTo ?? this.soldTo,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

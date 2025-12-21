@@ -5,17 +5,26 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../domain/repositories/order_repository.dart';
+import '../../domain/repositories/department_repository.dart';
+import '../../domain/repositories/product_repository.dart';
+import '../../domain/repositories/part_repository.dart';
 import '../../domain/entities/order.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../datasources/supabase_order_datasource.dart';
+import '../datasources/supabase_product_sales_datasource.dart';
 import '../cache/hive_order_cache.dart';
+import '../../core/di/service_locator.dart';
 import '../../data/models/order_model.dart' as model;
 
 class OrderRepositoryImpl implements OrderRepository {
   final SupabaseOrderDatasource _supabaseDatasource;
   final HiveOrderCache _cache;
-
+  final SupabaseProductSalesDatasource _salesDatasource = SupabaseProductSalesDatasource();
+  final DepartmentRepository _departmentRepository = ServiceLocator.instance.departmentRepository;
+  final ProductRepository _productRepository = ServiceLocator.instance.productRepository;
+  final PartRepository _partRepository = ServiceLocator.instance.partRepository;
+  
   OrderRepositoryImpl({
     required SupabaseOrderDatasource supabaseDatasource,
     required HiveOrderCache cache,
@@ -142,20 +151,118 @@ class OrderRepositoryImpl implements OrderRepository {
           updatedAt: DateTime.now(),
         );
         
-        return await updateOrder(updatedOrder);
+        final updateResult = await updateOrder(updatedOrder);
+        
+        // Create sales history entry
+        updateResult.fold(
+          (failure) {},
+          (completedOrder) async {
+            // Get department name
+            final deptResult = await _departmentRepository.getDepartmentById(completedOrder.departmentId);
+            deptResult.fold(
+              (failure) {
+                debugPrint('⚠️ Failed to get department: ${failure.message}');
+              },
+              (department) async {
+                if (department != null) {
+                  // Get current user ID
+                  final currentUserId = _salesDatasource.currentUserId;
+                  
+                  // Create sales entry
+                  final salesResult = await _salesDatasource.createSale(
+                    productId: completedOrder.productId,
+                    productName: completedOrder.productName,
+                    departmentId: completedOrder.departmentId,
+                    departmentName: department.name,
+                    quantity: completedOrder.quantity,
+                    orderId: completedOrder.id,
+                    soldBy: currentUserId,
+                  );
+                  
+                  salesResult.fold(
+                    (failure) => debugPrint('⚠️ Failed to create sales history: ${failure.message}'),
+                    (_) => debugPrint('✅ Sales history created'),
+                  );
+                }
+              },
+            );
+          },
+        );
+        
+        return updateResult;
       },
     );
   }
 
   @override
   Future<Either<Failure, void>> deleteOrder(String orderId) async {
-    final result = await _supabaseDatasource.deleteOrder(orderId);
-    return result.fold(
+    // Get order first to check if it's completed
+    final orderResult = await getOrderById(orderId);
+    return await orderResult.fold(
       (failure) => Left(failure),
-      (_) async {
-        // Remove from cache
-        await _cache.deleteOrder(orderId);
-        return Right(null);
+      (order) async {
+        if (order == null) {
+          return Left<Failure, void>(ServerFailure('Order not found'));
+        }
+        
+        // If order is completed, restore parts quantities
+        if (order.status == 'completed') {
+          // Get product to find parts
+          final productResult = await _productRepository.getProductById(order.productId);
+          await productResult.fold(
+            (failure) async {
+              debugPrint('⚠️ Failed to get product: ${failure.message}');
+            },
+            (product) async {
+              if (product != null && product.partsRequired.isNotEmpty) {
+                // Restore parts quantities
+                for (var entry in product.partsRequired.entries) {
+                  final partId = entry.key;
+                  final qtyPerProduct = entry.value;
+                  final totalQty = qtyPerProduct * order.quantity;
+                  
+                  // Get current part
+                  final partResult = await _partRepository.getPartById(partId);
+                  partResult.fold(
+                    (failure) {
+                      debugPrint('⚠️ Failed to get part $partId: ${failure.message}');
+                    },
+                    (part) async {
+                      if (part != null) {
+                        // Increase quantity
+                        final updatedPart = part.copyWith(
+                          quantity: part.quantity + totalQty,
+                          updatedAt: DateTime.now(),
+                        );
+                        
+                        final updateResult = await _partRepository.updatePart(updatedPart);
+                        updateResult.fold(
+                          (failure) {
+                            debugPrint('⚠️ Failed to restore part $partId: ${failure.message}');
+                          },
+                          (_) {
+                            debugPrint('✅ Restored $totalQty units of part ${part.name}');
+                          },
+                        );
+                      }
+                    },
+                  );
+                }
+              }
+            },
+          );
+        }
+        
+        // Delete order
+        final deleteResult = await _supabaseDatasource.deleteOrder(orderId);
+        return deleteResult.fold(
+          (failure) => Left(failure),
+          (_) async {
+            // Remove from cache
+            await _cache.deleteOrder(orderId);
+            return Right(null);
+          },
+        );
       },
     );
   }

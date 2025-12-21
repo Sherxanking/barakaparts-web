@@ -10,6 +10,7 @@ class Part {
   final String? imagePath;
   final String? createdBy;
   final String? updatedBy;
+  final String? broughtBy; // Kim olib kelgan
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -21,6 +22,7 @@ class Part {
     this.imagePath,
     this.createdBy,
     this.updatedBy,
+    this.broughtBy,
     required this.createdAt,
     this.updatedAt,
   });
@@ -46,6 +48,7 @@ class Part {
     String? imagePath,
     String? createdBy,
     String? updatedBy,
+    String? broughtBy,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -57,6 +60,7 @@ class Part {
       imagePath: imagePath ?? this.imagePath,
       createdBy: createdBy ?? this.createdBy,
       updatedBy: updatedBy ?? this.updatedBy,
+      broughtBy: broughtBy ?? this.broughtBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

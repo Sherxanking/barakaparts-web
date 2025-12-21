@@ -30,7 +30,9 @@ import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
+import '../widgets/parts_list_widget.dart';
 import 'product_edit_page.dart';
+import 'product_sales_page.dart';
 import '../../core/services/auth_state_service.dart';
 import '../../data/services/excel_import_service.dart';
 import '../../l10n/app_localizations.dart';
@@ -972,16 +974,9 @@ class _ProductsPageState extends State<ProductsPage> {
                             Text('${AppLocalizations.of(context)?.translate('department') ?? 'Department'}: ${department?.name ?? AppLocalizations.of(context)?.translate('unknown') ?? 'Unknown'}'),
                             Text('${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'}: ${product.parts.length}'),
                             if (product.parts.isNotEmpty)
-                              Text(
-                                product.parts.entries
-                                    .map((e) {
-                                      final part = _partService.getPartById(e.key);
-                                      return '${part?.name ?? e.key}: ${e.value}';
-                                    })
-                                    .join(', '),
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              PartsListWidget(
+                                parts: product.parts,
+                                partService: _partService,
                               ),
                           ],
                         ),
@@ -998,36 +993,69 @@ class _ProductsPageState extends State<ProductsPage> {
                             setState(() {});
                           }
                         },
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: Text(AppLocalizations.of(context)?.translate('deleteProduct') ?? 'Delete Product'),
-                                content: Text(
-                                  '${AppLocalizations.of(context)?.translate('deleteProductConfirm') ?? 'Are you sure you want to delete this product'}?',
+                        trailing: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (value) {
+                            if (value == 'sales') {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ProductSalesPage(
+                                    productId: domainProduct.id,
+                                    productName: domainProduct.name,
+                                  ),
                                 ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+                              );
+                            } else if (value == 'delete') {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: Text(AppLocalizations.of(context)?.translate('deleteProduct') ?? 'Delete Product'),
+                                  content: Text(
+                                    '${AppLocalizations.of(context)?.translate('deleteProductConfirm') ?? 'Are you sure you want to delete this product'}?',
                                   ),
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      _deleteProduct(domainProduct);
-                                    },
-                                    child: Text(
-                                      AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
-                                      style: const TextStyle(color: Colors.red),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                                     ),
-                                  ),
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _deleteProduct(domainProduct);
+                                      },
+                                      child: Text(
+                                        AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+                                        style: const TextStyle(color: Colors.red),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'sales',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.shopping_cart, size: 20, color: Colors.green),
+                                  const SizedBox(width: 8),
+                                  const Text('Sales History'),
                                 ],
                               ),
-                            );
-                          },
-                          tooltip: 'Delete',
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.delete, size: 20, color: Colors.red),
+                                  const SizedBox(width: 8),
+                                  Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

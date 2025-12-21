@@ -13,6 +13,7 @@ import '../../data/services/product_service.dart';
 import '../../data/services/part_service.dart';
 import '../widgets/status_badge_widget.dart';
 import '../widgets/animated_list_item.dart';
+import '../widgets/order_parts_list_widget.dart';
 import '../../l10n/app_localizations.dart';
 
 class OrderItemWidget extends StatelessWidget {
@@ -120,6 +121,48 @@ class OrderItemWidget extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Sold To (chiroyli badge formatida)
+                if (order.soldTo != null && order.soldTo!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.purple.shade200,
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person,
+                          size: 16,
+                          color: Colors.purple.shade700,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${AppLocalizations.of(context)?.translate('soldTo') ?? 'Kimga sotilgan'}: ',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.purple.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          order.soldTo!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.purple.shade900,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 
                 // Created date
@@ -221,53 +264,34 @@ class OrderItemWidget extends StatelessWidget {
     );
   }
 
-  /// Parts list'ni ko'rsatish
+  /// Parts list'ni ko'rsatish (chiroyli badge'lar bilan)
   Widget _buildPartsList(BuildContext context) {
     final product = _getProduct();
     if (product == null || product.parts.isEmpty) {
-      return Text(
-        AppLocalizations.of(context)?.translate('noParts') ?? 'No parts',
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-          fontStyle: FontStyle.italic,
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          AppLocalizations.of(context)?.translate('noParts') ?? 'No parts',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
         ),
       );
     }
 
     final partService = PartService();
+    final partsList = product.parts.entries.toList();
     
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: product.parts.entries.map((entry) {
-        final partId = entry.key;
-        final qtyPerProduct = entry.value;
-        final totalQty = qtyPerProduct * order.quantity;
-        final part = partService.getPartById(partId);
-        
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Row(
-            children: [
-              Icon(
-                Icons.circle,
-                size: 6,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '${part?.name ?? partId}: $qtyPerProduct × ${order.quantity} = $totalQty',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[700],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+    return OrderPartsListWidget(
+      parts: product.parts,
+      orderQuantity: order.quantity,
+      partService: partService,
     );
   }
 }

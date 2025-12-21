@@ -21,6 +21,9 @@ class Order extends HiveObject {
   @HiveField(5)
   DateTime createdAt;
 
+  @HiveField(6)
+  String? soldTo; // Kimga sotilgan
+
   Order({
     required this.id,
     required this.departmentId,
@@ -28,5 +31,6 @@ class Order extends HiveObject {
     required this.quantity,
     this.status = "new",
     DateTime? createdAt,
+    this.soldTo,
   }) : createdAt = createdAt ?? DateTime.now();
 }

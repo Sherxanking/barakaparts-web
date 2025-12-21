@@ -482,48 +482,61 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                           );
                         },
                         trailing: (_canEditDepartments || _canDeleteDepartments)
-                            ? Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_canEditDepartments)
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, color: Colors.blue),
-                                      onPressed: () => _editDepartment(domainDepartment),
-                                      tooltip: 'Edit',
-                                    ),
-                                  if (_canEditDepartments && _canDeleteDepartments)
-                                    const SizedBox(width: 4),
-                                  if (_canDeleteDepartments)
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder: (context) => AlertDialog(
-                                            title: Text(AppLocalizations.of(context)?.translate('deleteDepartment') ?? 'Delete Department'),
-                                            content: Text(
-                                              '${AppLocalizations.of(context)?.translate('deleteDepartmentConfirm') ?? 'Are you sure you want to delete this department'}?',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(context),
-                                                child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
-                                              ),
-                                              TextButton(
-                                                onPressed: () {
-                                                  Navigator.pop(context);
-                                                  _deleteDepartment(domainDepartment);
-                                                },
-                                                child: Text(
-                                                  AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
-                                                  style: const TextStyle(color: Colors.red),
-                                                ),
-                                              ),
-                                            ],
+                            ? PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert),
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _editDepartment(domainDepartment);
+                                  } else if (value == 'delete') {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: Text(AppLocalizations.of(context)?.translate('deleteDepartment') ?? 'Delete Department'),
+                                        content: Text(
+                                          '${AppLocalizations.of(context)?.translate('deleteDepartmentConfirm') ?? 'Are you sure you want to delete this department'}?',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context),
+                                            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
                                           ),
-                                        );
-                                      },
-                                      tooltip: 'Delete',
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              _deleteDepartment(domainDepartment);
+                                            },
+                                            child: Text(
+                                              AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+                                              style: const TextStyle(color: Colors.red),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  if (_canEditDepartments)
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.edit, size: 20, color: Colors.blue),
+                                          const SizedBox(width: 8),
+                                          Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                                        ],
+                                      ),
+                                    ),
+                                  if (_canDeleteDepartments)
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.delete, size: 20, color: Colors.red),
+                                          const SizedBox(width: 8),
+                                          Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+                                        ],
+                                      ),
                                     ),
                                 ],
                               )
