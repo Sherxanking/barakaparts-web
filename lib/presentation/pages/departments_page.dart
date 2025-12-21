@@ -24,6 +24,7 @@ import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/animated_list_item.dart';
 import 'department_details_page.dart';
+import 'analytics_page.dart';
 import '../../l10n/app_localizations.dart';
 
 class DepartmentsPage extends StatefulWidget {
@@ -75,11 +76,20 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
+  Timer? _searchDebounceTimer; // Debounce timer
 
   @override
   void initState() {
     super.initState();
-    _searchListener = () => setState(() {});
+    _searchListener = () {
+      // Debounce: 300ms kutish
+      _searchDebounceTimer?.cancel();
+      _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    };
     _searchController.addListener(_searchListener);
     
     // Real-time duplicate name validation will be handled in StreamBuilder
@@ -126,6 +136,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _searchController.dispose();
@@ -321,6 +332,19 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
             appBar: AppBar(
               title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
               elevation: 2,
+              actions: [
+                // Analytics button
+                IconButton(
+                  icon: const Icon(Icons.analytics),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                    );
+                  },
+                  tooltip: 'Analytics',
+                ),
+              ],
             ),
             body: const Center(child: CircularProgressIndicator()),
           );
@@ -332,6 +356,19 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
             appBar: AppBar(
               title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
               elevation: 2,
+              actions: [
+                // Analytics button
+                IconButton(
+                  icon: const Icon(Icons.analytics),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                    );
+                  },
+                  tooltip: 'Analytics',
+                ),
+              ],
             ),
             body: Center(
               child: Column(
@@ -376,6 +413,19 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
           appBar: AppBar(
             title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
             elevation: 2,
+            actions: [
+              // Analytics button
+              IconButton(
+                icon: const Icon(Icons.analytics),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                  );
+                },
+                tooltip: 'Analytics',
+              ),
+            ],
           ),
           body: Column(
             children: [

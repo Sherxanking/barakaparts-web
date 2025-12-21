@@ -160,3 +160,4 @@ This metadata is stored in `auth.users.raw_user_meta_data` and read by the trigg
 
 
 
+

@@ -16,10 +16,11 @@ import '../widgets/animated_list_item.dart';
 import '../widgets/order_parts_list_widget.dart';
 import '../../l10n/app_localizations.dart';
 
-class OrderItemWidget extends StatelessWidget {
+class OrderItemWidget extends StatefulWidget {
   final Order order;
   final Department? department;
   final VoidCallback? onComplete; // Nullable - permission-based
+  final VoidCallback? onEdit; // Nullable - for pending orders
   final VoidCallback? onDelete; // Nullable - permission-based
   final bool isCompleting; // OPTIMIZATION: Loading state
 
@@ -28,16 +29,24 @@ class OrderItemWidget extends StatelessWidget {
     required this.order,
     this.department,
     this.onComplete,
+    this.onEdit,
     this.onDelete,
     this.isCompleting = false, // Default: not loading
   });
+
+  @override
+  State<OrderItemWidget> createState() => _OrderItemWidgetState();
+}
+
+class _OrderItemWidgetState extends State<OrderItemWidget> {
+  bool _showParts = false; // Parts ko'rsatilishi/yashirilishi
 
   /// Product'dan parts olish
   Product? _getProduct() {
     try {
       final productService = ProductService();
       return productService.getAllProducts().firstWhere(
-        (p) => p.name == order.productName,
+        (p) => p.name == widget.order.productName,
         orElse: () => throw StateError('Product not found'),
       );
     } catch (e) {
@@ -67,7 +76,7 @@ class OrderItemWidget extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        order.productName,
+                        widget.order.productName,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -77,13 +86,13 @@ class OrderItemWidget extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    StatusBadgeWidget(status: order.status),
+                    StatusBadgeWidget(status: widget.order.status),
                   ],
                 ),
                 const SizedBox(height: 12),
                 
                 // Department info
-                if (department != null)
+                if (widget.department != null)
                   Row(
                     children: [
                       Icon(
@@ -93,7 +102,7 @@ class OrderItemWidget extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        department!.name,
+                        widget.department!.name,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[700],
@@ -103,66 +112,90 @@ class OrderItemWidget extends StatelessWidget {
                   ),
                 const SizedBox(height: 8),
                 
-                // Quantity
-                Row(
+                // Quantity va Sold To bir qatorda
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Icon(
-                      Icons.shopping_cart,
-                      size: 16,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ${order.quantity}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-                // Sold To (chiroyli badge formatida)
-                if (order.soldTo != null && order.soldTo!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.purple.shade200,
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
+                    // Quantity
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.person,
+                          Icons.shopping_cart,
                           size: 16,
-                          color: Colors.purple.shade700,
+                          color: Colors.grey[600],
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Text(
-                          '${AppLocalizations.of(context)?.translate('soldTo') ?? 'Kimga sotilgan'}: ',
+                          '${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ${widget.order.quantity}',
                           style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.purple.shade800,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          order.soldTo!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.purple.shade900,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.grey[700],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    // Sold To (chiroyli badge formatida - har doim ko'rsatiladi)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                            ? Colors.purple.shade50
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                              ? Colors.purple.shade200
+                              : Colors.grey.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                ? Icons.person
+                                : Icons.person_outline,
+                            size: 16,
+                            color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                ? Colors.purple.shade700
+                                : Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${AppLocalizations.of(context)?.translate('soldTo') ?? 'Kimga sotilgan'}: ',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                  ? Colors.purple.shade800
+                                  : Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                ? widget.order.soldTo!
+                                : 'Ko\'rsatilmagan',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                  ? Colors.purple.shade900
+                                  : Colors.grey.shade600,
+                              fontWeight: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              fontStyle: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
+                                  ? FontStyle.normal
+                                  : FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 
                 // Created date
@@ -175,7 +208,7 @@ class OrderItemWidget extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '${AppLocalizations.of(context)?.translate('created') ?? 'Created'}: ${order.createdAt.toString().substring(0, 16)}',
+                      '${AppLocalizations.of(context)?.translate('created') ?? 'Created'}: ${widget.order.createdAt.toString().substring(0, 16)}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -184,53 +217,84 @@ class OrderItemWidget extends StatelessWidget {
                   ],
                 ),
                 
-                // FIX: Completed order bo'lsa, parts ko'rsatish
-                if (order.status == 'completed') ...[
+                // FIX: Barcha orderlar uchun parts ko'rsatish (ixcham - icon bilan yashirib turish)
+                // Completed va Pending orderlar uchun ham
+                ...[
                   const SizedBox(height: 12),
                   Divider(color: Colors.grey[300]),
                   const SizedBox(height: 8),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.build,
-                        size: 16,
-                        color: Colors.green[700],
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              AppLocalizations.of(context)?.translate('partsUsed') ?? 'Parts Used',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[700],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            _buildPartsList(context),
-                          ],
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _showParts = !_showParts;
+                      });
+                    },
+                    child: Row(
+                      children: [
+                        Icon(
+                          _showParts ? Icons.expand_less : Icons.expand_more,
+                          size: 20,
+                          color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.build,
+                          size: 18,
+                          color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.order.status == 'completed' 
+                              ? (AppLocalizations.of(context)?.translate('partsUsed') ?? 'Parts Used')
+                              : (AppLocalizations.of(context)?.translate('partsRequired') ?? 'Parts Required'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _showParts ? 'Yig\'ish' : 'Ko\'rsatish',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: widget.order.status == 'completed' ? Colors.green[600] : Colors.blue[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  if (_showParts) ...[
+                    const SizedBox(height: 8),
+                    _buildPartsList(context),
+                  ],
                 ],
                 
                 const SizedBox(height: 12),
                 
                 // Action buttons (only show if permissions allow)
-                if ((order.status == 'pending' && onComplete != null) || onDelete != null)
+                if ((widget.order.status == 'pending' && (widget.onComplete != null || widget.onEdit != null)) || widget.onDelete != null)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // Complete button (only for pending orders and if permission granted)
-                      if (order.status == 'pending' && onComplete != null)
+                      // Edit button (only for pending orders)
+                      if (widget.order.status == 'pending' && widget.onEdit != null)
                         TextButton.icon(
-                          onPressed: isCompleting ? null : onComplete, // Disable while loading
-                          icon: isCompleting
+                          onPressed: widget.onEdit,
+                          icon: const Icon(Icons.edit, size: 18),
+                          label: Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.blue,
+                          ),
+                        ),
+                      if (widget.order.status == 'pending' && widget.onEdit != null && widget.onComplete != null)
+                        const SizedBox(width: 8),
+                      // Complete button (only for pending orders and if permission granted)
+                      if (widget.order.status == 'pending' && widget.onComplete != null)
+                        TextButton.icon(
+                          onPressed: widget.isCompleting ? null : widget.onComplete, // Disable while loading
+                          icon: widget.isCompleting
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
@@ -245,13 +309,13 @@ class OrderItemWidget extends StatelessWidget {
                             foregroundColor: Colors.green,
                           ),
                         ),
-                      if (order.status == 'pending' && onComplete != null && onDelete != null)
+                      if ((widget.order.status == 'pending' && (widget.onComplete != null || widget.onEdit != null)) && widget.onDelete != null)
                         const SizedBox(width: 8),
                       // Delete button (only if permission granted)
-                      if (onDelete != null)
+                      if (widget.onDelete != null)
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: onDelete,
+                          onPressed: widget.onDelete,
                           tooltip: AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
                         ),
                     ],
@@ -290,7 +354,7 @@ class OrderItemWidget extends StatelessWidget {
     
     return OrderPartsListWidget(
       parts: product.parts,
-      orderQuantity: order.quantity,
+      orderQuantity: widget.order.quantity,
       partService: partService,
     );
   }

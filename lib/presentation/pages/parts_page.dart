@@ -25,6 +25,7 @@ import '../widgets/image_picker_widget.dart';
 import '../../l10n/app_localizations.dart';
 import '../../core/services/auth_state_service.dart';
 import 'part_history_page.dart';
+import 'analytics_page.dart';
 
 class PartsPage extends StatefulWidget {
   const PartsPage({super.key});
@@ -59,11 +60,20 @@ class _PartsPageState extends State<PartsPage> {
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
+  Timer? _searchDebounceTimer; // Debounce timer
 
   @override
   void initState() {
     super.initState();
-    _searchListener = () => setState(() {});
+    _searchListener = () {
+      // Debounce: 300ms kutish
+      _searchDebounceTimer?.cancel();
+      _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    };
     _searchController.addListener(_searchListener);
     
     // Initial load - after first stream event, hide loading
@@ -80,6 +90,7 @@ class _PartsPageState extends State<PartsPage> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _quantityController.dispose();
@@ -927,6 +938,32 @@ class _PartsPageState extends State<PartsPage> {
             ),
             elevation: 0,
             actions: [
+              // Analytics button
+              IconButton(
+                icon: const Icon(Icons.analytics),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                  );
+                },
+                tooltip: 'Analytics',
+              ),
+              // Low Stock Filter Toggle (har doim ko'rsatiladi)
+              IconButton(
+                icon: Icon(
+                  _showLowStockOnly ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  color: _showLowStockOnly ? Colors.red : (lowStockCount > 0 ? Colors.orange : Colors.grey),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _showLowStockOnly = !_showLowStockOnly;
+                  });
+                },
+                tooltip: _showLowStockOnly 
+                    ? 'Barcha qismlar' 
+                    : (lowStockCount > 0 ? 'Low Stock ($lowStockCount)' : 'Low Stock filter'),
+              ),
               // Excel Import button (only for managers and boss)
               if (AuthStateService().currentUser?.canCreateParts() ?? false)
                 IconButton(
@@ -966,22 +1003,6 @@ class _PartsPageState extends State<PartsPage> {
                       onClear: () => setState(() {}),
                     ),
                     const SizedBox(height: 12),
-                    // Low stock filter
-                    Row(
-                      children: [
-                        FilterChipWidget(
-                          label: 'Low Stock',
-                          selected: _showLowStockOnly,
-                          onSelected: (selected) {
-                            setState(() {
-                              _showLowStockOnly = selected;
-                            });
-                          },
-                          icon: Icons.warning,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
                     SortDropdownWidget(
                       selectedOption: _selectedSortOption,
                       onChanged: (option) {
@@ -995,6 +1016,109 @@ class _PartsPageState extends State<PartsPage> {
                         SortOption.quantityAsc,
                         SortOption.quantityDesc,
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Qismlar statistikasi
+                    Builder(
+                      builder: (context) {
+                        final filteredParts = _getFilteredParts(parts);
+                        final totalParts = parts.length;
+                        final filteredCount = filteredParts.length;
+                        final totalQuantity = parts.fold<int>(0, (sum, part) => sum + part.quantity);
+                        final filteredQuantity = filteredParts.fold<int>(0, (sum, part) => sum + part.quantity);
+                        
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.blue.shade200,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.analytics_outlined,
+                                size: 20,
+                                color: Colors.blue.shade700,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Jami qismlar: ',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.blue.shade800,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$totalParts ta',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.blue.shade900,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (filteredCount != totalParts) ...[
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '($filteredCount ko\'rsatilmoqda)',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.blue.shade600,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Umumiy miqdor: ',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.blue.shade800,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$totalQuantity ta',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.blue.shade900,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (filteredQuantity != totalQuantity) ...[
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '($filteredQuantity ko\'rsatilmoqda)',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.blue.shade600,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

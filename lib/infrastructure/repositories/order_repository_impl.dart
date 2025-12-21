@@ -145,51 +145,120 @@ class OrderRepositoryImpl implements OrderRepository {
           return Left<Failure, Order>(ServerFailure('Order not found'));
         }
         
-        // Update status to completed
-        final updatedOrder = order.copyWith(
-          status: 'completed',
-          updatedAt: DateTime.now(),
-        );
+        // Check if already completed
+        if (order.status == 'completed') {
+          return Left<Failure, Order>(ServerFailure('Order is already completed'));
+        }
         
-        final updateResult = await updateOrder(updatedOrder);
-        
-        // Create sales history entry
-        updateResult.fold(
-          (failure) {},
-          (completedOrder) async {
-            // Get department name
-            final deptResult = await _departmentRepository.getDepartmentById(completedOrder.departmentId);
-            deptResult.fold(
-              (failure) {
-                debugPrint('⚠️ Failed to get department: ${failure.message}');
-              },
-              (department) async {
-                if (department != null) {
-                  // Get current user ID
-                  final currentUserId = _salesDatasource.currentUserId;
-                  
-                  // Create sales entry
-                  final salesResult = await _salesDatasource.createSale(
-                    productId: completedOrder.productId,
-                    productName: completedOrder.productName,
-                    departmentId: completedOrder.departmentId,
-                    departmentName: department.name,
-                    quantity: completedOrder.quantity,
-                    orderId: completedOrder.id,
-                    soldBy: currentUserId,
-                  );
-                  
-                  salesResult.fold(
-                    (failure) => debugPrint('⚠️ Failed to create sales history: ${failure.message}'),
-                    (_) => debugPrint('✅ Sales history created'),
-                  );
+        // Get product to find parts required
+        final productResult = await _productRepository.getProductById(order.productId);
+        return await productResult.fold(
+          (failure) => Left<Failure, Order>(failure),
+          (product) async {
+            if (product == null) {
+              return Left<Failure, Order>(ServerFailure('Product not found'));
+            }
+            
+            // Decrease parts quantities
+            if (product.partsRequired.isNotEmpty) {
+              for (var entry in product.partsRequired.entries) {
+                final partId = entry.key;
+                final qtyPerProduct = entry.value;
+                final totalQty = qtyPerProduct * order.quantity;
+                
+                // Get current part
+                final partResult = await _partRepository.getPartById(partId);
+                final partDecreaseResult = await partResult.fold(
+                  (failure) async {
+                    debugPrint('⚠️ Failed to get part $partId: ${failure.message}');
+                    return Left<Failure, void>(failure);
+                  },
+                  (part) async {
+                    if (part == null) {
+                      return Left<Failure, void>(ServerFailure('Part not found: $partId'));
+                    }
+                    
+                    // Check if sufficient quantity
+                    if (part.quantity < totalQty) {
+                      return Left<Failure, void>(ServerFailure('Insufficient quantity for part ${part.name}. Required: $totalQty, Available: ${part.quantity}'));
+                    }
+                    
+                    // Decrease quantity
+                    final updatedPart = part.copyWith(
+                      quantity: part.quantity - totalQty,
+                      updatedAt: DateTime.now(),
+                    );
+                    
+                    final updateResult = await _partRepository.updatePart(updatedPart);
+                    return updateResult.fold(
+                      (failure) => Left<Failure, void>(failure),
+                      (_) {
+                        debugPrint('✅ Decreased $totalQty units of part ${part.name} (from ${part.quantity} to ${updatedPart.quantity})');
+                        return Right<Failure, void>(null);
+                      },
+                    );
+                  },
+                );
+                
+                // If any part update failed, return error
+                final decreaseError = await partDecreaseResult.fold(
+                  (failure) => failure,
+                  (_) => null,
+                );
+                
+                if (decreaseError != null) {
+                  return Left<Failure, Order>(decreaseError);
                 }
+              }
+            }
+            
+            // Update status to completed
+            final updatedOrder = order.copyWith(
+              status: 'completed',
+              updatedAt: DateTime.now(),
+            );
+            
+            final updateResult = await updateOrder(updatedOrder);
+            
+            // Create sales history entry
+            updateResult.fold(
+              (failure) {},
+              (completedOrder) async {
+                // Get department name
+                final deptResult = await _departmentRepository.getDepartmentById(completedOrder.departmentId);
+                deptResult.fold(
+                  (failure) {
+                    debugPrint('⚠️ Failed to get department: ${failure.message}');
+                  },
+                  (department) async {
+                    if (department != null) {
+                      // Get current user ID
+                      final currentUserId = _salesDatasource.currentUserId;
+                      
+                      // Create sales entry
+                      final salesResult = await _salesDatasource.createSale(
+                        productId: completedOrder.productId,
+                        productName: completedOrder.productName,
+                        departmentId: completedOrder.departmentId,
+                        departmentName: department.name,
+                        quantity: completedOrder.quantity,
+                        orderId: completedOrder.id,
+                        soldBy: currentUserId,
+                      );
+                      
+                      salesResult.fold(
+                        (failure) => debugPrint('⚠️ Failed to create sales history: ${failure.message}'),
+                        (_) => debugPrint('✅ Sales history created'),
+                      );
+                    }
+                  },
+                );
               },
             );
+            
+            return updateResult;
           },
         );
-        
-        return updateResult;
       },
     );
   }

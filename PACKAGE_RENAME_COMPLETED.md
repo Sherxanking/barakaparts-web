@@ -125,3 +125,4 @@ Endi faqat Supabase va Google Cloud Console sozlamalarini yangilashingiz kerak!
 
 
 
+

@@ -6,7 +6,7 @@
 /// - Department bo'yicha filtrlash
 /// - Qidiruv va tartiblash
 /// - Real-time yangilanishlar
-import 'dart:async' show StreamSubscription, TimeoutException;
+import 'dart:async' show StreamSubscription, TimeoutException, Timer;
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -33,6 +33,7 @@ import '../widgets/animated_list_item.dart';
 import '../widgets/parts_list_widget.dart';
 import 'product_edit_page.dart';
 import 'product_sales_page.dart';
+import 'analytics_page.dart';
 import '../../core/services/auth_state_service.dart';
 import '../../data/services/excel_import_service.dart';
 import '../../l10n/app_localizations.dart';
@@ -88,11 +89,20 @@ class _ProductsPageState extends State<ProductsPage> {
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
+  Timer? _searchDebounceTimer; // Debounce timer
 
   @override
   void initState() {
     super.initState();
-    _searchListener = () => setState(() {});
+    _searchListener = () {
+      // Debounce: 300ms kutish
+      _searchDebounceTimer?.cancel();
+      _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    };
     _searchController.addListener(_searchListener);
     
     // Real-time duplicate name validation will be handled in StreamBuilder
@@ -164,6 +174,7 @@ class _ProductsPageState extends State<ProductsPage> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.removeListener(_searchListener);
     _nameController.dispose();
     _searchController.dispose();
@@ -826,6 +837,17 @@ class _ProductsPageState extends State<ProductsPage> {
             title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
             elevation: 2,
             actions: [
+              // Analytics button
+              IconButton(
+                icon: const Icon(Icons.analytics),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                  );
+                },
+                tooltip: 'Analytics',
+              ),
               // Excel Import button (only for managers and boss)
               if (_canCreateProducts)
                 IconButton(
@@ -968,17 +990,10 @@ class _ProductsPageState extends State<ProductsPage> {
                           product.name,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${AppLocalizations.of(context)?.translate('department') ?? 'Department'}: ${department?.name ?? AppLocalizations.of(context)?.translate('unknown') ?? 'Unknown'}'),
-                            Text('${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'}: ${product.parts.length}'),
-                            if (product.parts.isNotEmpty)
-                              PartsListWidget(
-                                parts: product.parts,
-                                partService: _partService,
-                              ),
-                          ],
+                        subtitle: _ProductSubtitleWidget(
+                          department: department,
+                          parts: product.parts,
+                          partService: _partService,
                         ),
                         onTap: () async {
                           // Navigate to edit page
@@ -1165,6 +1180,85 @@ class _ProductsPageState extends State<ProductsPage> {
           : null, // Hide button if user can't create products
         );
       },
+    );
+  }
+}
+
+/// Product Subtitle Widget - Ixcham parts ko'rsatish
+class _ProductSubtitleWidget extends StatefulWidget {
+  final Department? department;
+  final Map<String, int> parts;
+  final PartService partService;
+
+  const _ProductSubtitleWidget({
+    required this.department,
+    required this.parts,
+    required this.partService,
+  });
+
+  @override
+  State<_ProductSubtitleWidget> createState() => _ProductSubtitleWidgetState();
+}
+
+class _ProductSubtitleWidgetState extends State<_ProductSubtitleWidget> {
+  bool _showParts = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${AppLocalizations.of(context)?.translate('department') ?? 'Department'}: ${widget.department?.name ?? AppLocalizations.of(context)?.translate('unknown') ?? 'Unknown'}'),
+        const SizedBox(height: 4),
+        // Parts ko'rsatish/yashirish icon bilan
+        InkWell(
+          onTap: () {
+            setState(() {
+              _showParts = !_showParts;
+            });
+          },
+          child: Row(
+            children: [
+              Icon(
+                _showParts ? Icons.expand_less : Icons.expand_more,
+                size: 16,
+                color: Colors.blue.shade700,
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.build,
+                size: 14,
+                color: Colors.blue.shade700,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${AppLocalizations.of(context)?.translate('parts') ?? 'Parts'}: ${widget.parts.length}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _showParts ? 'Yig\'ish' : 'Ko\'rsatish',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.blue.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_showParts && widget.parts.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          PartsListWidget(
+            parts: widget.parts,
+            partService: widget.partService,
+          ),
+        ],
+      ],
     );
   }
 }

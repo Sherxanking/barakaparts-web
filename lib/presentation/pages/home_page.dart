@@ -82,22 +82,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final l10n = AppLocalizations.of(context);
     
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_getPageTitle(l10n)),
-        actions: [
-          // Analytics button
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-              );
-            },
-            tooltip: 'Analytics',
-          ),
-        ],
-      ),
       body: IndexedStack(
         index: _currentIndex,
         children: _pages,

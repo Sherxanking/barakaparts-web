@@ -36,3 +36,4 @@ SELECT COUNT(*) as auth_users_count FROM auth.users;
 
 
 
+
