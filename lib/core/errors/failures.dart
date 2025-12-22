@@ -40,6 +40,11 @@ class ValidationFailure extends Failure {
   const ValidationFailure(super.message);
 }
 
+/// Network-related failures (connection, timeout)
+class NetworkFailure extends Failure {
+  const NetworkFailure(super.message);
+}
+
 /// Unknown/unexpected failures
 class UnknownFailure extends Failure {
   const UnknownFailure(super.message);

@@ -431,18 +431,61 @@ class SupabaseUserDatasource {
   /// Update user profile
   Future<Either<Failure, domain.User>> updateUser(domain.User user) async {
     try {
-      final json = _mapToJson(user);
-      json['updated_at'] = DateTime.now().toIso8601String();
-      
-      final response = await _client.client
-          .from(_tableName)
-          .update(json)
-          .eq('id', user.id)
-          .select()
-          .single();
-      
-      return Right<Failure, domain.User>(_mapFromJson(response));
+      // First check if user exists
+      final userCheck = await getUserById(user.id);
+      return userCheck.fold(
+        (failure) {
+          debugPrint('❌ User not found, cannot update: ${user.id}');
+          return Left<Failure, domain.User>(ServerFailure('User not found. Please try logging in again.'));
+        },
+        (existingUser) async {
+          if (existingUser == null) {
+            debugPrint('⚠️ User not found in database, creating...');
+            // User doesn't exist, create it
+            if (user.email == null || user.email!.isEmpty) {
+              return Left<Failure, domain.User>(ValidationFailure('User email is required but not provided.'));
+            }
+            return await _autoCreateUser(
+              userId: user.id,
+              email: user.email!,
+              name: user.name,
+              role: user.role ?? 'worker',
+            );
+          }
+          
+          // User exists, update it
+          final json = _mapToJson(user);
+          json['updated_at'] = DateTime.now().toIso8601String();
+          
+          final response = await _client.client
+              .from(_tableName)
+              .update(json)
+              .eq('id', user.id)
+              .select()
+              .single();
+          
+          debugPrint('✅ User updated successfully: ${user.email}');
+          return Right<Failure, domain.User>(_mapFromJson(response));
+        },
+      );
     } catch (e) {
+      debugPrint('❌ Failed to update user: $e');
+      final errorStr = e.toString().toLowerCase();
+      
+      if (errorStr.contains('null') || errorStr.contains('not found') || errorStr.contains('pgrst116')) {
+        // User doesn't exist, try to create it
+        debugPrint('⚠️ User not found during update, attempting to create...');
+        if (user.email == null || user.email!.isEmpty) {
+          return Left<Failure, domain.User>(ValidationFailure('User email is required but not provided.'));
+        }
+        return await _autoCreateUser(
+          userId: user.id,
+          email: user.email!,
+          name: user.name,
+          role: user.role ?? 'worker',
+        );
+      }
+      
       return Left<Failure, domain.User>(ServerFailure('Failed to update user: $e'));
     }
   }
@@ -476,12 +519,33 @@ class SupabaseUserDatasource {
         return Left<Failure, domain.User>(AuthFailure('Please enter your name.'));
       }
       
-      debugPrint('📝 Registering user: ${email.trim()}');
+      // Additional email validation before sending to Supabase
+      final trimmedEmail = email.trim().toLowerCase(); // Normalize email
+      final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+      if (!emailRegex.hasMatch(trimmedEmail)) {
+        return Left<Failure, domain.User>(AuthFailure(
+          'Invalid email address format. Please use a valid email format like: name@example.com'
+        ));
+      }
+      
+      // Check for common invalid patterns
+      if (trimmedEmail.contains('..') || 
+          trimmedEmail.startsWith('.') || 
+          trimmedEmail.endsWith('.') ||
+          trimmedEmail.contains('@.') ||
+          trimmedEmail.contains('.@')) {
+        return Left<Failure, domain.User>(AuthFailure(
+          'Invalid email address format. Email cannot contain consecutive dots or start/end with dots.'
+        ));
+      }
+      
+      debugPrint('📝 Registering user: $trimmedEmail');
       
       // 1. Supabase Auth orqali user yaratish
       // The trigger will automatically create profile in public.users table
+      // NOTE: Supabase may reject certain email domains (like test.com) - this is a Supabase configuration issue
       final authResponse = await _client.client.auth.signUp(
-        email: email.trim(),
+        email: trimmedEmail,
         password: password,
         data: {
           'name': name.trim(),
@@ -521,7 +585,7 @@ class SupabaseUserDatasource {
           (user) {
             if (user != null) {
               createdUser = user;
-              debugPrint('✅ User profile created by trigger: ${user.name} (${user.email}) - role: ${user.role}');
+              debugPrint('✅ User profile created by trigger: ${user.name} (${user.email ?? trimmedEmail}) - role: ${user.role}');
             }
           },
         );
@@ -531,21 +595,26 @@ class SupabaseUserDatasource {
         }
       }
       
-      // 3. Return the created user profile or fallback to auth metadata
+      // 3. Return the created user profile or create manually if trigger failed
       if (createdUser != null) {
+        // Check if role matches, if not update it
+        if (createdUser!.role != role) {
+          debugPrint('⚠️ Role mismatch: expected $role, got ${createdUser!.role}, updating...');
+          final updateResult = await updateUserRole(
+            userId: authResponse.user!.id,
+            newRole: role,
+          );
+          return updateResult;
+        }
         return Right<Failure, domain.User>(createdUser!);
       } else {
-        // Trigger didn't create profile - return user from auth metadata as fallback
-        // This should rarely happen if trigger is working correctly
-        debugPrint('⚠️ Trigger did not create profile, using auth metadata as fallback');
-        return Right<Failure, domain.User>(
-          domain.User(
-            id: authResponse.user!.id,
-            name: name.trim(),
-            email: email.trim(),
-            role: role,
-            createdAt: DateTime.now(),
-          ),
+        // Trigger didn't create profile - create it manually
+        debugPrint('⚠️ Trigger did not create profile, creating manually...');
+        return await _autoCreateUser(
+          userId: authResponse.user!.id,
+          email: email.trim(),
+          name: name.trim(),
+          role: role,
         );
       }
     } on AuthException catch (e) {
@@ -562,8 +631,18 @@ class SupabaseUserDatasource {
                  (errorMessage.contains('weak') || errorMessage.contains('short') || errorMessage.contains('minimum'))) {
         return Left<Failure, domain.User>(AuthFailure('Password is too weak. Use at least 6 characters.'));
       } else if (errorMessage.contains('invalid email') || 
-                 errorMessage.contains('malformed')) {
-        return Left<Failure, domain.User>(AuthFailure('Invalid email address. Please check and try again.'));
+                 errorMessage.contains('malformed') ||
+                 (errorMessage.contains('email address') && errorMessage.contains('invalid'))) {
+        // More helpful error message for invalid email
+        // NOTE: Supabase may reject certain email domains (like test.com) due to configuration
+        return Left<Failure, domain.User>(AuthFailure(
+          'Invalid email address. Supabase may not accept this email domain.\n\n'
+          'Please try:\n'
+          '• Using a common email provider (gmail.com, yahoo.com, outlook.com)\n'
+          '• Checking if the email format is correct\n'
+          '• Contacting admin if using a custom domain\n\n'
+          'Note: Some test domains (like test.com) may be blocked by Supabase security settings.'
+        ));
       } else if (errorMessage.contains('signup disabled')) {
         return Left<Failure, domain.User>(AuthFailure('Registration is currently disabled. Please contact support.'));
       }

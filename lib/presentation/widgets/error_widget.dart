@@ -1,62 +1,71 @@
-/// ErrorWidget - Xatolarni ko'rsatish uchun reusable widget
+/// Error Widget - Xatolik ko'rsatish uchun reusable widget
 /// 
-/// Bu widget xatolar yuz berganda foydalanuvchiga 
-/// ko'rsatiladigan standart UI komponenti.
+/// StreamBuilder va FutureBuilder'larda error handling uchun ishlatiladi
+
 import 'package:flutter/material.dart';
+import '../../core/services/error_handler_service.dart';
+import '../../core/errors/failures.dart';
+import '../../l10n/app_localizations.dart';
 
 class ErrorDisplayWidget extends StatelessWidget {
-  /// Xato matni
-  final String message;
-  
-  /// Qayta urinish funksiyasi (ixtiyoriy)
+  final Failure? failure;
+  final Object? error;
   final VoidCallback? onRetry;
-  
-  /// Xato icon
-  final IconData icon;
+  final String? customMessage;
 
   const ErrorDisplayWidget({
     super.key,
-    required this.message,
+    this.failure,
+    this.error,
     this.onRetry,
-    this.icon = Icons.error_outline,
+    this.customMessage,
   });
 
   @override
   Widget build(BuildContext context) {
+    String message;
+    
+    if (customMessage != null) {
+      message = customMessage!;
+    } else if (failure != null) {
+      message = ErrorHandlerService.instance.getErrorMessage(failure!);
+    } else if (error != null) {
+      message = ErrorHandlerService.instance.getErrorMessage(
+        UnknownFailure(error.toString()),
+      );
+    } else {
+      message = AppLocalizations.of(context)?.translate('errorOccurred') ?? 
+                'Xatolik yuz berdi';
+    }
+
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
+            const Icon(
+              Icons.error_outline,
               size: 64,
-              color: Colors.red.withOpacity(0.6),
+              color: Colors.red,
             ),
             const SizedBox(height: 16),
             Text(
-              'Error',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
               message,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                  ),
               textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.red,
+              ),
             ),
             if (onRetry != null) ...[
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+                label: Text(
+                  AppLocalizations.of(context)?.translate('retry') ?? 'Qayta urinish',
+                ),
               ),
             ],
           ],
@@ -65,4 +74,3 @@ class ErrorDisplayWidget extends StatelessWidget {
     );
   }
 }
-

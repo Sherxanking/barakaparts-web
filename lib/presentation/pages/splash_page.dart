@@ -14,7 +14,7 @@ import '../../infrastructure/repositories/user_repository_impl.dart';
 import '../../core/services/auth_state_service.dart';
 import '../../domain/entities/user.dart' as domain;
 import 'home_page.dart';
-import 'auth/login_page_mvp.dart';
+import 'auth/login_page.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -279,7 +279,7 @@ class _SplashPageState extends State<SplashPage> {
   void _navigateToAuth() {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginPageMVP()),
+      MaterialPageRoute(builder: (_) => const LoginPage()),
     );
   }
 

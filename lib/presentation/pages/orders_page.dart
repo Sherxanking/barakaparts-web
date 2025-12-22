@@ -32,7 +32,9 @@ import '../widgets/search_bar_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
+import '../widgets/error_widget.dart';
 import '../widgets/order_item_widget.dart';
+import '../../core/services/error_handler_service.dart';
 import 'order_history_page.dart';
 import 'analytics_page.dart';
 import '../../l10n/app_localizations.dart';
@@ -824,18 +826,9 @@ class _OrdersPageState extends State<OrdersPage> {
               title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
               elevation: 2,
             ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => setState(() => _isInitialLoading = true),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
+            body: ErrorDisplayWidget(
+              error: snapshot.error,
+              onRetry: () => setState(() => _isInitialLoading = true),
             ),
           );
         }
@@ -843,10 +836,11 @@ class _OrdersPageState extends State<OrdersPage> {
         // Handle data
         final orders = snapshot.data?.fold(
           (failure) {
-            // Show error but don't crash
+            // Show user-friendly error message
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('Error: ${failure.message}', Colors.red);
+                final message = ErrorHandlerService.instance.getErrorMessage(failure);
+                ErrorHandlerService.instance.showErrorSnackBar(context, message);
               }
             });
             return <domain.Order>[];

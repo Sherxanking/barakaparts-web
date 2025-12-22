@@ -19,10 +19,14 @@ import '../../domain/repositories/department_repository.dart';
 import '../../domain/entities/department.dart' as domain;
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
+import '../../domain/repositories/product_repository.dart';
+import '../../domain/entities/product.dart' as domain_product;
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
+import '../widgets/error_widget.dart';
 import '../widgets/animated_list_item.dart';
+import '../../core/services/error_handler_service.dart';
 import 'department_details_page.dart';
 import 'analytics_page.dart';
 import '../../l10n/app_localizations.dart';
@@ -370,18 +374,9 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                 ),
               ],
             ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => setState(() => _isInitialLoading = true),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
+            body: ErrorDisplayWidget(
+              error: snapshot.error,
+              onRetry: () => setState(() => _isInitialLoading = true),
             ),
           );
         }
@@ -389,10 +384,11 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
         // Handle data
         final departments = snapshot.data?.fold(
           (failure) {
-            // Show error but don't crash
+            // Show user-friendly error message
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('Error: ${failure.message}', Colors.red);
+                final message = ErrorHandlerService.instance.getErrorMessage(failure);
+                ErrorHandlerService.instance.showErrorSnackBar(context, message);
               }
             });
             return <domain.Department>[];
@@ -514,12 +510,16 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                           department.name,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${AppLocalizations.of(context)?.translate('products') ?? 'Products'}: ${department.productIds.length}'),
-                            Text('${AppLocalizations.of(context)?.translate('partsAssigned') ?? 'Parts assigned'}: ${department.productParts.length}'),
-                          ],
+                        subtitle: StreamBuilder<Either<Failure, List<domain_product.Product>>>(
+                          stream: ServiceLocator.instance.productRepository.watchProducts(),
+                          builder: (context, snapshot) {
+                            final products = snapshot.data?.fold(
+                              (failure) => <domain_product.Product>[],
+                              (products) => products.where((p) => p.departmentId == domainDepartment.id).toList(),
+                            ) ?? <domain_product.Product>[];
+                            
+                            return Text('${AppLocalizations.of(context)?.translate('products') ?? 'Products'}: ${products.length}');
+                          },
                         ),
                         onTap: () {
                           Navigator.push(

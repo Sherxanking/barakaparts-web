@@ -19,11 +19,13 @@ import '../../infrastructure/datasources/supabase_client.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
+import '../widgets/error_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
 import '../widgets/image_picker_widget.dart';
 import '../../l10n/app_localizations.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../core/services/error_handler_service.dart';
 import 'part_history_page.dart';
 import 'analytics_page.dart';
 
@@ -878,18 +880,9 @@ class _PartsPageState extends State<PartsPage> {
         if (snapshot.hasError) {
           return Scaffold(
             appBar: AppBar(title: const Text('Parts'), elevation: 0),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => setState(() => _isInitialLoading = true),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
+            body: ErrorDisplayWidget(
+              error: snapshot.error,
+              onRetry: () => setState(() => _isInitialLoading = true),
             ),
           );
         }
@@ -897,10 +890,11 @@ class _PartsPageState extends State<PartsPage> {
         // Handle data
         final parts = snapshot.data?.fold(
           (failure) {
-            // Show error but don't crash
+            // Show user-friendly error message
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('Error: ${failure.message}', Colors.red);
+                final message = ErrorHandlerService.instance.getErrorMessage(failure);
+                ErrorHandlerService.instance.showErrorSnackBar(context, message);
               }
             });
             return <Part>[];

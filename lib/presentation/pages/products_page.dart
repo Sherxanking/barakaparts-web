@@ -28,9 +28,11 @@ import '../../core/utils/either.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
+import '../widgets/error_widget.dart';
 import '../widgets/filter_chip_widget.dart';
 import '../widgets/animated_list_item.dart';
 import '../widgets/parts_list_widget.dart';
+import '../../core/services/error_handler_service.dart';
 import 'product_edit_page.dart';
 import 'product_sales_page.dart';
 import 'analytics_page.dart';
@@ -470,15 +472,24 @@ class _ProductsPageState extends State<ProductsPage> {
                           Checkbox(
                             value: qty > 0,
                             onChanged: (value) {
-                              setDialogState(() {
-                                if (value == true) {
-                                  tempSelectedParts[part.id] = 1;
-                                  controllers[part.id]!.text = '1';
-                                } else {
-                                  tempSelectedParts.remove(part.id);
-                                  controllers[part.id]!.text = '';
-                                }
-                              });
+                              try {
+                                setDialogState(() {
+                                  final controller = controllers[part.id];
+                                  if (controller == null) return;
+                                  
+                                  if (value == true) {
+                                    tempSelectedParts[part.id] = 1;
+                                    if (controller.text != '1') {
+                                      controller.text = '1';
+                                    }
+                                  } else {
+                                    tempSelectedParts.remove(part.id);
+                                    controller.text = '';
+                                  }
+                                });
+                              } catch (e) {
+                                debugPrint('❌ Error in checkbox onChanged: $e');
+                              }
                             },
                           ),
                           // Miqdor kiritish maydoni (faqat tanlangan qismlar uchun)
@@ -493,15 +504,39 @@ class _ProductsPageState extends State<ProductsPage> {
                                 ),
                                 controller: controllers[part.id],
                                 onChanged: (val) {
-                                  final newQty = int.tryParse(val);
-                                  if (newQty != null && newQty > 0) {
-                                    tempSelectedParts[part.id] = newQty;
-                                  } else if (val.isEmpty) {
-                                    // Yozish paytida bo'sh qoldirishga ruxsat berish
-                                  } else {
-                                    // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
-                                    final prevQty = tempSelectedParts[part.id] ?? 1;
-                                    controllers[part.id]!.text = prevQty.toString();
+                                  try {
+                                    setDialogState(() {
+                                      final controller = controllers[part.id];
+                                      if (controller == null) return;
+                                      
+                                      if (val.isEmpty) {
+                                        // Bo'sh bo'lsa, part'ni olib tashlash va checkbox'ni o'chirish
+                                        tempSelectedParts.remove(part.id);
+                                        return;
+                                      }
+                                      
+                                      // Faqat raqamlarni qabul qilish
+                                      if (!RegExp(r'^\d+$').hasMatch(val)) {
+                                        // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
+                                        final prevQty = tempSelectedParts[part.id] ?? 1;
+                                        // Controller text ni to'g'ridan-to'g'ri o'zgartirish
+                                        if (controller.text != prevQty.toString()) {
+                                          controller.text = prevQty.toString();
+                                        }
+                                        return;
+                                      }
+                                      
+                                      final newQty = int.tryParse(val);
+                                      if (newQty != null && newQty > 0) {
+                                        tempSelectedParts[part.id] = newQty;
+                                      } else if (newQty == 0) {
+                                        // 0 kiritilsa, part'ni olib tashlash
+                                        tempSelectedParts.remove(part.id);
+                                        controller.text = '';
+                                      }
+                                    });
+                                  } catch (e) {
+                                    debugPrint('❌ Error in onChanged: $e');
                                   }
                                 },
                               ),
@@ -522,7 +557,19 @@ class _ProductsPageState extends State<ProductsPage> {
           ),
           TextButton(
             onPressed: () {
-              selectedParts = tempSelectedParts;
+              // Faqat 0 dan katta quantity'li part'larni saqlash
+              final validParts = <String, int>{};
+              tempSelectedParts.forEach((key, value) {
+                if (value > 0) {
+                  validParts[key] = value;
+                }
+              });
+              
+              if (mounted) {
+                setState(() {
+                  selectedParts = validParts;
+                });
+              }
               Navigator.pop(context);
             },
             child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
@@ -792,19 +839,23 @@ class _ProductsPageState extends State<ProductsPage> {
             appBar: AppBar(
               title: Text(AppLocalizations.of(context)?.translate('products') ?? 'Products'),
               elevation: 2,
+              actions: [
+                // Analytics button
+                IconButton(
+                  icon: const Icon(Icons.analytics),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                    );
+                  },
+                  tooltip: 'Analytics',
+                ),
+              ],
             ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => setState(() => _isInitialLoading = true),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
+            body: ErrorDisplayWidget(
+              error: snapshot.error,
+              onRetry: () => setState(() => _isInitialLoading = true),
             ),
           );
         }
@@ -812,10 +863,11 @@ class _ProductsPageState extends State<ProductsPage> {
         // Handle data
         final products = snapshot.data?.fold(
           (failure) {
-            // Show error but don't crash
+            // Show user-friendly error message
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showSnackBar('Error: ${failure.message}', Colors.red);
+                final message = ErrorHandlerService.instance.getErrorMessage(failure);
+                ErrorHandlerService.instance.showErrorSnackBar(context, message);
               }
             });
             return <domain.Product>[];

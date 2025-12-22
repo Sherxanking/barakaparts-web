@@ -14,10 +14,12 @@
 /// - Real-time yangilanishlar
 /// - Stock management va order completion
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'core/services/error_handler_service.dart';
 
 import 'data/models/department_model.dart';
 import 'data/models/product_model.dart';
@@ -88,8 +90,33 @@ void main() async {
   // Bu MVP uchun test ma'lumotlari
   _initializeDefaultData(); // Don't await - let it run in background
 
-  // Dasturni ishga tushirish
-  runApp(const MyApp());
+  // Global error handling
+  _setupErrorHandling();
+
+  // Dasturni ishga tushirish - runZonedGuarded bilan
+  runZonedGuarded(
+    () {
+      runApp(const MyApp());
+    },
+    (error, stackTrace) {
+      // Zone error handler - async xatoliklarini catch qiladi
+      ErrorHandlerService.instance.handleZoneError(error, stackTrace);
+    },
+  );
+}
+
+/// Global error handling setup
+void _setupErrorHandling() {
+  // Flutter framework xatoliklarini catch qilish
+  FlutterError.onError = (FlutterErrorDetails details) {
+    ErrorHandlerService.instance.handleFlutterError(details);
+  };
+
+  // Platform-specific error handling (Android/iOS)
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    ErrorHandlerService.instance.handleZoneError(error, stackTrace);
+    return true; // Error handled
+  };
 }
 
 /// Initialize services in background (non-blocking)
