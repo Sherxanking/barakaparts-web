@@ -12,6 +12,7 @@ class Order {
   final String? createdBy;
   final String? approvedBy;
   final String? soldTo; // Kimga sotilgan
+  final Map<String, int>? partsRequired; // Order yaratilgan vaqtidagi part miqdorlari (snapshot)
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -25,6 +26,7 @@ class Order {
     this.createdBy,
     this.approvedBy,
     this.soldTo,
+    this.partsRequired, // Order yaratilgan vaqtidagi part miqdorlari
     required this.createdAt,
     this.updatedAt,
   });
@@ -54,6 +56,7 @@ class Order {
     String? createdBy,
     String? approvedBy,
     String? soldTo,
+    Map<String, int>? partsRequired,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -67,6 +70,7 @@ class Order {
       createdBy: createdBy ?? this.createdBy,
       approvedBy: approvedBy ?? this.approvedBy,
       soldTo: soldTo ?? this.soldTo,
+      partsRequired: partsRequired ?? this.partsRequired,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

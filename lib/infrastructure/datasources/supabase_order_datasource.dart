@@ -171,13 +171,24 @@ class SupabaseOrderDatasource {
   
   Future<Either<Failure, void>> deleteOrder(String orderId) async {
     try {
-      await _client.client
+      final response = await _client.client
           .from(_tableName)
           .delete()
-          .eq('id', orderId);
+          .eq('id', orderId)
+          .select();
+      
+      // Check if any rows were deleted
+      if (response.isEmpty) {
+        return Left(ServerFailure('Order not found or you do not have permission to delete it'));
+      }
       
       return Right(null);
     } catch (e) {
+      // Check if it's a permission error
+      final errorMessage = e.toString().toLowerCase();
+      if (errorMessage.contains('permission') || errorMessage.contains('policy') || errorMessage.contains('row-level security')) {
+        return Left(ServerFailure('Sizda order o\'chirish huquqi yo\'q. Faqat Manager va Boss order o\'chira oladi.'));
+      }
       return Left(ServerFailure('Failed to delete order: $e'));
     }
   }
@@ -235,6 +246,17 @@ class SupabaseOrderDatasource {
   }
   
   Order _mapFromJson(Map<String, dynamic> json) {
+    // Parse parts_required from JSONB
+    Map<String, int>? partsRequired;
+    if (json['parts_required'] != null) {
+      final partsData = json['parts_required'];
+      if (partsData is Map) {
+        partsRequired = Map<String, int>.from(
+          partsData.map((key, value) => MapEntry(key.toString(), (value as num).toInt())),
+        );
+      }
+    }
+    
     return Order(
       id: json['id'] as String,
       productId: json['product_id'] as String,
@@ -245,6 +267,7 @@ class SupabaseOrderDatasource {
       createdBy: json['created_by'] as String?,
       approvedBy: json['approved_by'] as String?,
       soldTo: json['sold_to'] as String?,
+      partsRequired: partsRequired,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -263,6 +286,7 @@ class SupabaseOrderDatasource {
       'created_by': order.createdBy ?? _client.currentUserId,
       'approved_by': order.approvedBy,
       'sold_to': order.soldTo,
+      'parts_required': order.partsRequired ?? {},
       'created_at': order.createdAt.toIso8601String(),
       'updated_at': order.updatedAt?.toIso8601String(),
     };

@@ -387,6 +387,52 @@ class _ProductsPageState extends State<ProductsPage> {
 
   /// Qismlar tanlash dialogini ko'rsatish
   /// 
+  /// Part quantity'ni validatsiya qilish va yangilash
+  void _validateAndUpdatePartQuantity(
+    String partId,
+    String val,
+    Map<String, TextEditingController> controllers,
+    Map<String, int> tempSelectedParts,
+    void Function(void Function()) setDialogState,
+  ) {
+    try {
+      final controller = controllers[partId];
+      if (controller == null) return;
+      
+      setDialogState(() {
+        // Bo'sh bo'lsa, oldingi qiymatni saqlash
+        if (val.isEmpty) {
+          final prevQty = tempSelectedParts[partId];
+          if (prevQty != null && prevQty > 0) {
+            controller.text = prevQty.toString();
+          }
+          return;
+        }
+        
+        // Faqat raqamlarni qabul qilish
+        if (!RegExp(r'^\d+$').hasMatch(val)) {
+          // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
+          final prevQty = tempSelectedParts[partId] ?? 1;
+          controller.text = prevQty.toString();
+          return;
+        }
+        
+        final newQty = int.tryParse(val);
+        if (newQty != null && newQty > 0) {
+          // Valid raqam kiritilganda yangilash
+          tempSelectedParts[partId] = newQty;
+        } else if (newQty == 0) {
+          // 0 kiritilsa, part'ni olib tashlash
+          tempSelectedParts.remove(partId);
+          controller.text = '';
+        }
+      });
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error in _validateAndUpdatePartQuantity: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
+  }
+
   /// Bu metod yangi mahsulot yaratishda qismlar tanlash uchun dialog ko'rsatadi.
   /// Har bir qism uchun miqdor kiritish maydoni mavjud.
   Future<void> _showPartsDialog() async {
@@ -459,6 +505,9 @@ class _ProductsPageState extends State<ProductsPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: allParts.map((part) {
                   final qty = tempSelectedParts[part.id] ?? 0;
+                  final controller = controllers[part.id];
+                  // Checkbox checked bo'lishi uchun: qty > 0 yoki controller'da text bor
+                  final isChecked = qty > 0 || (controller?.text.isNotEmpty ?? false);
                   
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 4),
@@ -470,7 +519,7 @@ class _ProductsPageState extends State<ProductsPage> {
                         children: [
                           // Qismni tanlash checkbox
                           Checkbox(
-                            value: qty > 0,
+                            value: isChecked,
                             onChanged: (value) {
                               try {
                                 setDialogState(() {
@@ -479,7 +528,7 @@ class _ProductsPageState extends State<ProductsPage> {
                                   
                                   if (value == true) {
                                     tempSelectedParts[part.id] = 1;
-                                    if (controller.text != '1') {
+                                    if (controller.text.isEmpty || controller.text != '1') {
                                       controller.text = '1';
                                     }
                                   } else {
@@ -493,7 +542,7 @@ class _ProductsPageState extends State<ProductsPage> {
                             },
                           ),
                           // Miqdor kiritish maydoni (faqat tanlangan qismlar uchun)
-                          if (qty > 0)
+                          if (isChecked)
                             SizedBox(
                               width: 80,
                               child: TextField(
@@ -503,40 +552,32 @@ class _ProductsPageState extends State<ProductsPage> {
                                   isDense: true,
                                 ),
                                 controller: controllers[part.id],
+                                textInputAction: TextInputAction.done,
                                 onChanged: (val) {
+                                  // onChanged'da faqat real-time yangilash, setDialogState chaqirmaslik
+                                  // Bu xatoliklarni oldini oladi va performance'ni yaxshilaydi
                                   try {
-                                    setDialogState(() {
-                                      final controller = controllers[part.id];
-                                      if (controller == null) return;
-                                      
-                                      if (val.isEmpty) {
-                                        // Bo'sh bo'lsa, part'ni olib tashlash va checkbox'ni o'chirish
-                                        tempSelectedParts.remove(part.id);
-                                        return;
-                                      }
-                                      
-                                      // Faqat raqamlarni qabul qilish
-                                      if (!RegExp(r'^\d+$').hasMatch(val)) {
-                                        // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
-                                        final prevQty = tempSelectedParts[part.id] ?? 1;
-                                        // Controller text ni to'g'ridan-to'g'ri o'zgartirish
-                                        if (controller.text != prevQty.toString()) {
-                                          controller.text = prevQty.toString();
-                                        }
-                                        return;
-                                      }
-                                      
+                                    // Faqat valid raqamlarni qabul qilish
+                                    if (val.isNotEmpty && RegExp(r'^\d+$').hasMatch(val)) {
                                       final newQty = int.tryParse(val);
                                       if (newQty != null && newQty > 0) {
+                                        // Real-time yangilash, setDialogState chaqirmaslik
                                         tempSelectedParts[part.id] = newQty;
-                                      } else if (newQty == 0) {
-                                        // 0 kiritilsa, part'ni olib tashlash
-                                        tempSelectedParts.remove(part.id);
-                                        controller.text = '';
                                       }
-                                    });
+                                    }
                                   } catch (e) {
                                     debugPrint('❌ Error in onChanged: $e');
+                                  }
+                                },
+                                onSubmitted: (val) {
+                                  // Enter bosilganda yoki focus yo'qotilganda
+                                  _validateAndUpdatePartQuantity(part.id, val, controllers, tempSelectedParts, setDialogState);
+                                },
+                                onEditingComplete: () {
+                                  // Focus yo'qotilganda ham validatsiya qilish
+                                  final controller = controllers[part.id];
+                                  if (controller != null) {
+                                    _validateAndUpdatePartQuantity(part.id, controller.text, controllers, tempSelectedParts, setDialogState);
                                   }
                                 },
                               ),
@@ -557,20 +598,54 @@ class _ProductsPageState extends State<ProductsPage> {
           ),
           TextButton(
             onPressed: () {
-              // Faqat 0 dan katta quantity'li part'larni saqlash
-              final validParts = <String, int>{};
-              tempSelectedParts.forEach((key, value) {
-                if (value > 0) {
-                  validParts[key] = value;
-                }
-              });
-              
-              if (mounted) {
-                setState(() {
-                  selectedParts = validParts;
+              try {
+                // Faqat 0 dan katta quantity'li part'larni saqlash
+                final validParts = <String, int>{};
+                
+                // Barcha controllerlarni tekshirish va validatsiya qilish
+                // Avval barcha ma'lumotlarni olish, keyin dialog yopish
+                controllers.forEach((partId, controller) {
+                  try {
+                    // Controller'dan text olish
+                    final text = controller.text.trim();
+                    if (text.isNotEmpty) {
+                      final qty = int.tryParse(text);
+                      if (qty != null && qty > 0) {
+                        validParts[partId] = qty;
+                      }
+                    } else {
+                      // Bo'sh bo'lsa va tempSelectedParts'da mavjud bo'lsa, oldingi qiymatni saqlash
+                      final prevQty = tempSelectedParts[partId];
+                      if (prevQty != null && prevQty > 0) {
+                        validParts[partId] = prevQty;
+                      }
+                    }
+                  } catch (e) {
+                    // Controller bilan ishlashda xatolik (masalan, dispose bo'lgan)
+                    // tempSelectedParts'dan olish
+                    debugPrint('⚠️ Error reading controller for part $partId: $e');
+                    final prevQty = tempSelectedParts[partId];
+                    if (prevQty != null && prevQty > 0) {
+                      validParts[partId] = prevQty;
+                    }
+                  }
                 });
+                
+                // Dialog yopishdan oldin state'ni yangilash
+                if (mounted) {
+                  setState(() {
+                    selectedParts = validParts;
+                  });
+                }
+                
+                // Dialog yopish
+                Navigator.pop(context);
+              } catch (e, stackTrace) {
+                debugPrint('❌ Error saving parts: $e');
+                debugPrint('Stack trace: $stackTrace');
+                // Xatolik bo'lsa ham dialog yopish
+                Navigator.pop(context);
               }
-              Navigator.pop(context);
             },
             child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
           ),
@@ -578,15 +653,22 @@ class _ProductsPageState extends State<ProductsPage> {
       ),
     ).then((_) {
       // Dialog yopilgandan keyin controllerlarni tozalash
-      if (mounted) {
-        for (final controller in controllers.values) {
-          try {
-            controller.dispose();
-          } catch (e) {
-            // Controller allaqachon dispose qilingan bo'lishi mumkin
+      // Kechikish qo'shish - dialog to'liq yopilguncha kutish
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          for (final controller in controllers.values) {
+            try {
+              // TextField dan ajratish uchun avval text ni tozalash
+              controller.clear();
+              // Keyin dispose qilish
+              controller.dispose();
+            } catch (e) {
+              // Controller allaqachon dispose qilingan bo'lishi mumkin
+              debugPrint('⚠️ Error disposing controller: $e');
+            }
           }
         }
-      }
+      });
     });
   }
 

@@ -223,6 +223,12 @@ class _OrdersPageState extends State<OrdersPage> {
       return;
     }
 
+    // SoldTo majburiy tekshirish
+    if (_soldToController.text.trim().isEmpty) {
+      _showSnackBar('Kimga sotilganini kiriting', Colors.red);
+      return;
+    }
+
     final department = _departmentService.getDepartmentById(selectedDepartmentId!);
     final product = _productService.getProductById(selectedProductId!);
 
@@ -243,9 +249,7 @@ class _OrdersPageState extends State<OrdersPage> {
     }
 
     // Domain Order yaratish
-    final soldTo = _soldToController.text.trim().isEmpty 
-        ? null 
-        : _soldToController.text.trim();
+    final soldTo = _soldToController.text.trim(); // Endi majburiy, null bo'lmaydi
 
     final domainOrder = domain.Order(
       id: const Uuid().v4(),
@@ -254,7 +258,8 @@ class _OrdersPageState extends State<OrdersPage> {
       departmentId: department.id,
       quantity: quantity,
       status: 'pending',
-      soldTo: soldTo,
+      soldTo: soldTo.isEmpty ? null : soldTo, // Domain'da nullable, lekin UI'da majburiy
+      partsRequired: Map<String, int>.from(product.parts), // Order yaratilgan vaqtidagi part miqdorlari (snapshot) - model'da 'parts' nomi bilan
       createdAt: DateTime.now(),
     );
 
@@ -479,15 +484,15 @@ class _OrdersPageState extends State<OrdersPage> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Sold To input
+                  // Sold To input (Majburiy)
                   TextField(
                     controller: _soldToController,
                     decoration: InputDecoration(
-                      labelText: 'Kimga sotilgan (Ixtiyoriy)',
+                      labelText: 'Kimga sotilgan *',
                       hintText: 'Masalan: Ahmad, Mijoz nomi, va hokazo',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.person),
-                      helperText: 'Mahsulot kimga sotilganini kiriting',
+                      helperText: 'Mahsulot kimga sotilganini kiriting (Majburiy)',
                     ),
                     textCapitalization: TextCapitalization.words,
                   ),
@@ -510,11 +515,21 @@ class _OrdersPageState extends State<OrdersPage> {
                     );
                     return;
                   }
+                  // SoldTo majburiy tekshirish
+                  if (_soldToController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Kimga sotilganini kiriting'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pop(context, {
                     'departmentId': selectedDepartmentId,
                     'productId': selectedProductId,
                     'quantity': quantity,
-                    'soldTo': _soldToController.text.trim().isEmpty ? null : _soldToController.text.trim(),
+                    'soldTo': _soldToController.text.trim(),
                   });
                 },
                 child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
@@ -1145,23 +1160,27 @@ class _OrdersPageState extends State<OrdersPage> {
           ),
                                   const SizedBox(height: 16),
                                   
-                                  // Sold To input (Ixtiyoriy)
+                                  // Sold To input (Majburiy)
                                   TextField(
                                     controller: _soldToController,
                                     decoration: InputDecoration(
-                                      labelText: 'Kimga sotilgan (Ixtiyoriy)',
+                                      labelText: 'Kimga sotilgan *',
                                       hintText: 'Masalan: Ahmad, Mijoz nomi, va hokazo',
                                       border: const OutlineInputBorder(),
                                       prefixIcon: const Icon(Icons.person),
-                                      helperText: 'Mahsulot kimga sotilganini kiriting',
+                                      helperText: 'Mahsulot kimga sotilganini kiriting (Majburiy)',
+                                      errorText: _soldToController.text.trim().isEmpty ? 'Kimga sotilganini kiriting' : null,
                                     ),
                                     textCapitalization: TextCapitalization.words,
+                                    onChanged: (value) {
+                                      setState(() {}); // Error text ni yangilash uchun
+                                    },
                                   ),
                                   const SizedBox(height: 16),
                                   
                                   // Create order button
                                   ElevatedButton.icon(
-                                    onPressed: _createOrder,
+                                    onPressed: (_soldToController.text.trim().isEmpty) ? null : _createOrder,
                                     icon: const Icon(Icons.add_shopping_cart),
                                     label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
                                     style: ElevatedButton.styleFrom(
