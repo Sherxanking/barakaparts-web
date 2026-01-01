@@ -146,3 +146,18 @@ Har bir qadamni tasdiqlaganingizdan keyin keyingi qadamga o'tamiz.
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

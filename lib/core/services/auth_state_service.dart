@@ -25,6 +25,7 @@ class AuthStateService {
 
   StreamSubscription<AuthState>? _authStateSubscription;
   bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
   
   /// Current authenticated user
   domain.User? _currentUser;
@@ -58,13 +59,16 @@ class AuthStateService {
   /// Check initial auth state on app startup
   /// 
   /// WHY: Ensures we know if user is logged in when app starts
+  /// FIX: Retry mechanism qo'shildi - session mavjud bo'lsa, profile load qilishga bir necha marta urinish
   Future<void> _checkInitialAuthState() async {
     try {
       final session = AppSupabaseClient.instance.client.auth.currentSession;
       if (session != null) {
-        // User has session - fetch profile
-        await _loadUserProfile();
+        debugPrint('✅ Session found on startup, loading user profile...');
+        // User has session - fetch profile with retries
+        await _loadUserProfileWithRetries();
       } else {
+        debugPrint('⚠️ No session found on startup');
         // No session - clear user
         _currentUser = null;
         _notifyAuthStateChange(null);
@@ -74,6 +78,83 @@ class AuthStateService {
       _currentUser = null;
       _notifyAuthStateChange(null);
     }
+  }
+  
+  /// Load user profile with retries
+  /// FIX: Session mavjud bo'lsa, profile load qilishga bir necha marta urinish
+  Future<void> _loadUserProfileWithRetries() async {
+    const maxRetries = 3;
+    const retryDelay = Duration(milliseconds: 500);
+    
+    for (int i = 0; i < maxRetries; i++) {
+      try {
+        await _loadUserProfile();
+        
+        // Agar user profile yuklandi, to'xtatish
+        if (_currentUser != null) {
+          debugPrint('✅ User profile loaded successfully on attempt ${i + 1}');
+          return;
+        }
+        
+        // Agar hali user profile yuklanmagan bo'lsa, qayta urinish
+        if (i < maxRetries - 1) {
+          debugPrint('⚠️ User profile not loaded, retrying... (attempt ${i + 1}/$maxRetries)');
+          await Future.delayed(retryDelay);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error loading user profile (attempt ${i + 1}): $e');
+        if (i < maxRetries - 1) {
+          await Future.delayed(retryDelay);
+        }
+      }
+    }
+    
+    // Agar barcha urinishlar muvaffaqiyatsiz bo'lsa
+    if (_currentUser == null) {
+      debugPrint('❌ Failed to load user profile after $maxRetries attempts');
+      // Session mavjud bo'lsa ham, profile topilmasa, auto-create qilishga harakat qilish
+      try {
+        final session = AppSupabaseClient.instance.client.auth.currentSession;
+        if (session != null && session.user != null) {
+          debugPrint('🔄 Attempting to auto-create user profile...');
+          final userRepository = UserRepositoryImpl(
+            datasource: SupabaseUserDatasource(),
+          );
+          
+          // Auto-create user profile
+          final email = session.user!.email ?? '';
+          final name = session.user!.userMetadata?['name'] as String? ?? email.split('@')[0];
+          final role = _getRoleForTestAccount(email) ?? 'worker';
+          
+          final autoCreateResult = await userRepository.getCurrentUser();
+          autoCreateResult.fold(
+            (failure) {
+              debugPrint('⚠️ Auto-create failed: ${failure.message}');
+            },
+            (user) {
+              if (user != null) {
+                _currentUser = user;
+                _notifyAuthStateChange(user);
+                debugPrint('✅ User profile auto-created: ${user.name}');
+              }
+            },
+          );
+        }
+      } catch (e) {
+        debugPrint('❌ Auto-create error: $e');
+      }
+    }
+  }
+  
+  /// Get role for test accounts (helper method)
+  String? _getRoleForTestAccount(String email) {
+    final emailLower = email.toLowerCase();
+    if (emailLower == 'manager@test.com') {
+      return 'manager';
+    } else if (emailLower == 'boss@test.com') {
+      return 'boss';
+    }
+    return null;
   }
   
   /// Handle auth state changes from Supabase

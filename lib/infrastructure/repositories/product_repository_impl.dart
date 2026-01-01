@@ -143,9 +143,44 @@ class ProductRepositoryImpl implements ProductRepository {
       (createdProduct) async {
         // Update cache
         await _cache.updateProduct(createdProduct);
+        
+        // FIX: Also update productsBox for UI sync (ValueListenableBuilder)
+        await _updateSingleProductInBox(createdProduct);
+        
         return Right(createdProduct);
       },
     );
+  }
+  
+  /// Update single product in productsBox
+  /// FIX: ValueListenableBuilder yangilanishi uchun
+  Future<void> _updateSingleProductInBox(Product domainProduct) async {
+    try {
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox<model.Product>('productsBox');
+      }
+      final box = Hive.box<model.Product>('productsBox');
+      
+      final productModel = model.Product(
+        id: domainProduct.id,
+        name: domainProduct.name,
+        departmentId: domainProduct.departmentId,
+        parts: domainProduct.partsRequired,
+      );
+      
+      // Mavjud bo'lsa, yangilash; yo'q bo'lsa, qo'shish
+      final existingIndex = box.values.toList().indexWhere((p) => p.id == domainProduct.id);
+      if (existingIndex >= 0) {
+        await box.putAt(existingIndex, productModel);
+        debugPrint('✅ Product ${domainProduct.name} updated in productsBox at index $existingIndex');
+      } else {
+        await box.add(productModel);
+        debugPrint('✅ Product ${domainProduct.name} added to productsBox');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('⚠️ Error updating product in productsBox: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
   }
 
   @override
@@ -156,6 +191,10 @@ class ProductRepositoryImpl implements ProductRepository {
       (updatedProduct) async {
         // Update cache
         await _cache.updateProduct(updatedProduct);
+        
+        // FIX: Also update productsBox for UI sync (ValueListenableBuilder)
+        await _updateSingleProductInBox(updatedProduct);
+        
         return Right(updatedProduct);
       },
     );
@@ -169,9 +208,34 @@ class ProductRepositoryImpl implements ProductRepository {
       (_) async {
         // Remove from cache
         await _cache.deleteProduct(productId);
+        
+        // FIX: Also remove from productsBox for UI sync (ValueListenableBuilder)
+        await _deleteProductFromBox(productId);
+        
         return Right(null);
       },
     );
+  }
+  
+  /// Delete product from productsBox
+  /// FIX: ValueListenableBuilder yangilanishi uchun
+  Future<void> _deleteProductFromBox(String productId) async {
+    try {
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox<model.Product>('productsBox');
+      }
+      final box = Hive.box<model.Product>('productsBox');
+      
+      // Find and delete product by ID
+      final existingIndex = box.values.toList().indexWhere((p) => p.id == productId);
+      if (existingIndex >= 0) {
+        await box.deleteAt(existingIndex);
+        debugPrint('✅ Product $productId deleted from productsBox');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('⚠️ Error deleting product from productsBox: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
   }
 
   @override

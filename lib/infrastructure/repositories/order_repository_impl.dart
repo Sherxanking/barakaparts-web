@@ -288,106 +288,140 @@ class OrderRepositoryImpl implements OrderRepository {
         }
         
         // If order is completed, restore parts quantities
+        // OPTIMIZATION: Background'da ishlaydi - user kutmaydi
         if (order.status == 'completed') {
-          // Use order's partsRequired snapshot (order yaratilgan vaqtidagi part miqdorlari)
-          // Bu muhim: product o'zgargan bo'lsa ham, order yaratilgan vaqtidagi part miqdorlarini qaytarish kerak
           final partsRequired = order.partsRequired;
           
           if (partsRequired != null && partsRequired.isNotEmpty) {
-            // Restore parts quantities using order's snapshot
-            for (var entry in partsRequired.entries) {
-              final partId = entry.key;
-              final qtyPerProduct = entry.value; // Order yaratilgan vaqtidagi miqdor
-              final totalQty = qtyPerProduct * order.quantity;
+            // OPTIMIZATION: Faqat kerakli part'larni olish (getAllParts o'rniga)
+            // Background'da restore qilish - user kutmaydi
+            Future.microtask(() async {
+              try {
+                // Get only required parts in parallel
+                final partFutures = partsRequired.keys.map((partId) => 
+                  _partRepository.getPartById(partId)
+                ).toList();
+                
+                final partResults = await Future.wait(partFutures);
+                
+                // Update all parts in parallel
+                final updateFutures = <Future<void>>[];
+                for (int i = 0; i < partResults.length; i++) {
+                  final partResult = partResults[i];
+                  final entry = partsRequired.entries.elementAt(i);
+                  final partId = entry.key;
+                  final qtyPerProduct = entry.value;
+                  final totalQty = qtyPerProduct * order.quantity;
                   
-              // Get current part
-              final partResult = await _partRepository.getPartById(partId);
-              partResult.fold(
-                (failure) {
-                  debugPrint('⚠️ Failed to get part $partId: ${failure.message}');
-                },
-                (part) async {
-                  if (part != null) {
-                    // Increase quantity
-                    final updatedPart = part.copyWith(
-                      quantity: part.quantity + totalQty,
-                      updatedAt: DateTime.now(),
-                    );
-                    
-                    final updateResult = await _partRepository.updatePart(updatedPart);
-                    updateResult.fold(
-                      (failure) {
-                        debugPrint('⚠️ Failed to restore part $partId: ${failure.message}');
-                      },
-                      (_) {
-                        debugPrint('✅ Restored $totalQty units of part ${part.name} (using order snapshot)');
-                      },
-                    );
-                  }
-                },
-              );
-            }
-          } else {
-            // Fallback: Eski orderlar uchun (partsRequired yo'q bo'lsa) product'dan olish
-            // Bu backward compatibility uchun
-            debugPrint('⚠️ Order ${order.id} has no partsRequired snapshot, using current product');
-            final productResult = await _productRepository.getProductById(order.productId);
-            await productResult.fold(
-              (failure) async {
-                debugPrint('⚠️ Failed to get product: ${failure.message}');
-              },
-              (product) async {
-                if (product != null && product.partsRequired.isNotEmpty) {
-                  // Restore parts quantities using current product (fallback)
-                  for (var entry in product.partsRequired.entries) {
-                    final partId = entry.key;
-                    final qtyPerProduct = entry.value;
-                    final totalQty = qtyPerProduct * order.quantity;
-                    
-                    // Get current part
-                    final partResult = await _partRepository.getPartById(partId);
-                    partResult.fold(
-                      (failure) {
-                        debugPrint('⚠️ Failed to get part $partId: ${failure.message}');
-                      },
-                      (part) async {
-                        if (part != null) {
-                          // Increase quantity
-                          final updatedPart = part.copyWith(
-                            quantity: part.quantity + totalQty,
-                            updatedAt: DateTime.now(),
-                          );
-                          
-                          final updateResult = await _partRepository.updatePart(updatedPart);
-                          updateResult.fold(
-                            (failure) {
-                              debugPrint('⚠️ Failed to restore part $partId: ${failure.message}');
-                            },
-                            (_) {
-                              debugPrint('✅ Restored $totalQty units of part ${part.name} (using current product - fallback)');
-                            },
-                          );
-                        }
-                      },
-                    );
-                  }
+                  partResult.fold(
+                    (failure) {
+                      debugPrint('⚠️ Failed to get part $partId: ${failure.message}');
+                    },
+                    (part) {
+                      if (part != null) {
+                        final updatedPart = part.copyWith(
+                          quantity: part.quantity + totalQty,
+                          updatedAt: DateTime.now(),
+                        );
+                        
+                        updateFutures.add(
+                          _partRepository.updatePart(updatedPart).then((result) {
+                            result.fold(
+                              (failure) => debugPrint('⚠️ Failed to restore part $partId: ${failure.message}'),
+                              (_) => debugPrint('✅ Restored $totalQty units of part ${part.name}'),
+                            );
+                          }),
+                        );
+                      }
+                    },
+                  );
                 }
-              },
-            );
+                
+                await Future.wait(updateFutures);
+              } catch (e) {
+                debugPrint('⚠️ Error restoring parts in background: $e');
+              }
+            });
+          } else {
+            // Fallback: Product'dan olish (background'da)
+            Future.microtask(() async {
+              try {
+                final productResult = await _productRepository.getProductById(order.productId);
+                await productResult.fold(
+                  (failure) async {
+                    debugPrint('⚠️ Failed to get product: ${failure.message}');
+                  },
+                  (product) async {
+                    if (product != null && product.partsRequired.isNotEmpty) {
+                      // Get only required parts in parallel
+                      final partFutures = product.partsRequired.keys.map((partId) => 
+                        _partRepository.getPartById(partId)
+                      ).toList();
+                      
+                      final partResults = await Future.wait(partFutures);
+                      
+                      // Update all parts in parallel
+                      final updateFutures = <Future<void>>[];
+                      for (int i = 0; i < partResults.length; i++) {
+                        final partResult = partResults[i];
+                        final entry = product.partsRequired.entries.elementAt(i);
+                        final partId = entry.key;
+                        final qtyPerProduct = entry.value;
+                        final totalQty = qtyPerProduct * order.quantity;
+                        
+                        partResult.fold(
+                          (failure) {
+                            debugPrint('⚠️ Failed to get part $partId: ${failure.message}');
+                          },
+                          (part) {
+                            if (part != null) {
+                              final updatedPart = part.copyWith(
+                                quantity: part.quantity + totalQty,
+                                updatedAt: DateTime.now(),
+                              );
+                              
+                              updateFutures.add(
+                                _partRepository.updatePart(updatedPart).then((result) {
+                                  result.fold(
+                                    (failure) => debugPrint('⚠️ Failed to restore part $partId: ${failure.message}'),
+                                    (_) => debugPrint('✅ Restored $totalQty units of part ${part.name}'),
+                                  );
+                                }),
+                              );
+                            }
+                          },
+                        );
+                      }
+                      
+                      await Future.wait(updateFutures);
+                    }
+                  },
+                );
+              } catch (e) {
+                debugPrint('⚠️ Error restoring parts in background: $e');
+              }
+            });
           }
         }
         
-        // Delete product_sales entries first (to avoid foreign key constraint violation)
-        final deleteSalesResult = await _salesDatasource.deleteSalesByOrderId(orderId);
-        deleteSalesResult.fold(
-          (failure) {
-            debugPrint('⚠️ Failed to delete sales for order $orderId: ${failure.message}');
-            // Continue with order deletion even if sales deletion fails
-          },
-          (_) {
-            debugPrint('✅ Deleted sales entries for order $orderId');
-          },
-        );
+        // OPTIMIZATION: CASCADE DELETE bor bo'lsa, bu ortiqcha
+        // Lekin xavfsizlik uchun qoldiramiz (agar CASCADE yo'q bo'lsa)
+        // Background'da ishlaydi - user kutmaydi
+        Future.microtask(() async {
+          try {
+            final deleteSalesResult = await _salesDatasource.deleteSalesByOrderId(orderId);
+            deleteSalesResult.fold(
+              (failure) {
+                debugPrint('⚠️ Failed to delete sales for order $orderId: ${failure.message}');
+              },
+              (_) {
+                debugPrint('✅ Deleted sales entries for order $orderId');
+              },
+            );
+          } catch (e) {
+            debugPrint('⚠️ Error deleting sales in background: $e');
+          }
+        });
         
         // Delete order
         final deleteResult = await _supabaseDatasource.deleteOrder(orderId);

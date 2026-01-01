@@ -11,6 +11,8 @@ class Part {
   final String? createdBy;
   final String? updatedBy;
   final String? broughtBy; // Kim olib kelgan
+  final String? contactName; // Kontakt ismi
+  final String? contactPhone; // Kontakt telefon raqami
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -23,6 +25,8 @@ class Part {
     this.createdBy,
     this.updatedBy,
     this.broughtBy,
+    this.contactName,
+    this.contactPhone,
     required this.createdAt,
     this.updatedAt,
   });
@@ -49,6 +53,8 @@ class Part {
     String? createdBy,
     String? updatedBy,
     String? broughtBy,
+    String? contactName,
+    String? contactPhone,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -61,6 +67,8 @@ class Part {
       createdBy: createdBy ?? this.createdBy,
       updatedBy: updatedBy ?? this.updatedBy,
       broughtBy: broughtBy ?? this.broughtBy,
+      contactName: contactName ?? this.contactName,
+      contactPhone: contactPhone ?? this.contactPhone,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

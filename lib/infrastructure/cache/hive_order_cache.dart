@@ -108,6 +108,8 @@ class HiveOrderCache {
       'status': order.status,
       'createdBy': order.createdBy,
       'approvedBy': order.approvedBy,
+      'soldTo': order.soldTo,
+      'partsRequired': order.partsRequired, // FIX: partsRequired ni saqlash
       'createdAt': order.createdAt.toIso8601String(),
       'updatedAt': order.updatedAt?.toIso8601String(),
     };
@@ -115,6 +117,17 @@ class HiveOrderCache {
 
   /// Convert Map from Hive to Order entity
   Order _mapToOrder(Map<String, dynamic> map) {
+    // Parse partsRequired from Map
+    Map<String, int>? partsRequired;
+    if (map['partsRequired'] != null) {
+      final partsData = map['partsRequired'];
+      if (partsData is Map) {
+        partsRequired = Map<String, int>.from(
+          partsData.map((key, value) => MapEntry(key.toString(), (value as num).toInt())),
+        );
+      }
+    }
+    
     return Order(
       id: map['id'] as String,
       productId: map['productId'] as String,
@@ -124,6 +137,8 @@ class HiveOrderCache {
       status: map['status'] as String,
       createdBy: map['createdBy'] as String?,
       approvedBy: map['approvedBy'] as String?,
+      soldTo: map['soldTo'] as String?,
+      partsRequired: partsRequired, // FIX: partsRequired ni o'qish
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: map['updatedAt'] != null 
           ? DateTime.parse(map['updatedAt'] as String)
@@ -131,6 +146,21 @@ class HiveOrderCache {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

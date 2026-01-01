@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../domain/entities/part.dart';
 import '../../domain/repositories/part_repository.dart';
 import '../../core/di/service_locator.dart';
@@ -52,6 +53,8 @@ class _PartsPageState extends State<PartsPage> {
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _minQuantityController = TextEditingController();
   final TextEditingController _broughtByController = TextEditingController();
+  final TextEditingController _contactNameController = TextEditingController();
+  final TextEditingController _contactPhoneController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
 
   // State
@@ -98,6 +101,8 @@ class _PartsPageState extends State<PartsPage> {
     _quantityController.dispose();
     _minQuantityController.dispose();
     _broughtByController.dispose();
+    _contactNameController.dispose();
+    _contactPhoneController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -194,6 +199,13 @@ class _PartsPageState extends State<PartsPage> {
         return;
       }
 
+      final contactName = _contactNameController.text.trim().isEmpty 
+          ? null 
+          : _contactNameController.text.trim();
+      final contactPhone = _contactPhoneController.text.trim().isEmpty 
+          ? null 
+          : _contactPhoneController.text.trim();
+
       final part = Part(
         id: partId,
         name: name,
@@ -202,6 +214,8 @@ class _PartsPageState extends State<PartsPage> {
         imagePath: imagePath,
         createdBy: currentUserId, // Set created_by for RLS policy
         broughtBy: broughtBy,
+        contactName: contactName,
+        contactPhone: contactPhone,
         createdAt: DateTime.now(),
       );
 
@@ -211,7 +225,7 @@ class _PartsPageState extends State<PartsPage> {
       result.fold(
         (failure) {
           if (mounted) {
-            _showSnackBar('Failed to add part: ${failure.message}', Colors.red);
+            _showSnackBar('Failed to add part: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
           }
         },
         (createdPart) {
@@ -220,6 +234,8 @@ class _PartsPageState extends State<PartsPage> {
             _quantityController.clear();
             _minQuantityController.clear();
             _broughtByController.clear();
+            _contactNameController.clear();
+            _contactPhoneController.clear();
             _selectedImage = null;
             _showSnackBar('Part added successfully', Colors.green);
             Navigator.pop(context);
@@ -286,6 +302,9 @@ class _PartsPageState extends State<PartsPage> {
     _nameController.text = part.name;
     _quantityController.text = part.quantity.toString();
     _minQuantityController.text = part.minQuantity.toString();
+    _broughtByController.text = part.broughtBy ?? '';
+    _contactNameController.text = part.contactName ?? '';
+    _contactPhoneController.text = part.contactPhone ?? '';
     _currentEditImagePath = part.imagePath;
     _selectedImage = null;
 
@@ -350,6 +369,41 @@ class _PartsPageState extends State<PartsPage> {
                       helperText: 'Alert when quantity falls below this',
                     ),
                     keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _broughtByController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kim olib kelgan (Ixtiyoriy)',
+                      border: OutlineInputBorder(),
+                      hintText: 'Masalan: Ahmad, Boss, va hokazo',
+                      prefixIcon: Icon(Icons.person_add),
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _contactNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kontakt Ismi (Ixtiyoriy)',
+                      border: OutlineInputBorder(),
+                      hintText: 'Masalan: Ali, Supplier A',
+                      prefixIcon: Icon(Icons.contact_page),
+                      helperText: 'Qismni olib keluvchi shaxs/kompaniya nomi',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _contactPhoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kontakt Telefon (Ixtiyoriy)',
+                      border: OutlineInputBorder(),
+                      hintText: 'Masalan: +998901234567',
+                      prefixIcon: Icon(Icons.phone),
+                      helperText: 'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
+                    ),
+                    keyboardType: TextInputType.phone,
                   ),
                 ],
               ),
@@ -442,6 +496,15 @@ class _PartsPageState extends State<PartsPage> {
                     minQuantity: (int.tryParse(_minQuantityController.text) ??
                         part.minQuantity).clamp(0, double.infinity).toInt(),
                     imagePath: newImagePath,
+                    broughtBy: _broughtByController.text.trim().isEmpty
+                        ? null
+                        : _broughtByController.text.trim(),
+                    contactName: _contactNameController.text.trim().isEmpty
+                        ? null
+                        : _contactNameController.text.trim(),
+                    contactPhone: _contactPhoneController.text.trim().isEmpty
+                        ? null
+                        : _contactPhoneController.text.trim(),
                     updatedAt: DateTime.now(),
                   );
 
@@ -460,6 +523,9 @@ class _PartsPageState extends State<PartsPage> {
                         _nameController.clear();
                         _quantityController.clear();
                         _minQuantityController.clear();
+                        _broughtByController.clear();
+                        _contactNameController.clear();
+                        _contactPhoneController.clear();
                         _selectedImage = null;
                         _currentEditImagePath = null;
                         Navigator.pop(context);
@@ -475,6 +541,311 @@ class _PartsPageState extends State<PartsPage> {
     );
   }
 
+  /// Kontaktga telefon qilish
+  Future<void> _callContact(String phoneNumber) async {
+    try {
+      // Telefon raqamini tozalash (bo'sh joylarni olib tashlash)
+      final cleanPhone = phoneNumber.replaceAll(' ', '').replaceAll('-', '');
+      final uri = Uri.parse('tel:$cleanPhone');
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        if (mounted) {
+          _showSnackBar('Telefon qilish imkoni yo\'q: $phoneNumber', Colors.orange);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error calling contact: $e');
+      if (mounted) {
+        _showSnackBar('Telefon qilishda xatolik: $e', Colors.red);
+      }
+    }
+  }
+
+  /// Batch Add Parts Dialog - Professional yechim
+  /// WHY: Bir nechta part'larni bir vaqtda qo'shish (kirim)
+  Future<void> _showBatchAddDialog() async {
+    // Mavjud part'larni olish
+    final allPartsResult = await _partRepository.getAllParts();
+    
+    // Tanlangan part'lar va ularning miqdorlari
+    final Map<String, int> selectedParts = {};
+    final Map<String, TextEditingController> quantityControllers = {};
+    String searchQuery = '';
+    
+    allPartsResult.fold(
+      (failure) {
+        _showSnackBar('Xatolik: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
+        return;
+      },
+      (parts) {
+        // Barcha part'lar uchun controller yaratish
+        for (var part in parts) {
+          quantityControllers[part.id] = TextEditingController();
+        }
+      },
+    );
+    
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return allPartsResult.fold(
+            (failure) => AlertDialog(
+              title: const Text('Batch Add Parts'),
+              content: Text('Xatolik: ${failure.message}'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+            (parts) {
+              // Filter parts by search query
+              final filteredParts = searchQuery.isEmpty
+                  ? parts
+                  : parts.where((part) =>
+                      part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+              
+              return AlertDialog(
+                title: Row(
+                  children: [
+                    const Icon(Icons.add_shopping_cart, color: Colors.green),
+                    const SizedBox(width: 8),
+                    const Text('Kirim Qilish'),
+                  ],
+                ),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Qismlarni tanlang va miqdor kiriting',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 16),
+                      // Search bar
+                      TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Qidirish...',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            searchQuery = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Parts list
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 400),
+                        child: filteredParts.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: Text('Qismlar topilmadi'),
+                                ),
+                              )
+                            : ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: filteredParts.length,
+                                itemBuilder: (context, index) {
+                                  final part = filteredParts[index];
+                                  final controller = quantityControllers[part.id]!;
+                                  final isSelected = selectedParts.containsKey(part.id);
+                                  
+                                  return Card(
+                                    margin: const EdgeInsets.symmetric(vertical: 4),
+                                    color: isSelected ? Colors.green.shade50 : null,
+                                    child: ListTile(
+                                      title: Text(part.name),
+                                      subtitle: Text('Mavjud: ${part.quantity}'),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // Checkbox
+                                          Checkbox(
+                                            value: isSelected,
+                                            onChanged: (value) {
+                                              setDialogState(() {
+                                                if (value == true) {
+                                                  selectedParts[part.id] = 1;
+                                                  controller.text = '1';
+                                                } else {
+                                                  selectedParts.remove(part.id);
+                                                  controller.text = '';
+                                                }
+                                              });
+                                            },
+                                          ),
+                                          // Quantity input
+                                          if (isSelected)
+                                            SizedBox(
+                                              width: 80,
+                                              child: TextField(
+                                                controller: controller,
+                                                keyboardType: TextInputType.number,
+                                                textAlign: TextAlign.center,
+                                                decoration: const InputDecoration(
+                                                  hintText: 'Miqdor',
+                                                  isDense: true,
+                                                  border: OutlineInputBorder(),
+                                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                ),
+                                                onChanged: (value) {
+                                                  final qty = int.tryParse(value) ?? 0;
+                                                  setDialogState(() {
+                                                    if (qty > 0) {
+                                                      selectedParts[part.id] = qty;
+                                                    } else {
+                                                      selectedParts.remove(part.id);
+                                                    }
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      if (selectedParts.isNotEmpty) ...[
+                        const Divider(),
+                        Text(
+                          'Tanlangan: ${selectedParts.length} ta qism',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      // Cleanup controllers
+                      for (var controller in quantityControllers.values) {
+                        controller.dispose();
+                      }
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Bekor qilish'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: selectedParts.isEmpty
+                        ? null
+                        : () async {
+                            // Batch add parts
+                            await _batchAddParts(selectedParts);
+                            // Cleanup controllers
+                            for (var controller in quantityControllers.values) {
+                              controller.dispose();
+                            }
+                            if (mounted) {
+                              Navigator.pop(context);
+                            }
+                          },
+                    icon: const Icon(Icons.add),
+                    label: Text('Qo\'shish (${selectedParts.length})'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+  
+  /// Batch add parts - bir nechta part'larni bir vaqtda qo'shish
+  Future<void> _batchAddParts(Map<String, int> partsToAdd) async {
+    if (partsToAdd.isEmpty) return;
+    
+    // Loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+    
+    try {
+      int successCount = 0;
+      int failCount = 0;
+      
+      // Har bir part uchun quantity ni oshirish
+      for (var entry in partsToAdd.entries) {
+        final partId = entry.key;
+        final quantityToAdd = entry.value;
+        
+        if (quantityToAdd <= 0) continue;
+        
+        // Part ni olish
+        final partResult = await _partRepository.getPartById(partId);
+        await partResult.fold(
+          (failure) async {
+            failCount++;
+            debugPrint('❌ Failed to get part $partId: ${failure.message}');
+          },
+          (part) async {
+            if (part != null) {
+              // Quantity ni oshirish
+              final updatedPart = part.copyWith(
+                quantity: part.quantity + quantityToAdd,
+                updatedAt: DateTime.now(),
+              );
+              
+              final updateResult = await _partRepository.updatePart(updatedPart);
+              await updateResult.fold(
+                (failure) async {
+                  failCount++;
+                  debugPrint('❌ Failed to update part ${part.name}: ${failure.message}');
+                },
+                (_) async {
+                  successCount++;
+                  debugPrint('✅ Added $quantityToAdd to ${part.name}');
+                },
+              );
+            } else {
+              failCount++;
+            }
+          },
+        );
+      }
+      
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        
+        if (successCount > 0) {
+          _showSnackBar(
+            '$successCount ta qism muvaffaqiyatli qo\'shildi${failCount > 0 ? ", $failCount ta xatolik" : ""}',
+            failCount > 0 ? Colors.orange : Colors.green,
+          );
+        } else {
+          _showSnackBar('Hech qanday qism qo\'shilmadi', Colors.red);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        _showSnackBar('Xatolik: $e', Colors.red);
+      }
+    }
+  }
 
   /// Rasm tanlash va yangilash
   Future<void> _pickAndUpdateImage(Part part) async {
@@ -760,7 +1131,7 @@ class _PartsPageState extends State<PartsPage> {
           setState(() {
             _isImporting = false;
           });
-          _showSnackBar('Failed to pick file: ${failure.message}', Colors.red);
+          _showSnackBar('Failed to pick file: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
         },
         (file) async {
           if (file == null) {
@@ -781,7 +1152,7 @@ class _PartsPageState extends State<PartsPage> {
               setState(() {
                 _isImporting = false;
               });
-              _showSnackBar('Failed to parse Excel: ${failure.message}', Colors.red);
+              _showSnackBar('Failed to parse Excel: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
             },
             (parts) async {
               if (parts.isEmpty) {
@@ -1479,6 +1850,75 @@ class _PartsPageState extends State<PartsPage> {
                                                   ],
                                                 ),
                                               ),
+                                            // Contact Name
+                                            if (part.contactName != null && part.contactName!.isNotEmpty)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.withOpacity(0.2),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.contact_page,
+                                                      size: 14,
+                                                      color: Colors.blue,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      part.contactName!,
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.blue,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            // Contact Phone (clickable)
+                                            if (part.contactPhone != null && part.contactPhone!.isNotEmpty)
+                                              InkWell(
+                                                onTap: () => _callContact(part.contactPhone!),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green.withOpacity(0.2),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(
+                                                      color: Colors.green.withOpacity(0.5),
+                                                      width: 1,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.phone,
+                                                        size: 14,
+                                                        color: Colors.green,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        part.contactPhone!,
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors.green,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ],
@@ -1553,12 +1993,24 @@ class _PartsPageState extends State<PartsPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          _nameController.clear();
-          _quantityController.clear();
-          _minQuantityController.clear();
-          _broughtByController.clear();
-          _selectedImage = null;
-          showDialog(
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.add),
+                  title: const Text('Add Single Part'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _nameController.clear();
+                    _quantityController.clear();
+                    _minQuantityController.clear();
+                    _broughtByController.clear();
+                    _contactNameController.clear();
+                    _contactPhoneController.clear();
+                    _selectedImage = null;
+                    showDialog(
             context: context,
             builder: (context) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -1626,6 +2078,32 @@ class _PartsPageState extends State<PartsPage> {
                       textCapitalization: TextCapitalization.words,
                       onSubmitted: (_) => _addPart(),
                     ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _contactNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Kontakt Ismi (Ixtiyoriy)',
+                        border: OutlineInputBorder(),
+                        hintText: 'Masalan: Ali, Supplier A',
+                        prefixIcon: Icon(Icons.contact_page),
+                        helperText: 'Qismni olib keluvchi shaxs/kompaniya nomi',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                      onSubmitted: (_) => _addPart(),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _contactPhoneController,
+                      decoration: const InputDecoration(
+                        labelText: 'Kontakt Telefon (Ixtiyoriy)',
+                        border: OutlineInputBorder(),
+                        hintText: 'Masalan: +998901234567',
+                        prefixIcon: Icon(Icons.phone),
+                        helperText: 'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
+                      ),
+                      keyboardType: TextInputType.phone,
+                      onSubmitted: (_) => _addPart(),
+                    ),
                   ],
                 ),
               ),
@@ -1634,6 +2112,8 @@ class _PartsPageState extends State<PartsPage> {
                   onPressed: () {
                     _nameController.clear();
                     _broughtByController.clear();
+                    _contactNameController.clear();
+                    _contactPhoneController.clear();
                     _quantityController.clear();
                     _minQuantityController.clear();
                     _selectedImage = null;
@@ -1648,6 +2128,19 @@ class _PartsPageState extends State<PartsPage> {
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Add'),
+                ),
+              ],
+            ),
+          );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.playlist_add),
+                  title: const Text('Batch Add Parts'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showBatchAddDialog();
+                  },
                 ),
               ],
             ),

@@ -6,7 +6,7 @@
 /// FIX: ListView ichidagi rebuild muammosini hal qilish uchun
 /// alohida widget sifatida yaratildi.
 import 'package:flutter/material.dart';
-import '../../data/models/order_model.dart';
+import '../../domain/entities/order.dart' as domain;
 import '../../data/models/department_model.dart';
 import '../../data/models/product_model.dart';
 import '../../data/services/product_service.dart';
@@ -17,7 +17,7 @@ import '../widgets/order_parts_list_widget.dart';
 import '../../l10n/app_localizations.dart';
 
 class OrderItemWidget extends StatefulWidget {
-  final Order order;
+  final domain.Order order;
   final Department? department;
   final VoidCallback? onComplete; // Nullable - permission-based
   final VoidCallback? onEdit; // Nullable - for pending orders
@@ -267,7 +267,12 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                   ),
                   if (_showParts) ...[
                     const SizedBox(height: 8),
-                    _buildPartsList(context),
+                    Builder(
+                      builder: (context) {
+                        debugPrint('✅ Order ${widget.order.id} - _showParts = true, _buildPartsList chaqirilmoqda');
+                        return _buildPartsList(context);
+                      },
+                    ),
                   ],
                 ],
                 
@@ -330,30 +335,51 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
 
   /// Parts list'ni ko'rsatish (chiroyli badge'lar bilan)
   Widget _buildPartsList(BuildContext context) {
-    final product = _getProduct();
-    if (product == null || product.parts.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          AppLocalizations.of(context)?.translate('noParts') ?? 'No parts',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontStyle: FontStyle.italic,
+    // FIX: Order'da saqlangan partsRequired dan foydalanish (snapshot)
+    // Agar partsRequired null bo'lsa, product.parts dan fallback
+    final partsToShow = widget.order.partsRequired;
+    
+    // DEBUG: partsRequired ni tekshirish
+    debugPrint('🔍 Order ${widget.order.id} (${widget.order.productName}) - partsRequired: ${partsToShow?.toString() ?? "null"}');
+    debugPrint('🔍 Order ${widget.order.id} - partsRequired isEmpty: ${partsToShow?.isEmpty ?? true}');
+    debugPrint('🔍 Order ${widget.order.id} - partsRequired length: ${partsToShow?.length ?? 0}');
+    
+    if (partsToShow == null || partsToShow.isEmpty) {
+      debugPrint('⚠️ Order ${widget.order.id} - partsRequired null yoki bo\'sh, product.parts dan fallback');
+      // Fallback: Product'dan parts olish
+      final product = _getProduct();
+      if (product == null || product.parts.isEmpty) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
           ),
-        ),
+          child: Text(
+            AppLocalizations.of(context)?.translate('noParts') ?? 'No parts',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        );
+      }
+      
+      // Fallback: Product parts ishlatish
+      final partService = PartService();
+      return OrderPartsListWidget(
+        parts: product.parts,
+        orderQuantity: widget.order.quantity,
+        partService: partService,
       );
     }
 
+    // Order'da saqlangan partsRequired ishlatish
     final partService = PartService();
-    final partsList = product.parts.entries.toList();
     
     return OrderPartsListWidget(
-      parts: product.parts,
+      parts: partsToShow,
       orderQuantity: widget.order.quantity,
       partService: partService,
     );

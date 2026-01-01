@@ -231,3 +231,18 @@ Yoki **"Eng Yaxshi Prompt"** ni ishlatib, barcha ma'lumotlarni bir vaqtda oling.
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

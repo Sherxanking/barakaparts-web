@@ -10,6 +10,7 @@ import '../../../domain/repositories/user_repository.dart';
 import '../../../infrastructure/datasources/supabase_user_datasource.dart';
 import '../../../infrastructure/datasources/supabase_client.dart';
 import '../../../infrastructure/repositories/user_repository_impl.dart';
+import '../../../core/services/error_handler_service.dart';
 import '../../pages/home_page.dart';
 import 'signup_page.dart';
 
@@ -173,14 +174,18 @@ class _LoginPageState extends State<LoginPage> {
           if (failure.message.contains('EMAIL_NOT_VERIFIED')) {
             _showEmailVerificationDialog();
           } else {
+            // FIX: ErrorHandlerService orqali oson tilda xatolik xabari
+            final errorHandler = ErrorHandlerService.instance;
+            final userFriendlyMessage = errorHandler.getErrorMessage(failure);
+            
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  failure.message.replaceAll('EMAIL_NOT_VERIFIED: ', ''),
+                  userFriendlyMessage,
                   style: const TextStyle(fontSize: 14),
                 ),
                 backgroundColor: Colors.red,
-                duration: const Duration(seconds: 8),
+                duration: const Duration(seconds: 6),
                 action: SnackBarAction(
                   label: 'OK',
                   textColor: Colors.white,

@@ -16,9 +16,12 @@ import '../../main.dart';
 import '../pages/home_page.dart';
 import 'auth/login_page.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../core/services/error_handler_service.dart';
 import '../../infrastructure/datasources/supabase_user_datasource.dart';
 import '../../infrastructure/repositories/user_repository_impl.dart';
 import '../../domain/repositories/user_repository.dart';
+import '../../domain/entities/user.dart' as domain;
+import '../../domain/entities/user.dart' as domain;
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -31,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _selectedLanguage;
   bool _isLoading = true;
   late final UserRepository _userRepository;
+  domain.User? _currentUser; // FIX: Store current user in state for web compatibility
 
   @override
   void initState() {
@@ -39,6 +43,22 @@ class _SettingsPageState extends State<SettingsPage> {
       datasource: SupabaseUserDatasource(),
     );
     _loadCurrentLanguage();
+    
+    // FIX: Listen to auth state changes for web compatibility
+    _currentUser = AuthStateService().currentUser;
+    AuthStateService().onAuthStateChange((user) {
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+        });
+      }
+    });
+  }
+  
+  @override
+  void dispose() {
+    // Cleanup callback (optional, but good practice)
+    super.dispose();
   }
 
   /// Logout qilish
@@ -71,7 +91,7 @@ class _SettingsPageState extends State<SettingsPage> {
       (failure) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Logout xatolik: ${failure.message}'),
+            content: Text('Logout xatolik: ${ErrorHandlerService.instance.getErrorMessage(failure)}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -154,6 +174,120 @@ class _SettingsPageState extends State<SettingsPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // Current User Info Section
+                if (_currentUser != null)
+                  Card(
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 60,
+                                height: 60,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _currentUser!.name.isNotEmpty
+                                        ? _currentUser!.name[0].toUpperCase()
+                                        : 'U',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _currentUser!.name,
+                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                    if (_currentUser!.email != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _currentUser!.email!,
+                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                              color: Colors.grey[600],
+                                            ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getRoleColor(_currentUser!.role).withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: _getRoleColor(_currentUser!.role),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _getRoleIcon(_currentUser!.role),
+                                            size: 16,
+                                            color: _getRoleColor(_currentUser!.role),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            _getRoleLabel(_currentUser!.role),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: _getRoleColor(_currentUser!.role),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_currentUser!.phone != null && _currentUser!.phone!.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Divider(),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.phone,
+                                  size: 20,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _currentUser!.phone!,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                if (_currentUser != null) const SizedBox(height: 16),
                 // Language Section
                 Card(
                   elevation: 2,
@@ -237,6 +371,54 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
     );
+  }
+
+  /// Get role color
+  Color _getRoleColor(String role) {
+    switch (role.toLowerCase()) {
+      case 'boss':
+        return Colors.purple;
+      case 'manager':
+        return Colors.blue;
+      case 'worker':
+        return Colors.green;
+      case 'supplier':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// Get role icon
+  IconData _getRoleIcon(String role) {
+    switch (role.toLowerCase()) {
+      case 'boss':
+        return Icons.verified_user;
+      case 'manager':
+        return Icons.supervisor_account;
+      case 'worker':
+        return Icons.person;
+      case 'supplier':
+        return Icons.local_shipping;
+      default:
+        return Icons.person_outline;
+    }
+  }
+
+  /// Get role label
+  String _getRoleLabel(String role) {
+    switch (role.toLowerCase()) {
+      case 'boss':
+        return 'Boss';
+      case 'manager':
+        return 'Manager';
+      case 'worker':
+        return 'Worker';
+      case 'supplier':
+        return 'Supplier';
+      default:
+        return role.toUpperCase();
+    }
   }
 }
 

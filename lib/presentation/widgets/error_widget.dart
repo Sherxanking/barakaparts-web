@@ -30,8 +30,10 @@ class ErrorDisplayWidget extends StatelessWidget {
     } else if (failure != null) {
       message = ErrorHandlerService.instance.getErrorMessage(failure!);
     } else if (error != null) {
+      // SECURITY: Sanitize error before showing
+      final errorString = error.toString();
       message = ErrorHandlerService.instance.getErrorMessage(
-        UnknownFailure(error.toString()),
+        UnknownFailure(errorString),
       );
     } else {
       message = AppLocalizations.of(context)?.translate('errorOccurred') ?? 

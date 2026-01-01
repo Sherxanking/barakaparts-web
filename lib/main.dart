@@ -151,9 +151,18 @@ Future<void> _initializeServicesInBackground() async {
       
       // FIX: Birinchi marta ma'lumotlarni yuklash (agar box'lar bo'sh bo'lsa)
       // WHY: App reinstall qilinganda Supabase'dan ma'lumotlarni yuklash kerak
-      // IMPORTANT: Kichik kechikish - Supabase to'liq tayyor bo'lishi uchun
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _syncInitialDataFromSupabase();
+      // FIX: Background'da ishlaydi - appni bloklamaydi
+      // IMPORTANT: Timeout qo'shildi - agar uzoq davom etsa, o'tkazib yuboriladi
+      Future.delayed(const Duration(milliseconds: 500)).then((_) {
+        _syncInitialDataFromSupabase().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            debugPrint('⚠️ Data sync timeout - app offline mode da ishlaydi');
+          },
+        ).catchError((e) {
+          debugPrint('⚠️ Data sync error: $e - app offline mode da ishlaydi');
+        });
+      });
       
       // Initialize realtime streams for products and orders
       // WHY: Keep Hive cache synced with Supabase in real-time

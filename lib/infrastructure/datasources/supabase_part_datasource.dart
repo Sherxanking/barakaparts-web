@@ -311,6 +311,8 @@ class SupabasePartDatasource {
       createdBy: json['created_by'] as String?,
       updatedBy: json['updated_by'] as String?,
       broughtBy: json['brought_by'] as String?,
+      contactName: json['contact_name'] as String?,
+      contactPhone: json['contact_phone'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -332,6 +334,8 @@ class SupabasePartDatasource {
       'created_by': part.createdBy ?? currentUserId, // Ensure created_by is set
       'updated_by': part.updatedBy,
       'brought_by': part.broughtBy,
+      'contact_name': part.contactName,
+      'contact_phone': part.contactPhone,
       'created_at': part.createdAt.toIso8601String(),
       if (part.updatedAt != null) 'updated_at': part.updatedAt!.toIso8601String(),
     };

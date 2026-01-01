@@ -44,17 +44,23 @@ class _SplashPageState extends State<SplashPage> {
 
       // PERFORMANCE: Wait for Supabase initialization with timeout
       // WHY: Prevents infinite waiting if Supabase is slow
-      int retryCount = 0;
-      const maxRetries = 10;
-      const retryDelay = Duration(milliseconds: 200);
+      // FIX: Maximum 5 soniya kutadi, keyin auth page ga o'tadi
+      try {
+        int retryCount = 0;
+        const maxRetries = 25; // 25 * 200ms = 5 soniya
+        const retryDelay = Duration(milliseconds: 200);
 
-      while (!AppSupabaseClient.isInitialized && retryCount < maxRetries) {
-        await Future.delayed(retryDelay);
-        retryCount++;
+        while (!AppSupabaseClient.isInitialized && retryCount < maxRetries) {
+          await Future.delayed(retryDelay);
+          retryCount++;
+        }
+      } catch (e) {
+        debugPrint('⚠️ Supabase wait error: $e');
       }
 
       // Check if Supabase is initialized after retries
       if (!AppSupabaseClient.isInitialized) {
+        debugPrint('⚠️ Supabase initialization timeout - navigating to auth (offline mode)');
         if (!mounted) return;
         setState(() {
           _isInitializing = false;
@@ -66,11 +72,83 @@ class _SplashPageState extends State<SplashPage> {
 
       // FIX: Use global auth state service for consistent auth checking
       // WHY: Global service handles OAuth users and session persistence correctly
+      // FIX: AuthStateService'ni initialize qilish (agar hali initialize bo'lmagan bo'lsa)
       final authService = AuthStateService();
-      final currentUser = authService.currentUser;
+      if (!authService.isInitialized) {
+        await authService.initialize();
+      }
       
+      // Kichik kechikish - AuthStateService profile yuklash uchun vaqt berish
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Session va user profile'ni tekshirish
+      final client = AppSupabaseClient.instance;
+      Session? session;
+      
+      try {
+        session = client.client.auth.currentSession;
+        debugPrint('🔍 Session check: ${session != null ? "exists" : "null"}');
+      } catch (e) {
+        debugPrint('⚠️ Error checking session: $e');
+        session = null;
+      }
+      
+      // Avval currentUser'ni tekshirish
+      var currentUser = authService.currentUser;
+      
+      // Agar currentUser null bo'lsa va session mavjud bo'lsa, profile yuklashga urinish
+      if (currentUser == null && session != null && session.user != null) {
+        debugPrint('⚠️ Session exists but user profile not loaded, waiting...');
+        
+        // Auth state change'ni kutish (profile yuklanishini kutish)
+        bool profileLoaded = false;
+        authService.onAuthStateChange((user) {
+          if (!mounted || profileLoaded) return;
+          
+          if (user != null) {
+            profileLoaded = true;
+            if (!mounted) return;
+            setState(() {
+              _isInitializing = false;
+              _currentUser = user;
+            });
+            _navigateToHome();
+          }
+        });
+        
+        // Profile yuklanishini kutish (maximum 3 soniya)
+        for (int i = 0; i < 6; i++) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          if (!mounted) return;
+          
+          currentUser = authService.currentUser;
+          if (currentUser != null && !profileLoaded) {
+            profileLoaded = true;
+            if (!mounted) return;
+            setState(() {
+              _isInitializing = false;
+              _currentUser = currentUser;
+            });
+            _navigateToHome();
+            return;
+          }
+        }
+        
+        // Agar hali ham profile yuklanmagan bo'lsa
+        if (!mounted) return;
+        if (currentUser == null) {
+          debugPrint('⚠️ Profile still not loaded after waiting, navigating to auth');
+          setState(() {
+            _isInitializing = false;
+          });
+          _navigateToAuth();
+          return;
+        }
+      }
+      
+      // Agar currentUser mavjud bo'lsa, home'ga o'tish
       if (currentUser != null) {
-        // User is authenticated - go to home
         if (!mounted) return;
         setState(() {
           _isInitializing = false;
@@ -78,115 +156,12 @@ class _SplashPageState extends State<SplashPage> {
         });
         _navigateToHome();
       } else {
-        // No user - check session and load profile
-        // FIX: Use currentSession directly (synchronous getter in Supabase SDK 2.x)
-        // WHY: currentSession is not async, no need for Future.value() or timeout
-        final client = AppSupabaseClient.instance;
-        Session? session;
-        
-        try {
-          // WHY: currentSession is a synchronous getter, returns Session? directly
-          session = client.client.auth.currentSession;
-          debugPrint('🔍 Session check: ${session != null ? "exists" : "null"}');
-        } catch (e) {
-          debugPrint('⚠️ Error checking session: $e');
-          session = null;
-        }
-        
-        if (session != null && session.user != null) {
-          // Session exists - wait for auth service to load profile with timeout
-          debugPrint('✅ Session found, loading user profile...');
-          
-          bool profileLoaded = false;
-          
-          // Listen to auth state changes with timeout
-          authService.onAuthStateChange((user) {
-            if (!mounted || profileLoaded) return;
-            
-            if (user != null) {
-              profileLoaded = true;
-              if (!mounted) return;
-              setState(() {
-                _isInitializing = false;
-                _currentUser = user;
-              });
-              _navigateToHome();
-            }
-          });
-          
-          // Wait for profile to load (with timeout)
-          try {
-            await Future.delayed(const Duration(seconds: 3));
-            
-            // Check again after delay
-            if (!mounted) return;
-            final updatedUser = authService.currentUser;
-            if (updatedUser != null && !profileLoaded) {
-              profileLoaded = true;
-              if (!mounted) return;
-              setState(() {
-                _isInitializing = false;
-                _currentUser = updatedUser;
-              });
-              _navigateToHome();
-            } else if (updatedUser == null && !profileLoaded) {
-              // Still no user after timeout - try auto-create one more time
-              if (!mounted) return;
-              debugPrint('⚠️ Profile still not loaded, attempting final auto-create...');
-              
-              // Try to auto-create profile one more time
-              try {
-                final client = AppSupabaseClient.instance;
-                final session = client.client.auth.currentSession;
-                if (session != null && session.user != null) {
-                  final datasource = SupabaseUserDatasource();
-                  
-                  // OAuth callback removed - only email/password authentication is supported
-                  // If session exists but profile not found, go to auth
-                  if (!mounted) return;
-                  setState(() {
-                    _isInitializing = false;
-                  });
-                  _navigateToAuth();
-                } else {
-                  // No session - go to auth
-                  if (!mounted) return;
-                  setState(() {
-                    _isInitializing = false;
-                  });
-                  _navigateToAuth();
-                }
-              } catch (e) {
-                debugPrint('⚠️ Final auto-create error: $e');
-                if (!mounted) return;
-                setState(() {
-                  _isInitializing = false;
-                });
-                _navigateToAuth();
-              }
-            }
-          } catch (e) {
-            debugPrint('⚠️ Error waiting for profile: $e');
-            if (!mounted) return;
-            setState(() {
-              _isInitializing = false;
-            });
-            // Error loading profile - try to navigate to auth instead of showing error
-            debugPrint('⚠️ Error loading profile: $e');
-            if (!mounted) return;
-            setState(() {
-              _isInitializing = false;
-            });
-            _navigateToAuth(); // Go to login instead of showing error
-          }
-        } else {
-          // No session - go to auth immediately
-          if (!mounted) return;
-          setState(() {
-            _isInitializing = false;
-          });
-          _navigateToAuth();
-        }
+        // User yo'q - auth'ga o'tish
+        if (!mounted) return;
+        setState(() {
+          _isInitializing = false;
+        });
+        _navigateToAuth();
       }
     } catch (e) {
       debugPrint('❌ Initialization error: $e');

@@ -74,3 +74,18 @@ Agar keyinroq yangi muammo bo'lsa:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

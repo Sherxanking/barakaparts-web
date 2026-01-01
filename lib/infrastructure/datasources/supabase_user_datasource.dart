@@ -55,22 +55,27 @@ class SupabaseUserDatasource {
       
       // STEP 1: Check email verification status
       // WHY: Test accounts (manager@test.com, boss@test.com) bypass email verification
+      // FIX: Development/test muhitida email confirmation'ni o'tkazib yuborish
       // Note: If email confirmation is disabled in Supabase settings, this check will pass
       final isTestAccount = _getRoleForTestAccount(email.trim()) != null;
       final isEmailVerified = response.user!.emailConfirmedAt != null;
       
-      if (!isEmailVerified && !isTestAccount) {
+      // FIX: Development/test muhitida email confirmation'ni o'tkazib yuborish
+      // Production'da email confirmation talab qilinadi
+      final isDevelopment = const bool.fromEnvironment('dart.vm.product') == false;
+      final shouldBypassEmailVerification = isTestAccount || isDevelopment;
+      
+      if (!isEmailVerified && !shouldBypassEmailVerification) {
         debugPrint('⚠️ Email not verified for: ${email.trim()}');
         // Return special failure that UI can handle to show verification prompt
         return Left<Failure, domain.User>(AuthFailure(
-          'EMAIL_NOT_VERIFIED: Please verify your email before signing in. '
-          'Check your inbox for the verification link.'
+          'EMAIL_NOT_VERIFIED: Email tasdiqlanmagan. Email\'ingizni tekshiring va tasdiqlang.'
         ));
       }
       
-      // Test accounts bypass email verification
-      if (isTestAccount && !isEmailVerified) {
-        debugPrint('⚠️ Test account email not verified, but allowing login: ${email.trim()}');
+      // Test accounts va development muhitida email verification o'tkazib yuboriladi
+      if (shouldBypassEmailVerification && !isEmailVerified) {
+        debugPrint('⚠️ Email not verified, but allowing login (test/development): ${email.trim()}');
       }
       
       debugPrint('✅ Email verified, fetching user profile...');
@@ -126,8 +131,9 @@ class SupabaseUserDatasource {
       
       if (errorMessage.contains('invalid login credentials') || 
           errorMessage.contains('invalid login') ||
-          errorMessage.contains('wrong password')) {
-        return Left<Failure, domain.User>(AuthFailure('Invalid email or password. Please check and try again.'));
+          errorMessage.contains('wrong password') ||
+          errorMessage.contains('invalid credentials')) {
+        return Left<Failure, domain.User>(AuthFailure('Noto\'g\'ri email yoki parol. Email va parolni tekshiring yoki ro\'yxatdan o\'ting.'));
       } else if (errorMessage.contains('email not confirmed') || 
                  errorMessage.contains('email_not_confirmed')) {
         return Left<Failure, domain.User>(AuthFailure(

@@ -13,6 +13,7 @@ import '../../infrastructure/datasources/supabase_part_datasource.dart';
 import '../../infrastructure/datasources/supabase_product_datasource.dart';
 import '../../infrastructure/datasources/supabase_order_datasource.dart';
 import '../../infrastructure/datasources/supabase_department_datasource.dart';
+import '../../infrastructure/datasources/supabase_user_datasource.dart';
 import '../../infrastructure/cache/hive_part_cache.dart';
 import '../../infrastructure/cache/hive_product_cache.dart';
 import '../../infrastructure/cache/hive_order_cache.dart';
@@ -21,6 +22,7 @@ import '../../infrastructure/repositories/part_repository_impl.dart';
 import '../../infrastructure/repositories/product_repository_impl.dart';
 import '../../infrastructure/repositories/order_repository_impl.dart';
 import '../../infrastructure/repositories/department_repository_impl.dart';
+import '../../infrastructure/repositories/user_repository_impl.dart';
 import '../../application/services/audit_service.dart';
 
 class ServiceLocator {
@@ -37,6 +39,7 @@ class ServiceLocator {
   late final SupabaseProductDatasource _productDatasource = SupabaseProductDatasource();
   late final SupabaseOrderDatasource _orderDatasource = SupabaseOrderDatasource();
   late final SupabaseDepartmentDatasource _departmentDatasource = SupabaseDepartmentDatasource();
+  late final SupabaseUserDatasource _userDatasource = SupabaseUserDatasource();
   
   // Cache
   late final HivePartCache _partCache = HivePartCache();
@@ -64,7 +67,10 @@ class ServiceLocator {
     supabaseDatasource: _departmentDatasource,
     cache: _departmentCache,
   );
-  // late final UserRepository _userRepository = UserRepositoryImpl(...);
+  
+  late final UserRepository _userRepository = UserRepositoryImpl(
+    datasource: _userDatasource,
+  );
   // late final LogRepository _logRepository = LogRepositoryImpl(...);
   
   // late final AuditService _auditService = AuditService(_logRepository);
@@ -74,7 +80,7 @@ class ServiceLocator {
   ProductRepository get productRepository => _productRepository;
   OrderRepository get orderRepository => _orderRepository;
   DepartmentRepository get departmentRepository => _departmentRepository;
-  // UserRepository get userRepository => _userRepository;
+  UserRepository get userRepository => _userRepository;
   // LogRepository get logRepository => _logRepository;
   // AuditService get auditService => _auditService;
   

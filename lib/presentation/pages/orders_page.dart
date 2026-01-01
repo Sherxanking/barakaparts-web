@@ -24,6 +24,7 @@ import '../../core/di/service_locator.dart';
 import '../../core/utils/either.dart';
 import '../../core/errors/failures.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../core/services/error_handler_service.dart';
 import '../../domain/entities/order.dart' as domain;
 import '../../domain/entities/user.dart' as domain;
 import '../../domain/repositories/order_repository.dart';
@@ -63,6 +64,7 @@ class _OrdersPageState extends State<OrdersPage> {
   String? selectedProductId;
   int quantity = 1;
   final TextEditingController _soldToController = TextEditingController();
+  final TextEditingController _quantityController = TextEditingController();
 
   // Search, Filter, Sort state
   final TextEditingController _searchController = TextEditingController();
@@ -112,6 +114,9 @@ class _OrdersPageState extends State<OrdersPage> {
     _searchController.addListener(_onSearchChanged);
     // FIX: PartCalculatorService ni ishga tushirish
     _partCalculatorService = PartCalculatorService(_partService);
+    // Initialize quantity controller
+    _quantityController.text = quantity.toString();
+    _quantityController.addListener(_onQuantityChanged);
     
     // Initial load - after first stream event, hide loading
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -133,8 +138,18 @@ class _OrdersPageState extends State<OrdersPage> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _soldToController.dispose();
+    _quantityController.removeListener(_onQuantityChanged);
+    _quantityController.dispose();
     // StreamBuilder handles subscription automatically
     super.dispose();
+  }
+  
+  /// Quantity controller listener - TextField o'zgarganda quantity ni yangilash
+  void _onQuantityChanged() {
+    final newQuantity = int.tryParse(_quantityController.text);
+    if (newQuantity != null && newQuantity > 0) {
+      quantity = newQuantity;
+    }
   }
 
   /// Qidiruv o'zgarganda (debounced)
@@ -269,7 +284,7 @@ class _OrdersPageState extends State<OrdersPage> {
     if (mounted) {
       result.fold(
         (failure) {
-          _showSnackBar('Failed to create order: ${failure.message}', Colors.red);
+          _showSnackBar('Failed to create order: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
         },
         (createdOrder) {
           // Formni tozalash
@@ -305,7 +320,7 @@ class _OrdersPageState extends State<OrdersPage> {
       if (mounted) {
         result.fold(
           (failure) {
-            _showSnackBar('Failed to complete order: ${failure.message}', Colors.red);
+            _showSnackBar('Failed to complete order: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
           },
           (completedOrder) {
             _showSnackBar(AppLocalizations.of(context)?.translate('orderCompleted') ?? 'Order completed successfully', Colors.green);
@@ -460,24 +475,48 @@ class _OrdersPageState extends State<OrdersPage> {
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: () {
                           if (quantity > 1) {
-                            setDialogState(() => quantity--);
+                            setDialogState(() {
+                              quantity--;
+                              _quantityController.text = quantity.toString();
+                            });
                           }
                         },
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          '$quantity',
+                      SizedBox(
+                        width: 80,
+                        child: TextField(
+                          controller: _quantityController,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) {
+                            final newQuantity = int.tryParse(value);
+                            if (newQuantity != null && newQuantity > 0) {
+                              setDialogState(() {
+                                quantity = newQuantity;
+                                _quantityController.text = quantity.toString();
+                              });
+                            } else if (value.isEmpty) {
+                              // Allow empty during typing
+                            }
+                          },
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: () {
-                          setDialogState(() => quantity++);
+                          setDialogState(() {
+                            quantity++;
+                            _quantityController.text = quantity.toString();
+                          });
                         },
                       ),
                     ],
@@ -563,7 +602,7 @@ class _OrdersPageState extends State<OrdersPage> {
       if (mounted) {
         updateResult.fold(
           (failure) {
-            _showSnackBar('Failed to update order: ${failure.message}', Colors.red);
+            _showSnackBar('Failed to update order: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
           },
           (_) {
             // Formni tozalash
@@ -664,7 +703,7 @@ class _OrdersPageState extends State<OrdersPage> {
         
         result.fold(
           (failure) {
-            _showSnackBar('Order o\'chirishda xatolik: ${failure.message}', Colors.red);
+            _showSnackBar('Order o\'chirishda xatolik: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
           },
           (_) {
             _showSnackBar(AppLocalizations.of(context)?.translate('orderDeleted') ?? 'Order deleted', Colors.orange);
@@ -1136,24 +1175,45 @@ class _OrdersPageState extends State<OrdersPage> {
                                         icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () {
                   if (quantity > 1) {
-                    setState(() => quantity--);
+                    setState(() {
+                      quantity--;
+                      _quantityController.text = quantity.toString();
+                    });
                   }
                 },
               ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                                        child: Text(
-                                          '$quantity',
+                                      SizedBox(
+                                        width: 80,
+                                        child: TextField(
+                                          controller: _quantityController,
+                                          keyboardType: TextInputType.number,
+                                          textAlign: TextAlign.center,
                                           style: const TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.bold,
                                           ),
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onChanged: (value) {
+                                            final newQuantity = int.tryParse(value);
+                                            if (newQuantity != null && newQuantity > 0) {
+                                              setState(() => quantity = newQuantity);
+                                            } else if (value.isEmpty) {
+                                              // Allow empty during typing
+                                            }
+                                          },
                                         ),
                                       ),
               IconButton(
                                         icon: const Icon(Icons.add_circle_outline),
                 onPressed: () {
-                  setState(() => quantity++);
+                  setState(() {
+                    quantity++;
+                    _quantityController.text = quantity.toString();
+                  });
                 },
               ),
             ],
@@ -1227,11 +1287,10 @@ class _OrdersPageState extends State<OrdersPage> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final domainOrder = filteredOrders[index];
-                              final order = _domainToModel(domainOrder);
-                              final department = _departmentService.getDepartmentById(order.departmentId);
+                              final department = _departmentService.getDepartmentById(domainOrder.departmentId);
                               
                               return OrderItemWidget(
-                                order: order,
+                                order: domainOrder, // Domain Order'dan to'g'ridan-to'g'ri foydalanish
                                 department: department,
                                 onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
                                 onEdit: (domainOrder.status == 'pending' && _canEditOrders) ? () => _editOrder(domainOrder) : null,

@@ -218,3 +218,18 @@ Muammo tuzatilgandan keyin:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
