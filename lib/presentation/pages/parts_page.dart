@@ -155,6 +155,13 @@ class _PartsPageState extends State<PartsPage> {
   /// WHY: Added comprehensive error handling and validation to prevent crashes
   Future<void> _addPart() async {
     try {
+      // Permission check: only managers and boss can create parts
+      final currentUser = AuthStateService().currentUser;
+      if (currentUser == null || !currentUser.canCreateParts()) {
+        _showSnackBar('Access denied: You cannot add parts', Colors.red);
+        return;
+      }
+
       // Validate input
       final name = _nameController.text.trim();
       if (name.isEmpty) {
@@ -252,6 +259,12 @@ class _PartsPageState extends State<PartsPage> {
 
   /// Qismni o'chirish
   Future<void> _deletePart(Part part) async {
+    final currentUser = AuthStateService().currentUser;
+    if (currentUser == null || !currentUser.canDeleteParts()) {
+      _showSnackBar('Access denied: You cannot delete parts', Colors.red);
+      return;
+    }
+
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
@@ -299,6 +312,12 @@ class _PartsPageState extends State<PartsPage> {
 
   /// Qismni tahrirlash
   Future<void> _editPart(Part part) async {
+    final currentUser = AuthStateService().currentUser;
+    if (currentUser == null || !currentUser.canEditParts()) {
+      _showSnackBar('Access denied: You cannot edit parts', Colors.red);
+      return;
+    }
+
     _nameController.text = part.name;
     _quantityController.text = part.quantity.toString();
     _minQuantityController.text = part.minQuantity.toString();
@@ -566,6 +585,12 @@ class _PartsPageState extends State<PartsPage> {
   /// Batch Add Parts Dialog - Professional yechim
   /// WHY: Bir nechta part'larni bir vaqtda qo'shish (kirim)
   Future<void> _showBatchAddDialog() async {
+    final currentUser = AuthStateService().currentUser;
+    if (currentUser == null || !currentUser.canCreateParts()) {
+      _showSnackBar('Access denied: You cannot add parts', Colors.red);
+      return;
+    }
+
     // Mavjud part'larni olish
     final allPartsResult = await _partRepository.getAllParts();
     
@@ -1276,6 +1301,11 @@ class _PartsPageState extends State<PartsPage> {
         final lowStockParts = _getLowStockParts(parts);
         final lowStockCount = lowStockParts.length;
         
+        final currentUser = AuthStateService().currentUser;
+        final canCreateParts = currentUser?.canCreateParts() ?? false;
+        final canEditParts = currentUser?.canEditParts() ?? false;
+        final canDeleteParts = currentUser?.canDeleteParts() ?? false;
+
         return Scaffold(
           appBar: AppBar(
             title: Row(
@@ -1330,7 +1360,7 @@ class _PartsPageState extends State<PartsPage> {
                     : (lowStockCount > 0 ? 'Low Stock ($lowStockCount)' : 'Low Stock filter'),
               ),
               // Excel Import button (only for managers and boss)
-              if (AuthStateService().currentUser?.canCreateParts() ?? false)
+              if (canCreateParts)
                 IconButton(
                   icon: _isImporting
                       ? const SizedBox(
@@ -1631,7 +1661,7 @@ class _PartsPageState extends State<PartsPage> {
                           color: isLowStock ? Colors.red.shade50 : null,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
-                            onTap: () => _editPart(part),
+                            onTap: canEditParts ? () => _editPart(part) : null,
                             child: Padding(
                               padding: const EdgeInsets.all(12),
                               child: Row(
@@ -1944,38 +1974,52 @@ class _PartsPageState extends State<PartsPage> {
                                         _deletePart(part);
                                       }
                                     },
-                                    itemBuilder: (context) => [
-                                      PopupMenuItem(
-                                        value: 'history',
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.history, size: 20, color: Colors.purple),
-                                            const SizedBox(width: 8),
-                                            const Text('History'),
-                                          ],
+                                    itemBuilder: (context) {
+                                      final items = <PopupMenuEntry<String>>[
+                                        PopupMenuItem(
+                                          value: 'history',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.history, size: 20, color: Colors.purple),
+                                              const SizedBox(width: 8),
+                                              const Text('History'),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'edit',
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.edit, size: 20, color: Colors.blue),
-                                            const SizedBox(width: 8),
-                                            Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
-                                          ],
-                                        ),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'delete',
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.delete, size: 20, color: Colors.red),
-                                            const SizedBox(width: 8),
-                                            Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                      ];
+
+                                      if (canEditParts) {
+                                        items.add(
+                                          PopupMenuItem(
+                                            value: 'edit',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.edit, size: 20, color: Colors.blue),
+                                                const SizedBox(width: 8),
+                                                Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+
+                                      if (canDeleteParts) {
+                                        items.add(
+                                          PopupMenuItem(
+                                            value: 'delete',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.delete, size: 20, color: Colors.red),
+                                                const SizedBox(width: 8),
+                                                Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+
+                                      return items;
+                                    },
                                   ),
                                 ],
                               ),
@@ -1991,164 +2035,166 @@ class _PartsPageState extends State<PartsPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (context) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.add),
-                  title: const Text('Add Single Part'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _nameController.clear();
-                    _quantityController.clear();
-                    _minQuantityController.clear();
-                    _broughtByController.clear();
-                    _contactNameController.clear();
-                    _contactPhoneController.clear();
-                    _selectedImage = null;
-                    showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text('Add New Part'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Rasm picker
-                    ImagePickerWidget(
-                      currentImagePath: null,
-                      onImagePicked: (imageFile) {
-                        setState(() {
-                          _selectedImage = imageFile;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Part Name',
-                        border: OutlineInputBorder(),
-                        hintText: 'Enter part name',
-                        prefixIcon: Icon(Icons.label),
+      floatingActionButton: canCreateParts
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (context) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.add),
+                        title: const Text('Add Single Part'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _nameController.clear();
+                          _quantityController.clear();
+                          _minQuantityController.clear();
+                          _broughtByController.clear();
+                          _contactNameController.clear();
+                          _contactPhoneController.clear();
+                          _selectedImage = null;
+                          showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      title: const Text('Add New Part'),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Rasm picker
+                            ImagePickerWidget(
+                              currentImagePath: null,
+                              onImagePicked: (imageFile) {
+                                setState(() {
+                                  _selectedImage = imageFile;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Part Name',
+                                border: OutlineInputBorder(),
+                                hintText: 'Enter part name',
+                                prefixIcon: Icon(Icons.label),
+                              ),
+                              autofocus: true,
+                              onSubmitted: (_) => _addPart(),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _quantityController,
+                              decoration: const InputDecoration(
+                                labelText: 'Quantity',
+                                border: OutlineInputBorder(),
+                                hintText: 'Enter quantity',
+                                prefixIcon: Icon(Icons.numbers),
+                              ),
+                              keyboardType: TextInputType.number,
+                              onSubmitted: (_) => _addPart(),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _minQuantityController,
+                              decoration: const InputDecoration(
+                                labelText: 'Min Quantity (Alert Threshold)',
+                                border: OutlineInputBorder(),
+                                hintText: 'Enter minimum quantity',
+                                prefixIcon: Icon(Icons.warning),
+                                helperText: 'Alert when quantity falls below this',
+                              ),
+                              keyboardType: TextInputType.number,
+                              onSubmitted: (_) => _addPart(),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _broughtByController,
+                              decoration: const InputDecoration(
+                                labelText: 'Kim olib kelgan (Ixtiyoriy)',
+                                border: OutlineInputBorder(),
+                                hintText: 'Masalan: Ahmad, Boss, va hokazo',
+                                prefixIcon: Icon(Icons.person_add),
+                                helperText: 'Qismni kim olib kelganini kiriting',
+                              ),
+                              textCapitalization: TextCapitalization.words,
+                              onSubmitted: (_) => _addPart(),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _contactNameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Kontakt Ismi (Ixtiyoriy)',
+                                border: OutlineInputBorder(),
+                                hintText: 'Masalan: Ali, Supplier A',
+                                prefixIcon: Icon(Icons.contact_page),
+                                helperText: 'Qismni olib keluvchi shaxs/kompaniya nomi',
+                              ),
+                              textCapitalization: TextCapitalization.words,
+                              onSubmitted: (_) => _addPart(),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _contactPhoneController,
+                              decoration: const InputDecoration(
+                                labelText: 'Kontakt Telefon (Ixtiyoriy)',
+                                border: OutlineInputBorder(),
+                                hintText: 'Masalan: +998901234567',
+                                prefixIcon: Icon(Icons.phone),
+                                helperText: 'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
+                              ),
+                              keyboardType: TextInputType.phone,
+                              onSubmitted: (_) => _addPart(),
+                            ),
+                          ],
+                        ),
                       ),
-                      autofocus: true,
-                      onSubmitted: (_) => _addPart(),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            _nameController.clear();
+                            _broughtByController.clear();
+                            _contactNameController.clear();
+                            _contactPhoneController.clear();
+                            _quantityController.clear();
+                            _minQuantityController.clear();
+                            _selectedImage = null;
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: _addPart,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Add'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _quantityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Quantity',
-                        border: OutlineInputBorder(),
-                        hintText: 'Enter quantity',
-                        prefixIcon: Icon(Icons.numbers),
+                  );
+                        },
                       ),
-                      keyboardType: TextInputType.number,
-                      onSubmitted: (_) => _addPart(),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _minQuantityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Min Quantity (Alert Threshold)',
-                        border: OutlineInputBorder(),
-                        hintText: 'Enter minimum quantity',
-                        prefixIcon: Icon(Icons.warning),
-                        helperText: 'Alert when quantity falls below this',
+                      ListTile(
+                        leading: const Icon(Icons.playlist_add),
+                        title: const Text('Batch Add Parts'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showBatchAddDialog();
+                        },
                       ),
-                      keyboardType: TextInputType.number,
-                      onSubmitted: (_) => _addPart(),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _broughtByController,
-                      decoration: const InputDecoration(
-                        labelText: 'Kim olib kelgan (Ixtiyoriy)',
-                        border: OutlineInputBorder(),
-                        hintText: 'Masalan: Ahmad, Boss, va hokazo',
-                        prefixIcon: Icon(Icons.person_add),
-                        helperText: 'Qismni kim olib kelganini kiriting',
-                      ),
-                      textCapitalization: TextCapitalization.words,
-                      onSubmitted: (_) => _addPart(),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _contactNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Kontakt Ismi (Ixtiyoriy)',
-                        border: OutlineInputBorder(),
-                        hintText: 'Masalan: Ali, Supplier A',
-                        prefixIcon: Icon(Icons.contact_page),
-                        helperText: 'Qismni olib keluvchi shaxs/kompaniya nomi',
-                      ),
-                      textCapitalization: TextCapitalization.words,
-                      onSubmitted: (_) => _addPart(),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _contactPhoneController,
-                      decoration: const InputDecoration(
-                        labelText: 'Kontakt Telefon (Ixtiyoriy)',
-                        border: OutlineInputBorder(),
-                        hintText: 'Masalan: +998901234567',
-                        prefixIcon: Icon(Icons.phone),
-                        helperText: 'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
-                      ),
-                      keyboardType: TextInputType.phone,
-                      onSubmitted: (_) => _addPart(),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    _nameController.clear();
-                    _broughtByController.clear();
-                    _contactNameController.clear();
-                    _contactPhoneController.clear();
-                    _quantityController.clear();
-                    _minQuantityController.clear();
-                    _selectedImage = null;
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: _addPart,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
+                    ],
                   ),
-                  child: const Text('Add'),
-                ),
-              ],
-            ),
-          );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.playlist_add),
-                  title: const Text('Batch Add Parts'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showBatchAddDialog();
-                  },
-                ),
-              ],
-            ),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add Part'),
-      ),
+                );
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add Part'),
+            )
+          : null,
         );
       },
     );

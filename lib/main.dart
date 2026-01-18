@@ -15,6 +15,7 @@
 /// - Stock management va order completion
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -138,7 +139,9 @@ Future<void> _initializeServicesInBackground() async {
       await AppSupabaseClient.initialize().timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          debugPrint('⚠️ Supabase initialization timeout');
+          if (kDebugMode) {
+            debugPrint('⚠️ Supabase initialization timeout');
+          }
           throw TimeoutException('Supabase initialization timeout');
         },
       );
