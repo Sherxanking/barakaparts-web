@@ -54,5 +54,4 @@ flutter:
   
   # Assets for environment configuration
   assets:
-    - .env
     - assets/.env
