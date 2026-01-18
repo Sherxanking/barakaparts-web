@@ -38,6 +38,8 @@ dependencies:
   file_picker: ^8.0.0+1
   # Charts
   fl_chart: ^0.68.0
+  # App version info
+  package_info_plus: ^8.0.2
 
 dev_dependencies:
   flutter_test:

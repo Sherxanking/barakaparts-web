@@ -10,6 +10,7 @@
 /// WHY: Updated to use new auth/login_page path and removed duplicate imports
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../l10n/app_localizations.dart';
 import '../../data/services/language_service.dart';
 import '../../main.dart';
@@ -35,6 +36,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isLoading = true;
   late final UserRepository _userRepository;
   domain.User? _currentUser; // FIX: Store current user in state for web compatibility
+  String _appVersionLabel = 'Version ...';
 
   @override
   void initState() {
@@ -43,6 +45,7 @@ class _SettingsPageState extends State<SettingsPage> {
       datasource: SupabaseUserDatasource(),
     );
     _loadCurrentLanguage();
+    _loadAppVersion();
     
     // FIX: Listen to auth state changes for web compatibility
     _currentUser = AuthStateService().currentUser;
@@ -118,6 +121,18 @@ class _SettingsPageState extends State<SettingsPage> {
       _selectedLanguage = savedLanguage ?? currentLocale?.languageCode ?? 'en';
       _isLoading = false;
     });
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _appVersionLabel = 'Version ${info.version} (${info.buildNumber})';
+      });
+    } catch (_) {
+      // Keep default label on failure
+    }
   }
 
   /// App tilini o'zgartirish va sozlamani saqlash
@@ -349,7 +364,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ListTile(
                           leading: const Icon(Icons.info_outline),
                           title: const Text('Baraka Parts'),
-                          subtitle: const Text('Version 1.0.5'),
+                          subtitle: Text(_appVersionLabel),
                         ),
                       ],
                     ),

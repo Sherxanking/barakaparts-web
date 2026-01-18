@@ -1222,7 +1222,12 @@ class _PartsPageState extends State<PartsPage> {
               int failCount = 0;
 
               for (final part in parts) {
-                final result = await _partRepository.createPart(part);
+                // Ensure each imported part has a valid UUID for DB insert
+                final newPart = part.copyWith(
+                  id: const Uuid().v4(),
+                  createdAt: DateTime.now(),
+                );
+                final result = await _partRepository.createPart(newPart);
                 result.fold(
                   (failure) {
                     failCount++;
