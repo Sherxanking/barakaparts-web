@@ -10,19 +10,19 @@ class EnvConfig {
   /// .env faylni yuklash
   static Future<void> load() async {
     try {
-      // Flutter da .env fayl assets/ papkasida bo'lishi kerak
+      // Flutter da env fayl assets/ papkasida bo'lishi kerak
       // va pubspec.yaml da assets qo'shilishi kerak
-      await dotenv.load(fileName: 'assets/.env');
-      debugPrint('✅ .env fayl assets/.env dan yuklandi');
+      await dotenv.load(fileName: 'assets/env');
+      debugPrint('✅ env fayl assets/env dan yuklandi');
     } catch (e) {
-      // Agar assets/.env topilmasa, root .env ni sinab ko'ramiz
+      // Agar assets/env topilmasa, root .env ni sinab ko'ramiz
       try {
         await dotenv.load(fileName: '.env');
         debugPrint('✅ .env fayl root dan yuklandi');
       } catch (e2) {
         // .env fayl topilmasa, xatolik beradi
         debugPrint('⚠️ .env fayl yuklanmadi: $e2');
-        debugPrint('📝 Eslatma: .env fayl assets/.env yoki root da bo\'lishi kerak');
+        debugPrint('📝 Eslatma: env fayl assets/env yoki root da bo\'lishi kerak');
         debugPrint('📝 pubspec.yaml da assets qo\'shilganini tekshiring');
         // Exception throw qilmaymiz - Supabase initialize qilishda tekshiriladi
       }
