@@ -1,0 +1,15 @@
+# Release Keystore Configuration
+# 
+# INSTRUCTION:
+# 1. Copy this file to key.properties (without .example)
+# 2. Replace YOUR_KEYSTORE_PASSWORD with your actual keystore password
+# 3. Replace YOUR_KEY_PASSWORD with your actual key password
+# 4. Make sure upload-keystore.jks exists in android/app/ directory
+#
+# ⚠️ WARNING: DO NOT COMMIT key.properties to Git!
+# This file contains sensitive passwords!
+
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=upload
+storeFile=app/upload-keystore.jks

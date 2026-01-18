@@ -144,3 +144,5 @@ CREATE POLICY "Managers and boss can update products" ON products
 
 
 
+
+
