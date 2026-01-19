@@ -94,6 +94,9 @@ class ImagePickerWidget extends StatelessWidget {
                     child: Image.file(
                       imageFile!,
                       fit: BoxFit.cover,
+                      cacheWidth: 512,
+                      cacheHeight: 512,
+                      filterQuality: FilterQuality.low,
                       errorBuilder: (context, error, stackTrace) {
                         return _buildPlaceholder(context);
                       },

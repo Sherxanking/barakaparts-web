@@ -909,6 +909,27 @@ class _OrdersPageState extends State<OrdersPage> {
             title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
             elevation: 2,
             actions: [
+              PopupMenuButton<SortOption>(
+                icon: const Icon(Icons.sort),
+                tooltip: 'Sort',
+                initialValue: _selectedSortOption,
+                onSelected: (option) {
+                  setState(() {
+                    _selectedSortOption = option;
+                  });
+                },
+                itemBuilder: (context) => const [
+                  SortOption.dateDesc,
+                  SortOption.dateAsc,
+                  SortOption.nameAsc,
+                  SortOption.nameDesc,
+                ].map((option) {
+                  return PopupMenuItem(
+                    value: option,
+                    child: Text(option.getLabel(context)),
+                  );
+                }).toList(),
+              ),
               // Analytics button
               IconButton(
                 icon: const Icon(Icons.analytics),
@@ -990,22 +1011,6 @@ class _OrdersPageState extends State<OrdersPage> {
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Sort dropdown
-                    SortDropdownWidget(
-                      selectedOption: _selectedSortOption,
-                      onChanged: (option) {
-                        setState(() {
-                          _selectedSortOption = option;
-                        });
-                      },
-                      options: const [
-                        SortOption.dateDesc,
-                        SortOption.dateAsc,
-                        SortOption.nameAsc,
-                        SortOption.nameDesc,
-                      ],
                     ),
                   ],
                 ),

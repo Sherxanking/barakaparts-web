@@ -291,6 +291,27 @@ class _ProductsPageState extends State<ProductsPage> {
       appBar: AppBar(
         title: const Text('Products'),
         elevation: 2,
+        actions: [
+          PopupMenuButton<SortOption>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort',
+            initialValue: _selectedSortOption,
+            onSelected: (option) {
+              setState(() {
+                _selectedSortOption = option;
+              });
+            },
+            itemBuilder: (context) => const [
+              SortOption.nameAsc,
+              SortOption.nameDesc,
+            ].map((option) {
+              return PopupMenuItem(
+                value: option,
+                child: Text(option.getLabel(context)),
+              );
+            }).toList(),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -344,19 +365,6 @@ class _ProductsPageState extends State<ProductsPage> {
                       ),
                     );
                   },
-                ),
-                const SizedBox(height: 12),
-                SortDropdownWidget(
-                  selectedOption: _selectedSortOption,
-                  onChanged: (option) {
-                    setState(() {
-                      _selectedSortOption = option;
-                    });
-                  },
-                  options: const [
-                    SortOption.nameAsc,
-                    SortOption.nameDesc,
-                  ],
                 ),
               ],
             ),

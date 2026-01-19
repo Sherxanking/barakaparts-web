@@ -410,6 +410,25 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
             title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
             elevation: 2,
             actions: [
+              PopupMenuButton<SortOption>(
+                icon: const Icon(Icons.sort),
+                tooltip: 'Sort',
+                initialValue: _selectedSortOption,
+                onSelected: (option) {
+                  setState(() {
+                    _selectedSortOption = option;
+                  });
+                },
+                itemBuilder: (context) => const [
+                  SortOption.nameAsc,
+                  SortOption.nameDesc,
+                ].map((option) {
+                  return PopupMenuItem(
+                    value: option,
+                    child: Text(option.getLabel(context)),
+                  );
+                }).toList(),
+              ),
               // Analytics button
               IconButton(
                 icon: const Icon(Icons.analytics),
@@ -436,19 +455,6 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                       hintText: AppLocalizations.of(context)?.translate('searchDepartments') ?? 'Search departments...',
                       onChanged: (_) => setState(() {}),
                       onClear: () => setState(() {}),
-                    ),
-                    const SizedBox(height: 12),
-                    SortDropdownWidget(
-                      selectedOption: _selectedSortOption,
-                      onChanged: (option) {
-                        setState(() {
-                          _selectedSortOption = option;
-                        });
-                      },
-                      options: const [
-                        SortOption.nameAsc,
-                        SortOption.nameDesc,
-                      ],
                     ),
                   ],
                 ),
