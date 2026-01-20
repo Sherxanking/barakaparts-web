@@ -47,6 +47,7 @@ class _ProductsPageState extends State<ProductsPage> {
   String? _selectedDepartmentFilter;
   Map<String, int> selectedParts = {};
   SortOption? _selectedSortOption;
+  bool _isSavingProduct = false;
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
@@ -87,6 +88,7 @@ class _ProductsPageState extends State<ProductsPage> {
 
   /// Yangi mahsulot qo'shish
   Future<void> _addProduct() async {
+    if (_isSavingProduct) return;
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar('Please enter a product name', Colors.red);
       return;
@@ -102,32 +104,46 @@ class _ProductsPageState extends State<ProductsPage> {
       return;
     }
 
-    final product = Product(
-      id: const Uuid().v4(),
-      name: _nameController.text.trim(),
-      departmentId: selectedDepartmentId!,
-      parts: Map.from(selectedParts),
-    );
-
-    // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
-    final success = await _productService.addProduct(product);
     if (mounted) {
-      if (success) {
-        // Department productIds ni yangilash
-        await _departmentService.assignProductToDepartment(
-          selectedDepartmentId!,
-          product.id,
-        );
+      setState(() {
+        _isSavingProduct = true;
+      });
+    }
 
-        // Formni tozalash
-        _nameController.clear();
-        selectedDepartmentId = null;
-        selectedParts.clear();
+    try {
+      final product = Product(
+        id: const Uuid().v4(),
+        name: _nameController.text.trim(),
+        departmentId: selectedDepartmentId!,
+        parts: Map.from(selectedParts),
+      );
 
-        _showSnackBar('Product added successfully', Colors.green);
-        Navigator.pop(context);
-      } else {
-        _showSnackBar('Failed to add product. Please try again.', Colors.red);
+      // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
+      final success = await _productService.addProduct(product);
+      if (mounted) {
+        if (success) {
+          // Department productIds ni yangilash
+          await _departmentService.assignProductToDepartment(
+            selectedDepartmentId!,
+            product.id,
+          );
+
+          // Formni tozalash
+          _nameController.clear();
+          selectedDepartmentId = null;
+          selectedParts.clear();
+
+          _showSnackBar('Product added successfully', Colors.green);
+          Navigator.pop(context);
+        } else {
+          _showSnackBar('Failed to add product. Please try again.', Colors.red);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingProduct = false;
+        });
       }
     }
   }
@@ -571,10 +587,18 @@ class _ProductsPageState extends State<ProductsPage> {
                   child: const Text('Cancel'),
                 ),
                 TextButton(
-                  onPressed: () {
-                    _addProduct();
-                  },
-                  child: const Text('Add'),
+                  onPressed: _isSavingProduct
+                      ? null
+                      : () {
+                          _addProduct();
+                        },
+                  child: _isSavingProduct
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add'),
                 ),
               ],
             ),
