@@ -1431,22 +1431,14 @@ class _PartsPageState extends State<PartsPage> {
               await Future.delayed(const Duration(milliseconds: 500));
               setState(() => _isInitialLoading = false);
             },
-            child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(context).copyWith(
-                dragDevices: {
-                  PointerDeviceKind.mouse,
-                  PointerDeviceKind.touch,
-                  PointerDeviceKind.trackpad,
-                },
-              ),
-              child: Scrollbar(
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              interactive: true,
+              child: CustomScrollView(
                 controller: _scrollController,
-                thumbVisibility: true,
-                interactive: true,
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
                     SliverToBoxAdapter(
                       child: Column(
                         children: [
@@ -2111,8 +2103,7 @@ class _PartsPageState extends State<PartsPage> {
                           ),
                         ),
                       ),
-                  ],
-                ),
+                ],
               ),
             ),
           ),
