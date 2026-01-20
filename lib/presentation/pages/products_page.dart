@@ -89,25 +89,36 @@ class _ProductsPageState extends State<ProductsPage> {
   /// Yangi mahsulot qo'shish
   Future<void> _addProduct() async {
     if (_isSavingProduct) return;
+    _isSavingProduct = true;
+    if (mounted) {
+      setState(() {});
+    }
+
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar('Please enter a product name', Colors.red);
+      _isSavingProduct = false;
+      if (mounted) {
+        setState(() {});
+      }
       return;
     }
 
     if (selectedDepartmentId == null) {
       _showSnackBar('Please select a department', Colors.red);
+      _isSavingProduct = false;
+      if (mounted) {
+        setState(() {});
+      }
       return;
     }
 
     if (selectedParts.isEmpty) {
       _showSnackBar('Please select at least one part', Colors.red);
+      _isSavingProduct = false;
+      if (mounted) {
+        setState(() {});
+      }
       return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _isSavingProduct = true;
-      });
     }
 
     try {
