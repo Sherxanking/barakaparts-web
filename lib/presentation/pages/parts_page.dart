@@ -565,6 +565,118 @@ class _PartsPageState extends State<PartsPage> {
     );
   }
 
+  /// Qismni berib yuborish yoki brak qilish (hisobdan chiqarish)
+  Future<void> _showPartOutflowDialog(Part part) async {
+    final currentUser = AuthStateService().currentUser;
+    if (currentUser == null || !currentUser.canEditParts()) {
+      _showSnackBar('Access denied: You cannot adjust parts', Colors.red);
+      return;
+    }
+
+    final qtyController = TextEditingController();
+    final noteController = TextEditingController();
+    String actionType = 'issue';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Part chiqarish'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              value: actionType,
+              decoration: const InputDecoration(
+                labelText: 'Sabab',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'issue', child: Text('Berib yuborildi')),
+                DropdownMenuItem(value: 'scrap', child: Text('Brak / Yaroqsiz')),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  actionType = value;
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: qtyController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Miqdor',
+                border: const OutlineInputBorder(),
+                helperText: 'Omborda: ${part.quantity}',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteController,
+              decoration: const InputDecoration(
+                labelText: 'Izoh (ixtiyoriy)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final qty = int.tryParse(qtyController.text.trim());
+    if (qty == null || qty <= 0) {
+      _showSnackBar('Miqdor noto\'g\'ri', Colors.red);
+      return;
+    }
+    if (qty > part.quantity) {
+      _showSnackBar('Miqdor ombordagidan ko\'p', Colors.red);
+      return;
+    }
+
+    final newQuantity = part.quantity - qty;
+    final reasonLabel = actionType == 'scrap' ? 'Brak' : 'Berib yuborildi';
+    final extraNote = noteController.text.trim();
+    final historyNotes = extraNote.isEmpty
+        ? '$reasonLabel: -$qty'
+        : '$reasonLabel: -$qty. $extraNote';
+
+    final updatedPart = part.copyWith(
+      quantity: newQuantity,
+      updatedAt: DateTime.now(),
+    );
+
+    final result = await _partRepository.updatePart(
+      updatedPart,
+      historyAction: actionType,
+      historyNotes: historyNotes,
+    );
+
+    result.fold(
+      (failure) {
+        if (mounted) {
+          _showSnackBar('Failed: ${failure.message}', Colors.red);
+        }
+      },
+      (_) {
+        if (mounted) {
+          _showSnackBar('Hisobdan chiqarildi', Colors.orange);
+        }
+      },
+    );
+  }
+
   /// Kontaktga telefon qilish
   Future<void> _callContact(String phoneNumber) async {
     try {
@@ -2074,6 +2186,8 @@ class _PartsPageState extends State<PartsPage> {
                                                     ),
                                                   ),
                                                 );
+                                      } else if (value == 'outflow') {
+                                        _showPartOutflowDialog(part);
                                               } else if (value == 'edit') {
                                                 _editPart(part);
                                               } else if (value == 'delete') {
@@ -2095,6 +2209,18 @@ class _PartsPageState extends State<PartsPage> {
                                               ];
 
                                               if (canEditParts) {
+                                                items.add(
+                                                  PopupMenuItem(
+                                                    value: 'outflow',
+                                                    child: Row(
+                                                      children: [
+                                                        const Icon(Icons.remove_circle_outline, size: 20, color: Colors.orange),
+                                                        const SizedBox(width: 8),
+                                                        const Text('Issue / Scrap'),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
                                                 items.add(
                                                   PopupMenuItem(
                                                     value: 'edit',

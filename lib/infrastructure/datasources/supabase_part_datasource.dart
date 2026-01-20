@@ -159,7 +159,11 @@ class SupabasePartDatasource {
   }
   
   /// Update part
-  Future<Either<Failure, Part>> updatePart(Part part) async {
+  Future<Either<Failure, Part>> updatePart(
+    Part part, {
+    String? historyAction,
+    String? historyNotes,
+  }) async {
     try {
       // Get old part to track quantity changes
       final oldPartResult = await getPartById(part.id);
@@ -186,7 +190,11 @@ class SupabasePartDatasource {
         final currentUserId = _client.currentUserId;
         if (currentUserId != null) {
           final quantityChange = updatedPart.quantity - oldPart.quantity;
-          final actionType = quantityChange > 0 ? 'add' : 'update';
+          final actionType = historyAction ?? (quantityChange > 0 ? 'add' : 'update');
+          final defaultNotes = quantityChange > 0
+              ? 'Miqdor qo\'shildi: +$quantityChange'
+              : 'Miqdor yangilandi: ${oldPart.quantity} → ${updatedPart.quantity}';
+          final notes = historyNotes ?? defaultNotes;
           
           final historyResult = await _historyDatasource.createHistory(
             partId: updatedPart.id,
@@ -194,9 +202,7 @@ class SupabasePartDatasource {
             actionType: actionType,
             quantityBefore: oldPart.quantity,
             quantityAfter: updatedPart.quantity,
-            notes: quantityChange > 0 
-                ? 'Miqdor qo\'shildi: +$quantityChange'
-                : 'Miqdor yangilandi: ${oldPart.quantity} → ${updatedPart.quantity}',
+            notes: notes,
           );
           historyResult.fold(
             (failure) => debugPrint('⚠️ Failed to create history: ${failure.message}'),

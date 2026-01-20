@@ -18,7 +18,12 @@ abstract class PartRepository {
   Future<Either<Failure, Part>> createPart(Part part);
   
   /// Update an existing part
-  Future<Either<Failure, Part>> updatePart(Part part);
+  /// Optional history metadata for audit trail
+  Future<Either<Failure, Part>> updatePart(
+    Part part, {
+    String? historyAction,
+    String? historyNotes,
+  });
   
   /// Delete a part
   Future<Either<Failure, void>> deletePart(String partId);

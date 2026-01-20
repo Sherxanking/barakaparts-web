@@ -110,8 +110,16 @@ class PartRepositoryImpl implements PartRepository {
   }
 
   @override
-  Future<Either<Failure, Part>> updatePart(Part part) async {
-    final result = await _supabaseDatasource.updatePart(part);
+  Future<Either<Failure, Part>> updatePart(
+    Part part, {
+    String? historyAction,
+    String? historyNotes,
+  }) async {
+    final result = await _supabaseDatasource.updatePart(
+      part,
+      historyAction: historyAction,
+      historyNotes: historyNotes,
+    );
     return result.fold(
       (failure) => Left(failure),
       (updatedPart) async {

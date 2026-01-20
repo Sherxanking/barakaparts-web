@@ -34,6 +34,12 @@ class PartHistory {
         return 'Qo\'shildi: +$quantityChange';
       case 'update':
         return 'Yangilandi: $quantityBefore → $quantityAfter';
+      case 'issue':
+        return 'Berildi: ${quantityChange.abs()}';
+      case 'scrap':
+        return 'Brak: ${quantityChange.abs()}';
+      case 'order_complete':
+        return 'Orderdan yechildi: ${quantityChange.abs()}';
       case 'create':
         return 'Yaratildi: $quantityAfter';
       case 'delete':
