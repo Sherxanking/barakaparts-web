@@ -200,7 +200,12 @@ class OrderRepositoryImpl implements OrderRepository {
                   updatedAt: DateTime.now(),
                 );
                 
-                final updateResult = await _partRepository.updatePart(updatedPart);
+                final updateResult = await _partRepository.updatePart(
+                  updatedPart,
+                  historyAction: 'order_complete',
+                  historyNotes:
+                      'Order: ${order.productName} x${order.quantity} (ID: ${order.id})',
+                );
                 return updateResult.fold(
                   (failure) => Left<Failure, void>(failure),
                   (_) {
