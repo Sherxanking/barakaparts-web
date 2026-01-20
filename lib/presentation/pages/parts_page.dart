@@ -329,7 +329,7 @@ class _PartsPageState extends State<PartsPage> {
     _broughtByController.text = part.broughtBy ?? '';
     _contactNameController.text = part.contactName ?? '';
     _contactPhoneController.text = part.contactPhone ?? '';
-    _currentEditImagePath = part.imagePath;
+    _currentEditImagePath = kIsWeb ? null : part.imagePath;
     _selectedImage = null;
 
     if (!mounted) return;
@@ -960,8 +960,11 @@ class _PartsPageState extends State<PartsPage> {
 
   /// Rasmni katta ko'rinishda ko'rsatish
   void _showImageDialog(Part part) {
-    final imageFile = ImageService.getImageFile(part.imagePath);
-    final hasImage = imageFile != null && imageFile.existsSync();
+    final hasNetworkImage = (part.imagePath ?? '').startsWith('http');
+    final imageFile = hasNetworkImage || kIsWeb
+        ? null
+        : ImageService.getImageFile(part.imagePath);
+    final hasImage = hasNetworkImage || (imageFile != null && imageFile.existsSync());
 
     showDialog(
       context: context,
@@ -1014,32 +1017,53 @@ class _PartsPageState extends State<PartsPage> {
                       padding: const EdgeInsets.all(16),
                       child: hasImage
                           ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          imageFile!,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: 300,
-                              height: 300,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[200],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.broken_image, size: 64,
-                                      color: Colors.grey),
-                                  SizedBox(height: 8),
-                                  Text('Image not found',
-                                      style: TextStyle(color: Colors.grey)),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      )
+                              borderRadius: BorderRadius.circular(12),
+                              child: hasNetworkImage
+                                  ? Image.network(
+                                      part.imagePath!,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Container(
+                                          width: 300,
+                                          height: 300,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[200],
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                                              SizedBox(height: 8),
+                                              Text('Image not found', style: TextStyle(color: Colors.grey)),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    )
+                                  : Image.file(
+                                      imageFile!,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Container(
+                                          width: 300,
+                                          height: 300,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[200],
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                                              SizedBox(height: 8),
+                                              Text('Image not found', style: TextStyle(color: Colors.grey)),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            )
                           : Container(
                         width: 300,
                         height: 300,
@@ -1717,8 +1741,11 @@ class _PartsPageState extends State<PartsPage> {
                               final part = filteredParts[index];
                               final isLowStock = part.quantity < part.minQuantity;
                               final statusColor = isLowStock ? Colors.red : Colors.green;
-                              final imageFile = ImageService.getImageFile(part.imagePath);
-                              final hasImage = imageFile != null && imageFile.existsSync();
+                              final hasNetworkImage = (part.imagePath ?? '').startsWith('http');
+                              final imageFile = hasNetworkImage || kIsWeb
+                                  ? null
+                                  : ImageService.getImageFile(part.imagePath);
+                              final hasImage = hasNetworkImage || (imageFile != null && imageFile.existsSync());
                               final animationDelay = kIsWeb ? 0 : (index * 50).clamp(0, 300);
 
                               return AnimatedListItem(
@@ -1751,18 +1778,26 @@ class _PartsPageState extends State<PartsPage> {
                                                   width: 1.5,
                                                 ),
                                               ),
-                                              child: hasImage
-                                                  ? ClipRRect(
-                                                      borderRadius: BorderRadius.circular(8),
-                                                      child: Image.file(
-                                                        imageFile!,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder: (context, error, stackTrace) {
-                                                          return _buildImagePlaceholder(statusColor);
-                                                        },
-                                                      ),
-                                                    )
-                                                  : _buildImagePlaceholder(statusColor),
+                                            child: hasImage
+                                                ? ClipRRect(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    child: hasNetworkImage
+                                                        ? Image.network(
+                                                            part.imagePath!,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (context, error, stackTrace) {
+                                                              return _buildImagePlaceholder(statusColor);
+                                                            },
+                                                          )
+                                                        : Image.file(
+                                                            imageFile!,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (context, error, stackTrace) {
+                                                              return _buildImagePlaceholder(statusColor);
+                                                            },
+                                                          ),
+                                                  )
+                                                : _buildImagePlaceholder(statusColor),
                                             ),
                                           ),
                                           const SizedBox(width: 12),
