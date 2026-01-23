@@ -1598,7 +1598,7 @@ class _PartsPageState extends State<PartsPage> {
                           if (showFilterBanner) ...[
                             const SizedBox(height: 8),
                             Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              margin: const EdgeInsets.symmetric(horizontal: 20),
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
                                 color: Colors.orange.shade50,
@@ -1629,22 +1629,26 @@ class _PartsPageState extends State<PartsPage> {
                             ),
                           ],
                           const SizedBox(height: 16),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Filters',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey[700],
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Filters',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[700],
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(height: 12),
                           // Qismlar statistikasi
-                          Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 20),
-                            padding: const EdgeInsets.all(16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.blue.shade50,
                               borderRadius: BorderRadius.circular(12),
@@ -1733,6 +1737,7 @@ class _PartsPageState extends State<PartsPage> {
                                 ),
                               ],
                             ),
+                          ),
                           ),
                           const SizedBox(height: 8),
                         ],

@@ -1,7 +1,7 @@
 name: barakaparts
 description: "BarakaParts Flutter MVP"
 publish_to: 'none'
-version: 1.0.6+7
+version: 1.0.8+9
 
 environment:
   sdk: ">=3.9.0 <4.0.0"
