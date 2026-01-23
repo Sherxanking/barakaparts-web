@@ -801,6 +801,8 @@ class _OrdersPageState extends State<OrdersPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order'),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -832,6 +834,7 @@ class _OrdersPageState extends State<OrdersPage> {
           ],
         ),
         actions: [
+          const SizedBox(height: 4),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
@@ -1131,8 +1134,20 @@ class _OrdersPageState extends State<OrdersPage> {
                       onChanged: (_) => setState(() {}),
                       onClear: () => setState(() {}),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     // Filter chips
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Filters',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -1213,7 +1228,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 20),
                                   
                                   // Department dropdown
                                   ValueListenableBuilder(
@@ -1263,7 +1278,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                       );
                                     },
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 20),
                                   
                                   // Product dropdown (filtered by department)
                                   ValueListenableBuilder(
@@ -1329,7 +1344,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                       );
                                     },
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 12),
                                   
                                   // Quantity selector
           Row(
@@ -1383,7 +1398,7 @@ class _OrdersPageState extends State<OrdersPage> {
               ),
             ],
           ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 12),
                                   
                                   // Recipient input (Majburiy)
                                   TextField(
@@ -1428,11 +1443,11 @@ class _OrdersPageState extends State<OrdersPage> {
                       // Orders List Header
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                           child: Text(
                             AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
                             style: const TextStyle(
-                              fontSize: 20,
+                              fontSize: 22,
                               fontWeight: FontWeight.bold,
                             ),
                           ),

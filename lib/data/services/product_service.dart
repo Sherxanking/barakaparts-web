@@ -110,15 +110,9 @@ class ProductService {
           }
         },
         (createdProduct) {
-          // 2. Hive'ga ham yozish (offline cache uchun)
-          try {
-            _boxService.productsBox.add(product);
-            debugPrint('✅ Product created in both Supabase and Hive');
-            return true;
-          } catch (e) {
-            debugPrint('⚠️ Product created in Supabase but failed to save to Hive: $e');
-            return true; // Supabase'ga yozildi, bu asosiy
-          }
+          // Supabase success already updates productsBox via repository.
+          debugPrint('✅ Product created in Supabase');
+          return true;
         },
       );
     } catch (e) {

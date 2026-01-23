@@ -354,8 +354,20 @@ class _ProductsPageState extends State<ProductsPage> {
                   onChanged: (_) => setState(() {}),
                   onClear: () => setState(() {}),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 // Department filter
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Filters',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 ValueListenableBuilder(
                   valueListenable: _boxService.departmentsListenable,
                   builder: (context, Box<Department> box, _) {
@@ -394,6 +406,16 @@ class _ProductsPageState extends State<ProductsPage> {
                   },
                 ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+            child: Text(
+              'Products List',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
 
@@ -492,10 +514,13 @@ class _ProductsPageState extends State<ProductsPage> {
                               context: context,
                               builder: (context) => AlertDialog(
                                 title: const Text('Delete Product'),
+                                contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                                actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 content: const Text(
                                   'Are you sure you want to delete this product?',
                                 ),
                                 actions: [
+                                  const SizedBox(height: 4),
                                   TextButton(
                                     onPressed: () => Navigator.pop(context),
                                     child: const Text('Cancel'),
@@ -586,10 +611,12 @@ class _ProductsPageState extends State<ProductsPage> {
                             : 'Parts (${selectedParts.length})',
                       ),
                     ),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
-              actions: [
+                actions: [
+                  const SizedBox(height: 4),
                 TextButton(
                   onPressed: () {
                     _nameController.clear();

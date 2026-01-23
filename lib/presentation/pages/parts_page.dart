@@ -276,8 +276,11 @@ class _PartsPageState extends State<PartsPage> {
       builder: (context) =>
           AlertDialog(
             title: const Text('Delete Part'),
+            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             content: Text('Are you sure you want to delete ${part.name}?'),
             actions: [
+              const SizedBox(height: 4),
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
                 child: const Text('Cancel'),
@@ -386,7 +389,7 @@ class _PartsPageState extends State<PartsPage> {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _minQuantityController,
                     decoration: const InputDecoration(
@@ -396,7 +399,7 @@ class _PartsPageState extends State<PartsPage> {
                     ),
                     keyboardType: TextInputType.number,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _broughtByController,
                     decoration: const InputDecoration(
@@ -435,6 +438,7 @@ class _PartsPageState extends State<PartsPage> {
               ),
             ),
             actions: [
+              const SizedBox(height: 4),
               TextButton(
                 onPressed: () {
                   _nameController.clear();
@@ -1624,11 +1628,23 @@ class _PartsPageState extends State<PartsPage> {
                               ),
                             ),
                           ],
+                          const SizedBox(height: 16),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Filters',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           // Qismlar statistikasi
                           Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.blue.shade50,
                               borderRadius: BorderRadius.circular(12),
@@ -1847,6 +1863,19 @@ class _PartsPageState extends State<PartsPage> {
                         ),
                       ),
 
+                    if (filteredParts.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                          child: const Text(
+                            'Parts List',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     if (filteredParts.isNotEmpty)
                       SliverPadding(
                         padding: const EdgeInsets.all(16),
@@ -2296,6 +2325,8 @@ class _PartsPageState extends State<PartsPage> {
                             builder: (context) => AlertDialog(
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                               title: const Text('Add New Part'),
+                              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               content: SingleChildScrollView(
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
@@ -2309,7 +2340,7 @@ class _PartsPageState extends State<PartsPage> {
                                         });
                                       },
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 20),
                                     TextField(
                                       controller: _nameController,
                                       decoration: const InputDecoration(
@@ -2321,7 +2352,7 @@ class _PartsPageState extends State<PartsPage> {
                                       autofocus: true,
                                       onSubmitted: (_) => _addPart(),
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 20),
                                     TextField(
                                       controller: _quantityController,
                                       decoration: const InputDecoration(
@@ -2333,7 +2364,7 @@ class _PartsPageState extends State<PartsPage> {
                                       keyboardType: TextInputType.number,
                                       onSubmitted: (_) => _addPart(),
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 12),
                                     TextField(
                                       controller: _minQuantityController,
                                       decoration: const InputDecoration(
@@ -2346,7 +2377,7 @@ class _PartsPageState extends State<PartsPage> {
                                       keyboardType: TextInputType.number,
                                       onSubmitted: (_) => _addPart(),
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 12),
                                     TextField(
                                       controller: _broughtByController,
                                       decoration: const InputDecoration(
@@ -2359,7 +2390,7 @@ class _PartsPageState extends State<PartsPage> {
                                       textCapitalization: TextCapitalization.words,
                                       onSubmitted: (_) => _addPart(),
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 20),
                                     TextField(
                                       controller: _contactNameController,
                                       decoration: const InputDecoration(
@@ -2372,7 +2403,7 @@ class _PartsPageState extends State<PartsPage> {
                                       textCapitalization: TextCapitalization.words,
                                       onSubmitted: (_) => _addPart(),
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 20),
                                     TextField(
                                       controller: _contactPhoneController,
                                       decoration: const InputDecoration(
