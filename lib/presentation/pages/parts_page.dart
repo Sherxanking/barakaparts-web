@@ -1580,7 +1580,7 @@ class _PartsPageState extends State<PartsPage> {
                       child: Column(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(16),
                             color: Theme.of(context).colorScheme.surface,
                             child: SearchBarWidget(
                               controller: _searchController,
@@ -1847,7 +1847,7 @@ class _PartsPageState extends State<PartsPage> {
 
                     if (filteredParts.isNotEmpty)
                       SliverPadding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(16),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
@@ -1864,8 +1864,8 @@ class _PartsPageState extends State<PartsPage> {
                               return AnimatedListItem(
                                 delay: animationDelay,
                                 child: Card(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  elevation: 1,
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  elevation: 2,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -1874,7 +1874,7 @@ class _PartsPageState extends State<PartsPage> {
                                     borderRadius: BorderRadius.circular(12),
                                     onTap: canEditParts ? () => _editPart(part) : null,
                                     child: Padding(
-                                      padding: const EdgeInsets.all(10),
+                                      padding: const EdgeInsets.all(14),
                                       child: Row(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [

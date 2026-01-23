@@ -344,7 +344,7 @@ class _ProductsPageState extends State<ProductsPage> {
         children: [
           // Search, Filter va Sort section
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             color: Theme.of(context).colorScheme.surface,
             child: Column(
               children: [
@@ -354,7 +354,7 @@ class _ProductsPageState extends State<ProductsPage> {
                   onChanged: (_) => setState(() {}),
                   onClear: () => setState(() {}),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 // Department filter
                 ValueListenableBuilder(
                   valueListenable: _boxService.departmentsListenable,
@@ -373,10 +373,10 @@ class _ProductsPageState extends State<ProductsPage> {
                               });
                             },
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           ...departments.map((dept) {
                             return Padding(
-                              padding: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.only(right: 12),
                               child: FilterChipWidget(
                                 label: dept.name,
                                 selected: _selectedDepartmentFilter == dept.id,
@@ -434,7 +434,7 @@ class _ProductsPageState extends State<ProductsPage> {
                     await Future.delayed(const Duration(milliseconds: 500));
                   },
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(16),
                     itemCount: products.length,
                     itemBuilder: (context, index) {
                     final product = products[index];
@@ -443,8 +443,8 @@ class _ProductsPageState extends State<ProductsPage> {
                     return AnimatedListItem(
                       delay: index * 50,
                       child: Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                      elevation: 2,
+                      margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                      elevation: 3,
                       child: ListTile(
                         leading: const CircleAvatar(
                           child: Icon(Icons.inventory),

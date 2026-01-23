@@ -59,14 +59,14 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     // FIX: Const constructor ishlatish - rebuild optimizatsiyasi
     return AnimatedListItem(
       child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         elevation: 2,
         child: InkWell(
           onTap: () {
             // Order details (keyinchalik qo'shilishi mumkin)
           },
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

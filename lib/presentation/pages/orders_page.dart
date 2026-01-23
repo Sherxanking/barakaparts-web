@@ -1109,7 +1109,7 @@ class _OrdersPageState extends State<OrdersPage> {
             children: [
               // Search va Filter section
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 color: Theme.of(context).colorScheme.surface,
                 child: Column(
                   children: [
@@ -1120,7 +1120,7 @@ class _OrdersPageState extends State<OrdersPage> {
                       onChanged: (_) => setState(() {}),
                       onClear: () => setState(() {}),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     // Filter chips
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -1136,7 +1136,7 @@ class _OrdersPageState extends State<OrdersPage> {
                               });
                             },
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           FilterChipWidget(
                             label: AppLocalizations.of(context)?.translate('pending') ?? 'Pending',
                             selected: _selectedStatusFilter == 'pending',
@@ -1147,7 +1147,7 @@ class _OrdersPageState extends State<OrdersPage> {
                             },
                             icon: Icons.pending,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           FilterChipWidget(
                             label: AppLocalizations.of(context)?.translate('completed') ?? 'Completed',
                             selected: _selectedStatusFilter == 'completed',
@@ -1188,17 +1188,17 @@ class _OrdersPageState extends State<OrdersPage> {
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Card(
-                            elevation: 2,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
+                        child: Card(
+                          elevation: 2,
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   Text(
                                     AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
                                     style: const TextStyle(
-                                      fontSize: 20,
+                                      fontSize: 22,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
