@@ -337,6 +337,107 @@ class _OrdersPageState extends State<OrdersPage> {
     }
   }
 
+  /// Pending order uchun qismlar ro'yxatini tahrirlash
+  Future<Map<String, int>?> _showOrderPartsDialog(Map<String, int> currentParts) async {
+    final allParts = _partService.getAllParts();
+    final tempSelectedParts = Map<String, int>.from(currentParts);
+    final Map<String, TextEditingController> controllers = {};
+
+    for (final part in allParts) {
+      final qty = tempSelectedParts[part.id] ?? 0;
+      controllers[part.id] = TextEditingController(
+        text: qty > 0 ? qty.toString() : '',
+      );
+    }
+
+    return showDialog<Map<String, int>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Parts'),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: allParts.map((part) {
+                  final qty = tempSelectedParts[part.id] ?? 0;
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    child: ListTile(
+                      title: Text(part.name),
+                      subtitle: Text('Available: ${part.quantity}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: qty > 0,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  tempSelectedParts[part.id] = 1;
+                                  controllers[part.id]!.text = '1';
+                                } else {
+                                  tempSelectedParts.remove(part.id);
+                                  controllers[part.id]!.text = '';
+                                }
+                              });
+                            },
+                          ),
+                          if (qty > 0)
+                            SizedBox(
+                              width: 80,
+                              child: TextField(
+                                controller: controllers[part.id],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                decoration: const InputDecoration(
+                                  labelText: 'Qty',
+                                  isDense: true,
+                                ),
+                                onChanged: (val) {
+                                  final newQty = int.tryParse(val);
+                                  if (newQty != null && newQty > 0) {
+                                    setDialogState(() {
+                                      tempSelectedParts[part.id] = newQty;
+                                    });
+                                  } else if (val.isEmpty) {
+                                    setDialogState(() {
+                                      tempSelectedParts[part.id] = 0;
+                                    });
+                                  } else {
+                                    final prevQty = tempSelectedParts[part.id] ?? 1;
+                                    controllers[part.id]!.text = prevQty.toString();
+                                  }
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              tempSelectedParts.removeWhere((key, value) => value <= 0);
+              Navigator.pop(context, tempSelectedParts);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Buyurtmani tahrirlash (pending orderlar uchun)
   /// Repository pattern - works for both web and mobile
   Future<void> _editOrder(domain.Order order) async {
@@ -347,6 +448,9 @@ class _OrdersPageState extends State<OrdersPage> {
       quantity = order.quantity;
       _soldToController.text = order.soldTo ?? '';
     });
+
+    // Parts override (per order)
+    Map<String, int> tempParts = Map.from(order.partsRequired ?? {});
     
     // Dialog ko'rsatish
     final result = await showDialog<Map<String, dynamic>?>(
@@ -403,6 +507,7 @@ class _OrdersPageState extends State<OrdersPage> {
                           setDialogState(() {
                             selectedDepartmentId = value;
                             selectedProductId = null; // Reset product when department changes
+                            tempParts = {};
                           });
                         },
                       );
@@ -455,6 +560,12 @@ class _OrdersPageState extends State<OrdersPage> {
                           onChanged: (value) {
                             setDialogState(() {
                               selectedProductId = value;
+                              final product = value != null
+                                  ? _productService.getProductById(value)
+                                  : null;
+                              tempParts = product != null
+                                  ? Map<String, int>.from(product.parts)
+                                  : {};
                             });
                           },
                         );
@@ -462,6 +573,27 @@ class _OrdersPageState extends State<OrdersPage> {
                     ),
                   const SizedBox(height: 16),
                   
+                  // Parts override (optional edit)
+                  if (selectedProductId != null) ...[
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final updated = await _showOrderPartsDialog(tempParts);
+                        if (updated != null) {
+                          setDialogState(() {
+                            tempParts = updated;
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.build_circle),
+                      label: Text(
+                        tempParts.isEmpty
+                            ? 'Add Parts'
+                            : 'Edit Parts (${tempParts.length})',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Quantity
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -564,11 +696,22 @@ class _OrdersPageState extends State<OrdersPage> {
                     );
                     return;
                   }
+                  if (tempParts.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Kamida bitta qism tanlang'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
                   Navigator.pop(context, {
                     'departmentId': selectedDepartmentId,
                     'productId': selectedProductId,
                     'quantity': quantity,
                     'soldTo': _soldToController.text.trim(),
+                    'partsRequired': tempParts,
                   });
                 },
                 child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
@@ -594,6 +737,12 @@ class _OrdersPageState extends State<OrdersPage> {
         departmentId: result['departmentId'] as String,
         quantity: result['quantity'] as int,
         soldTo: result['soldTo'] as String?,
+        partsRequired: Map<String, int>.from(
+          (result['partsRequired'] as Map?)?.map(
+                (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+              ) ??
+              {},
+        ),
         updatedAt: DateTime.now(),
       );
       

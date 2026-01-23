@@ -160,8 +160,13 @@ class OrderRepositoryImpl implements OrderRepository {
               return Left<Failure, Order>(ServerFailure('Product not found'));
             }
             
+            // Prefer order-specific parts if provided (pending edits)
+            final partsRequired = (order.partsRequired != null && order.partsRequired!.isNotEmpty)
+                ? order.partsRequired!
+                : product.partsRequired;
+
             // OPTIMIZATION: Get all parts at once instead of one by one
-            if (product.partsRequired.isNotEmpty) {
+            if (partsRequired.isNotEmpty) {
               // Get all parts in one request
               final allPartsResult = await _partRepository.getAllParts();
               final allParts = await allPartsResult.fold(
@@ -170,7 +175,7 @@ class OrderRepositoryImpl implements OrderRepository {
               );
               
               // Validate all parts first
-              for (var entry in product.partsRequired.entries) {
+              for (var entry in partsRequired.entries) {
                 final partId = entry.key;
                 final qtyPerProduct = entry.value;
                 final totalQty = qtyPerProduct * order.quantity;
@@ -187,7 +192,7 @@ class OrderRepositoryImpl implements OrderRepository {
               }
               
               // Update all parts in parallel
-              final updateFutures = product.partsRequired.entries.map((entry) async {
+              final updateFutures = partsRequired.entries.map((entry) async {
                 final partId = entry.key;
                 final qtyPerProduct = entry.value;
                 final totalQty = qtyPerProduct * order.quantity;
