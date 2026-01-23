@@ -65,6 +65,7 @@ class _OrdersPageState extends State<OrdersPage> {
   int quantity = 1;
   final TextEditingController _soldToController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
+  bool _showSoldToError = false;
 
   // Search, Filter, Sort state
   final TextEditingController _searchController = TextEditingController();
@@ -240,7 +241,12 @@ class _OrdersPageState extends State<OrdersPage> {
 
     // SoldTo majburiy tekshirish
     if (_soldToController.text.trim().isEmpty) {
-      _showSnackBar('Kimga sotilganini kiriting', Colors.red);
+      if (mounted) {
+        setState(() {
+          _showSoldToError = true;
+        });
+      }
+      _showSnackBar('Kim olib ketganini kiriting', Colors.red);
       return;
     }
 
@@ -293,6 +299,7 @@ class _OrdersPageState extends State<OrdersPage> {
             selectedProductId = null;
             quantity = 1;
             _soldToController.clear();
+            _showSoldToError = false;
           });
           // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
           if (!calculationResult.hasShortage) {
@@ -354,6 +361,8 @@ class _OrdersPageState extends State<OrdersPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Edit Parts'),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         content: StatefulBuilder(
           builder: (context, setDialogState) => SizedBox(
             width: double.maxFinite,
@@ -459,6 +468,8 @@ class _OrdersPageState extends State<OrdersPage> {
         builder: (context, setDialogState) {
           return AlertDialog(
             title: Text(AppLocalizations.of(context)?.translate('editOrder') ?? 'Edit Order'),
+            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -513,7 +524,7 @@ class _OrdersPageState extends State<OrdersPage> {
                       );
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   
                   // Product dropdown
                   if (selectedDepartmentId != null)
@@ -571,7 +582,7 @@ class _OrdersPageState extends State<OrdersPage> {
                         );
                       },
                     ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   
                   // Parts override (optional edit)
                   if (selectedProductId != null) ...[
@@ -591,7 +602,7 @@ class _OrdersPageState extends State<OrdersPage> {
                             : 'Edit Parts (${tempParts.length})',
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                   ],
 
                   // Quantity
@@ -653,17 +664,17 @@ class _OrdersPageState extends State<OrdersPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   
-                  // Sold To input (Majburiy)
+                  // Recipient input (Majburiy)
                   TextField(
                     controller: _soldToController,
                     decoration: InputDecoration(
-                      labelText: 'Kimga sotilgan *',
-                      hintText: 'Masalan: Ahmad, Mijoz nomi, va hokazo',
+                      labelText: 'Kim olib ketdi *',
+                      hintText: 'Masalan: Ahmad, Mijoz, Usta, va hokazo',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.person),
-                      helperText: 'Mahsulot kimga sotilganini kiriting (Majburiy)',
+                      helperText: 'Buyurtmani kim olib ketganini kiriting (Majburiy)',
                     ),
                     textCapitalization: TextCapitalization.words,
                   ),
@@ -1374,27 +1385,33 @@ class _OrdersPageState extends State<OrdersPage> {
           ),
                                   const SizedBox(height: 16),
                                   
-                                  // Sold To input (Majburiy)
+                                  // Recipient input (Majburiy)
                                   TextField(
                                     controller: _soldToController,
                                     decoration: InputDecoration(
-                                      labelText: 'Kimga sotilgan *',
-                                      hintText: 'Masalan: Ahmad, Mijoz nomi, va hokazo',
+                                      labelText: 'Kim olib ketdi *',
+                                      hintText: 'Masalan: Ahmad, Mijoz, Usta, va hokazo',
                                       border: const OutlineInputBorder(),
                                       prefixIcon: const Icon(Icons.person),
-                                      helperText: 'Mahsulot kimga sotilganini kiriting (Majburiy)',
-                                      errorText: _soldToController.text.trim().isEmpty ? 'Kimga sotilganini kiriting' : null,
+                                      helperText: 'Buyurtmani kim olib ketganini kiriting (Majburiy)',
+                                      errorText: _showSoldToError && _soldToController.text.trim().isEmpty
+                                          ? 'Kim olib ketganini kiriting'
+                                          : null,
                                     ),
                                     textCapitalization: TextCapitalization.words,
                                     onChanged: (value) {
-                                      setState(() {}); // Error text ni yangilash uchun
+                                      if (_showSoldToError && value.trim().isNotEmpty) {
+                                        setState(() {
+                                          _showSoldToError = false;
+                                        });
+                                      }
                                     },
                                   ),
                                   const SizedBox(height: 16),
                                   
                                   // Create order button
                                   ElevatedButton.icon(
-                                    onPressed: (_soldToController.text.trim().isEmpty) ? null : _createOrder,
+                                    onPressed: _createOrder,
                                     icon: const Icon(Icons.add_shopping_cart),
                                     label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
                                     style: ElevatedButton.styleFrom(

@@ -339,6 +339,8 @@ class _PartsPageState extends State<PartsPage> {
       builder: (context) =>
           AlertDialog(
             title: const Text('Edit Part'),
+            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -361,7 +363,7 @@ class _PartsPageState extends State<PartsPage> {
                       });
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _nameController,
                     decoration: const InputDecoration(
@@ -370,7 +372,7 @@ class _PartsPageState extends State<PartsPage> {
                     ),
                     autofocus: true,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _quantityController,
                     decoration: const InputDecoration(
@@ -384,7 +386,7 @@ class _PartsPageState extends State<PartsPage> {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _minQuantityController,
                     decoration: const InputDecoration(
@@ -394,7 +396,7 @@ class _PartsPageState extends State<PartsPage> {
                     ),
                     keyboardType: TextInputType.number,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _broughtByController,
                     decoration: const InputDecoration(
@@ -405,7 +407,7 @@ class _PartsPageState extends State<PartsPage> {
                     ),
                     textCapitalization: TextCapitalization.words,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _contactNameController,
                     decoration: const InputDecoration(

@@ -536,6 +536,8 @@ class _ProductsPageState extends State<ProductsPage> {
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('Add New Product'),
+              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -549,7 +551,7 @@ class _ProductsPageState extends State<ProductsPage> {
                       ),
                       autofocus: true,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     ValueListenableBuilder(
                       valueListenable: _boxService.departmentsListenable,
                       builder: (context, Box<Department> deptBox, _) {
@@ -574,7 +576,7 @@ class _ProductsPageState extends State<ProductsPage> {
                         );
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: _showPartsDialog,
                       icon: const Icon(Icons.add),
