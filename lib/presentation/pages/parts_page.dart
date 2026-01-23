@@ -659,7 +659,8 @@ class _PartsPageState extends State<PartsPage> {
 
     final result = await _partRepository.updatePart(
       updatedPart,
-      historyAction: actionType,
+      // Use existing action type to avoid backend constraints; notes carry reason.
+      historyAction: 'update',
       historyNotes: historyNotes,
     );
 

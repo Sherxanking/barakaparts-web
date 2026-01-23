@@ -202,7 +202,8 @@ class OrderRepositoryImpl implements OrderRepository {
                 
                 final updateResult = await _partRepository.updatePart(
                   updatedPart,
-                  historyAction: 'order_complete',
+                  // Use existing action type to avoid backend constraints; notes carry context.
+                  historyAction: 'update',
                   historyNotes:
                       'Order: ${order.productName} x${order.quantity} (ID: ${order.id})',
                 );
