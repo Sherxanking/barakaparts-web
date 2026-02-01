@@ -4,6 +4,8 @@
 /// Supports: Monthly production count, parts usage history, department-based reporting
 
 import 'package:flutter/foundation.dart' show debugPrint;
+import '../../domain/entities/order.dart';
+import '../../domain/entities/part.dart';
 import '../../domain/repositories/order_repository.dart';
 import '../../domain/repositories/part_repository.dart';
 import '../../domain/repositories/product_repository.dart';
@@ -17,6 +19,26 @@ class AnalyticsService {
   final PartRepository _partRepository = ServiceLocator.instance.partRepository;
   final ProductRepository _productRepository = ServiceLocator.instance.productRepository;
   final DepartmentRepository _departmentRepository = ServiceLocator.instance.departmentRepository;
+  
+  /// Helper: Get completed orders within a given month
+  Future<Either<Failure, List<Order>>> _getCompletedOrdersForMonth(DateTime month) async {
+    final ordersResult = await _orderRepository.getAllOrders();
+    return ordersResult.fold(
+      (failure) => Left(failure),
+      (orders) {
+        final startOfMonth = DateTime(month.year, month.month, 1);
+        final startOfNextMonth = DateTime(month.year, month.month + 1, 1);
+        
+        final filtered = orders.where((order) {
+          if (order.status != 'completed') return false;
+          final timestamp = order.updatedAt ?? order.createdAt;
+          return !timestamp.isBefore(startOfMonth) && timestamp.isBefore(startOfNextMonth);
+        }).toList();
+        
+        return Right(filtered);
+      },
+    );
+  }
 
   /// Get total production count for this month
   Future<Either<Failure, int>> getThisMonthProductionCount() async {
@@ -105,6 +127,34 @@ class AnalyticsService {
       },
     );
   }
+  
+  /// Get completed orders quantity by department name for a month
+  Future<Either<Failure, Map<String, int>>> getOrdersQuantityByDepartmentForMonth(DateTime month) async {
+    final completedOrdersResult = await _getCompletedOrdersForMonth(month);
+    final departmentsResult = await _departmentRepository.getAllDepartments();
+    
+    return completedOrdersResult.fold(
+      (failure) => Left(failure),
+      (orders) {
+        return departmentsResult.fold(
+          (failure) => Left(failure),
+          (departments) {
+            final departmentNames = {
+              for (final dept in departments) dept.id: dept.name,
+            };
+            final counts = <String, int>{};
+            
+            for (final order in orders) {
+              final deptName = departmentNames[order.departmentId] ?? 'Unknown';
+              counts[deptName] = (counts[deptName] ?? 0) + order.quantity;
+            }
+            
+            return Right(counts);
+          },
+        );
+      },
+    );
+  }
 
   /// Get low stock parts count
   Future<Either<Failure, int>> getLowStockPartsCount() async {
@@ -117,6 +167,11 @@ class AnalyticsService {
         return Right(lowStockCount);
       },
     );
+  }
+  
+  /// Get low stock parts list
+  Future<Either<Failure, List<Part>>> getLowStockPartsList() async {
+    return await _partRepository.getLowStockParts();
   }
 
   /// Get total parts count
@@ -229,6 +284,77 @@ class AnalyticsService {
           },
         );
       },
+    );
+  }
+  
+  /// Get parts usage map (part_id -> total used) for a month
+  Future<Either<Failure, Map<String, int>>> getPartsUsageByIdForMonth(DateTime month) async {
+    final completedOrdersResult = await _getCompletedOrdersForMonth(month);
+    
+    return completedOrdersResult.fold(
+      (failure) => Left(failure),
+      (orders) {
+        final usage = <String, int>{};
+        for (final order in orders) {
+          final partsRequired = order.partsRequired;
+          if (partsRequired == null || partsRequired.isEmpty) continue;
+          
+          for (final entry in partsRequired.entries) {
+            final partId = entry.key;
+            final perProduct = entry.value;
+            final totalUsed = perProduct * order.quantity;
+            usage[partId] = (usage[partId] ?? 0) + totalUsed;
+          }
+        }
+        return Right(usage);
+      },
+    );
+  }
+  
+  /// Get parts usage by part name for a month (sorted, optional limit)
+  Future<Either<Failure, Map<String, int>>> getPartsUsageByNameForMonth(
+    DateTime month, {
+    int? limit,
+  }) async {
+    final usageResult = await getPartsUsageByIdForMonth(month);
+    final partsResult = await _partRepository.getAllParts();
+    
+    return usageResult.fold(
+      (failure) => Left(failure),
+      (usageById) {
+        return partsResult.fold(
+          (failure) => Left(failure),
+          (parts) {
+            final partNames = {
+              for (final part in parts) part.id: part.name,
+            };
+            
+            final entries = usageById.entries
+                .map((entry) => MapEntry(partNames[entry.key] ?? entry.key, entry.value))
+                .toList()
+              ..sort((a, b) => b.value.compareTo(a.value));
+            
+            final limited = (limit != null && entries.length > limit)
+                ? entries.take(limit).toList()
+                : entries;
+            
+            final result = <String, int>{};
+            for (final entry in limited) {
+              result[entry.key] = entry.value;
+            }
+            return Right(result);
+          },
+        );
+      },
+    );
+  }
+  
+  /// Get total parts used for a month
+  Future<Either<Failure, int>> getTotalPartsUsedForMonth(DateTime month) async {
+    final usageResult = await getPartsUsageByIdForMonth(month);
+    return usageResult.fold(
+      (failure) => Left(failure),
+      (usage) => Right(usage.values.fold(0, (sum, value) => sum + value)),
     );
   }
 }

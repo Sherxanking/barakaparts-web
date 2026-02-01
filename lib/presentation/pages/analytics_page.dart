@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../data/services/analytics_service.dart';
+import '../../domain/entities/part.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../../l10n/app_localizations.dart';
@@ -23,10 +24,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   
   // Statistics
   int _thisMonthProduction = 0;
+  int _thisMonthPartsUsed = 0;
   Map<String, int> _ordersByStatus = {};
   Map<String, int> _ordersByDepartment = {};
   Map<String, int> _productionByProduct = {}; // Product bo'yicha production
   int _lowStockParts = 0;
+  List<Part> _lowStockPartsList = [];
+  Map<String, int> _topUsedParts = {};
   int _totalParts = 0;
   int _totalProducts = 0;
   int _totalDepartments = 0;
@@ -46,13 +50,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     // Load all statistics in parallel
     final thisMonthResult = await _analyticsService.getThisMonthProductionCount();
     final ordersByStatusResult = await _analyticsService.getOrdersCountByStatus();
-    final ordersByDeptResult = await _analyticsService.getOrdersCountByDepartment();
+    final ordersByDeptResult = await _analyticsService.getOrdersQuantityByDepartmentForMonth(DateTime.now());
     final productionByProductResult = await _analyticsService.getProductionCountByProductNameThisMonth();
     final lowStockResult = await _analyticsService.getLowStockPartsCount();
+    final lowStockListResult = await _analyticsService.getLowStockPartsList();
     final totalPartsResult = await _analyticsService.getTotalPartsCount();
     final totalProductsResult = await _analyticsService.getTotalProductsCount();
     final totalDeptsResult = await _analyticsService.getTotalDepartmentsCount();
     final monthlyResult = await _analyticsService.getProductionCountForLastMonths(6);
+    final partsUsageResult = await _analyticsService.getPartsUsageByNameForMonth(DateTime.now(), limit: 10);
+    final totalPartsUsedResult = await _analyticsService.getTotalPartsUsedForMonth(DateTime.now());
 
     if (!mounted) return;
 
@@ -82,6 +89,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       (count) => _lowStockParts = count,
     );
     
+    lowStockListResult.fold(
+      (failure) {},
+      (parts) => _lowStockPartsList = parts,
+    );
+    
     totalPartsResult.fold(
       (failure) {},
       (count) => _totalParts = count,
@@ -100,6 +112,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     monthlyResult.fold(
       (failure) {},
       (counts) => _monthlyProduction = counts,
+    );
+    
+    partsUsageResult.fold(
+      (failure) {},
+      (usage) => _topUsedParts = usage,
+    );
+    
+    totalPartsUsedResult.fold(
+      (failure) {},
+      (total) => _thisMonthPartsUsed = total,
     );
 
     setState(() {
@@ -137,6 +159,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     _buildThisMonthProduction(),
                     const SizedBox(height: 24),
                     
+                    // This Month Parts Used
+                    _buildThisMonthPartsUsed(),
+                    const SizedBox(height: 24),
+                    
                     // Monthly Production Chart
                     _buildMonthlyProductionChart(),
                     const SizedBox(height: 24),
@@ -151,6 +177,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     
                     // Production by Product Chart
                     _buildProductionByProductChart(),
+                    const SizedBox(height: 24),
+                    
+                    // Top Used Parts (This Month)
+                    _buildTopUsedPartsList(),
+                    const SizedBox(height: 24),
+                    
+                    // Low Stock Parts List
+                    _buildLowStockPartsList(),
                   ],
                 ),
               ),
@@ -262,6 +296,46 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               'units produced',
               style: TextStyle(
                 fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildThisMonthPartsUsed() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.build, color: Colors.teal),
+                const SizedBox(width: 8),
+                Text(
+                  'This Month Parts Usage',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '$_thisMonthPartsUsed',
+              style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+                color: Colors.teal,
+              ),
+            ),
+            Text(
+              'total parts used',
+              style: TextStyle(
+                fontSize: 12,
                 color: Colors.grey[600],
               ),
             ),
@@ -478,10 +552,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (_ordersByDepartment.isEmpty) {
       return const SizedBox.shrink();
     }
-
-    // Get department names
-    // Note: This would require loading departments
-    // For now, show IDs
     
     return Card(
       elevation: 2,
@@ -491,7 +561,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Orders by Department',
+              'Production by Department (This Month)',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
@@ -508,7 +578,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Department ${entry.key.substring(0, 8)}...',
+                          entry.key,
                           style: const TextStyle(fontSize: 12),
                         ),
                         Text(
@@ -687,6 +757,130 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                     Text(
                       '${entry.value} dona (${percentage.toStringAsFixed(1)}%)',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildTopUsedPartsList() {
+    if (_topUsedParts.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Text(
+              'No parts usage data available',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+        ),
+      );
+    }
+    
+    final entries = _topUsedParts.entries.toList();
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.star, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Top Parts Used (This Month)',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      '${entry.value}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildLowStockPartsList() {
+    if (_lowStockPartsList.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Text(
+              'No low stock parts',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+        ),
+      );
+    }
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(
+                  'Low Stock Parts',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ..._lowStockPartsList.map((part) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        part.name,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      '${part.quantity} / ${part.minQuantity}',
                       style: const TextStyle(fontSize: 12),
                     ),
                   ],
