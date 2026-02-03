@@ -223,6 +223,8 @@ class _ProductEditPageState extends State<ProductEditPage> {
     
     // FIX: Yangi map yaratish - concurrent modification muammosini oldini olish
     Map<String, int> tempParts = Map<String, int>.from(_productParts);
+    final TextEditingController searchController = TextEditingController();
+    String searchQuery = '';
     // Har bir qism uchun miqdor kiritish maydoni controllerlari
     final Map<String, TextEditingController> controllers = {};
 
@@ -248,108 +250,144 @@ class _ProductEditPageState extends State<ProductEditPage> {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: allParts.map((part) {
-                      final qty = tempParts[part.id] ?? 0;
-                      
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: ListTile(
-                          title: Text(part.name),
-                          subtitle: Text('${l10n?.translate('quantity') ?? 'Quantity'}: ${part.quantity}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Qismni tanlash checkbox
-                              Checkbox(
-                                value: qty > 0,
-                                onChanged: (value) {
-                                  setDialogState(() {
-                                    if (value == true) {
-                                      tempParts[part.id] = 1;
-                                      // FIX: disposed check olib tashlandi - try-catch ishlatish
-                                      try {
-                                        if (controllers[part.id] != null) {
-                                          controllers[part.id]!.text = '1';
-                                        }
-                                      } catch (e) {
-                                        // Controller allaqachon dispose qilingan
-                                      }
-                                    } else {
-                                      tempParts.remove(part.id);
-                                      try {
-                                        if (controllers[part.id] != null) {
-                                          controllers[part.id]!.text = '';
-                                        }
-                                      } catch (e) {
-                                        // Controller allaqachon dispose qilingan
-                                      }
-                                    }
-                                  });
-                                },
-                              ),
-                              // Miqdor kiritish maydoni (faqat tanlangan qismlar uchun)
-                              if (qty > 0)
-                                SizedBox(
-                                  width: 80,
-                                  child: TextField(
-                                    keyboardType: const TextInputType.numberWithOptions(
-                                      signed: false,
-                                      decimal: false,
-                                    ),
-                                    decoration: InputDecoration(
-                                      labelText: l10n?.translate('quantity') ?? 'Quantity',
-                                      isDense: true,
-                                      errorText: null, // FIX: Assertion xatolikni oldini olish
-                                    ),
-                                    controller: controllers[part.id],
-                                    onChanged: (val) {
-                                      // FIX: disposed check olib tashlandi - try-catch ishlatish
-                                      try {
-                                        final controller = controllers[part.id];
-                                        if (controller == null) return;
-                                        
-                                        // FIX: Bo'sh yoki faqat raqam bo'lishi kerak
-                                        if (val.isEmpty) {
-                                          // Yozish paytida bo'sh qoldirishga ruxsat berish
-                                          tempParts.remove(part.id);
-                                          return;
-                                        }
-                                        
-                                        // FIX: Faqat raqamlarni qabul qilish
-                                        if (!RegExp(r'^\d+$').hasMatch(val)) {
-                                          // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
-                                          final prevQty = tempParts[part.id] ?? 1;
-                                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                                            if (controller.text != prevQty.toString()) {
-                                              controller.text = prevQty.toString();
-                                            }
-                                          });
-                                          tempParts[part.id] = prevQty;
-                                          return;
-                                        }
-                                        
-                                        final newQty = int.tryParse(val);
-                                        if (newQty != null && newQty > 0) {
-                                          tempParts[part.id] = newQty;
-                                        } else {
-                                          // 0 yoki manfiy qiymat, olib tashlash
-                                          tempParts.remove(part.id);
-                                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                                            controller.text = '';
-                                          });
-                                        }
-                                      } catch (e) {
-                                        // Controller allaqachon dispose qilingan yoki xatolik
-                                        debugPrint('⚠️ Error in quantity TextField: $e');
-                                      }
-                                    },
-                                  ),
-                                ),
-                            ],
-                          ),
+                    children: [
+                      TextField(
+                        controller: searchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Search parts...',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
-                      );
-                    }).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            searchQuery = value.trim().toLowerCase();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.5,
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: allParts
+                              .where((part) =>
+                                  searchQuery.isEmpty ||
+                                  part.name.toLowerCase().contains(searchQuery))
+                              .length,
+                          itemBuilder: (context, index) {
+                            final filteredParts = allParts
+                                .where((part) =>
+                                    searchQuery.isEmpty ||
+                                    part.name.toLowerCase().contains(searchQuery))
+                                .toList();
+                            final part = filteredParts[index];
+                            final qty = tempParts[part.id] ?? 0;
+                            
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              child: ListTile(
+                                title: Text(part.name),
+                                subtitle: Text('${l10n?.translate('quantity') ?? 'Quantity'}: ${part.quantity}'),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Qismni tanlash checkbox
+                                    Checkbox(
+                                      value: qty > 0,
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          if (value == true) {
+                                            tempParts[part.id] = 1;
+                                            // FIX: disposed check olib tashlandi - try-catch ishlatish
+                                            try {
+                                              if (controllers[part.id] != null) {
+                                                controllers[part.id]!.text = '1';
+                                              }
+                                            } catch (e) {
+                                              // Controller allaqachon dispose qilingan
+                                            }
+                                          } else {
+                                            tempParts.remove(part.id);
+                                            try {
+                                              if (controllers[part.id] != null) {
+                                                controllers[part.id]!.text = '';
+                                              }
+                                            } catch (e) {
+                                              // Controller allaqachon dispose qilingan
+                                            }
+                                          }
+                                        });
+                                      },
+                                    ),
+                                    // Miqdor kiritish maydoni (faqat tanlangan qismlar uchun)
+                                    if (qty > 0)
+                                      SizedBox(
+                                        width: 80,
+                                        child: TextField(
+                                          keyboardType: const TextInputType.numberWithOptions(
+                                            signed: false,
+                                            decimal: false,
+                                          ),
+                                          decoration: InputDecoration(
+                                            labelText: l10n?.translate('quantity') ?? 'Quantity',
+                                            isDense: true,
+                                            errorText: null, // FIX: Assertion xatolikni oldini olish
+                                          ),
+                                          controller: controllers[part.id],
+                                          onChanged: (val) {
+                                            // FIX: disposed check olib tashlandi - try-catch ishlatish
+                                            try {
+                                              final controller = controllers[part.id];
+                                              if (controller == null) return;
+                                              
+                                              // FIX: Bo'sh yoki faqat raqam bo'lishi kerak
+                                              if (val.isEmpty) {
+                                                // Yozish paytida bo'sh qoldirishga ruxsat berish
+                                                tempParts.remove(part.id);
+                                                return;
+                                              }
+                                              
+                                              // FIX: Faqat raqamlarni qabul qilish
+                                              if (!RegExp(r'^\d+$').hasMatch(val)) {
+                                                // Noto'g'ri kiritilgan qiymat, oldingi qiymatga qaytarish
+                                                final prevQty = tempParts[part.id] ?? 1;
+                                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                  if (controller.text != prevQty.toString()) {
+                                                    controller.text = prevQty.toString();
+                                                  }
+                                                });
+                                                tempParts[part.id] = prevQty;
+                                                return;
+                                              }
+                                              
+                                              final newQty = int.tryParse(val);
+                                              if (newQty != null && newQty > 0) {
+                                                tempParts[part.id] = newQty;
+                                              } else {
+                                                // 0 yoki manfiy qiymat, olib tashlash
+                                                tempParts.remove(part.id);
+                                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                  controller.text = '';
+                                                });
+                                              }
+                                            } catch (e) {
+                                              // Controller allaqachon dispose qilingan yoki xatolik
+                                              debugPrint('⚠️ Error in quantity TextField: $e');
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -388,6 +426,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
       // Bu '_dependents.isEmpty' xatoligini oldini oladi
       // Dialog widgetlari to'liq dispose bo'lishi uchun kechikish qo'shish
       Future.delayed(const Duration(milliseconds: 300), () {
+        searchController.dispose();
         for (final controller in controllers.values) {
           try {
             // TextField dan ajratish uchun avval text ni tozalash

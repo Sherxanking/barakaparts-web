@@ -194,6 +194,7 @@ class _ProductsPageState extends State<ProductsPage> {
     Map<String, int> tempSelectedParts = Map.from(selectedParts);
     // Har bir qism uchun miqdor kiritish maydoni controllerlari
     final Map<String, TextEditingController> controllers = {};
+    final TextEditingController searchController = TextEditingController();
 
     // Barcha qismlar uchun controllerlarni yaratish
     for (final part in allParts) {
@@ -213,7 +214,25 @@ class _ProductsPageState extends State<ProductsPage> {
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: allParts.map((part) {
+                children: [
+                  TextField(
+                    controller: searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Search parts...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  ...allParts
+                      .where((part) {
+                        final query = searchController.text.trim().toLowerCase();
+                        if (query.isEmpty) return true;
+                        return part.name.toLowerCase().contains(query);
+                      })
+                      .map((part) {
                   final qty = tempSelectedParts[part.id] ?? 0;
                   
                   return Card(
@@ -269,6 +288,7 @@ class _ProductsPageState extends State<ProductsPage> {
                     ),
                   );
                 }).toList(),
+                ],
               ),
             ),
           ),
@@ -290,6 +310,7 @@ class _ProductsPageState extends State<ProductsPage> {
     ).then((_) {
       // Dialog yopilgandan keyin controllerlarni tozalash
       if (mounted) {
+        searchController.dispose();
         for (final controller in controllers.values) {
           try {
             controller.dispose();

@@ -770,9 +770,13 @@ class _PartsPageState extends State<PartsPage> {
                 ),
                 content: SizedBox(
                   width: double.maxFinite,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                       const Text(
                         'Qismlarni tanlang va miqdor kiriting',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
@@ -795,7 +799,9 @@ class _PartsPageState extends State<PartsPage> {
                       const SizedBox(height: 16),
                       // Parts list
                       ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 400),
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.35,
+                        ),
                         child: filteredParts.isEmpty
                             ? const Center(
                                 child: Padding(
@@ -850,12 +856,18 @@ class _PartsPageState extends State<PartsPage> {
                                                   contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                                                 ),
                                                 onChanged: (value) {
+                                                  if (value.trim().isEmpty) {
+                                                    // Allow editing without unselecting the part
+                                                    return;
+                                                  }
                                                   final qty = int.tryParse(value) ?? 0;
                                                   setDialogState(() {
                                                     if (qty > 0) {
                                                       selectedParts[part.id] = qty;
                                                     } else {
-                                                      selectedParts.remove(part.id);
+                                                      // Keep previous value to avoid accidental uncheck
+                                                      final prevQty = selectedParts[part.id] ?? 1;
+                                                      controller.text = prevQty.toString();
                                                     }
                                                   });
                                                 },
@@ -877,6 +889,7 @@ class _PartsPageState extends State<PartsPage> {
                       ],
                     ],
                   ),
+                ),
                 ),
                 actions: [
                   TextButton(
