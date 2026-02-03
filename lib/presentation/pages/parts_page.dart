@@ -1641,22 +1641,7 @@ class _PartsPageState extends State<PartsPage> {
                               ),
                             ),
                           ],
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'Filters',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           // Qismlar statistikasi
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1757,111 +1742,57 @@ class _PartsPageState extends State<PartsPage> {
                       ),
                     ),
 
-                    // Low Stock banner (compact) + optional panel
+                    // Low Stock chip (minimal signal)
                     if (lowStockCount > 0 && !_showLowStockOnly)
                       SliverToBoxAdapter(
-                        child: Column(
-                          children: [
-                            Container(
-                              margin: const EdgeInsets.all(12),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.red.shade200, width: 1),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.warning, color: Colors.red.shade700, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Low Stock: $lowStockCount ta qism',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.red.shade700,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            children: [
+                              InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () {
+                                  setState(() {
+                                    _showLowStockOnly = true;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: Colors.red.shade200, width: 1),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.warning, color: Colors.red.shade700, size: 16),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Kam qism: $lowStockCount',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.red.shade700,
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _showLowStockPanel = !_showLowStockPanel;
-                                      });
-                                    },
-                                    child: Text(_showLowStockPanel ? 'Hide' : 'Show'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _showLowStockOnly = true;
-                                      });
-                                    },
-                                    child: const Text('View All'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (_showLowStockPanel)
-                              Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.shade50,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.red.shade200, width: 1),
-                                ),
-                                child: SizedBox(
-                                  height: 80,
-                                  child: ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: lowStockParts.length > 5 ? 5 : lowStockParts.length,
-                                    itemBuilder: (context, index) {
-                                      final part = lowStockParts[index];
-                                      return Container(
-                                        width: 120,
-                                        margin: const EdgeInsets.only(right: 8),
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: Colors.red.shade300),
-                                        ),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                part.name,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              '${part.quantity} / ${part.minQuantity}',
-                                              style: TextStyle(
-                                                color: Colors.red.shade700,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
+                                      const SizedBox(width: 6),
+                                      Icon(Icons.chevron_right, color: Colors.red.shade700, size: 16),
+                                    ],
                                   ),
                                 ),
                               ),
-                          ],
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _showLowStockOnly = true;
+                                  });
+                                },
+                                child: const Text('View All'),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
 

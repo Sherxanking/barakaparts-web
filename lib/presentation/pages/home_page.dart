@@ -137,7 +137,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             minHeight: 16,
                           ),
                           child: Text(
-                            lowStockCount > 9 ? '9+' : '$lowStockCount',
+                            '$lowStockCount',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
@@ -168,7 +168,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             minHeight: 16,
                           ),
                           child: Text(
-                            lowStockCount > 9 ? '9+' : '$lowStockCount',
+                            '$lowStockCount',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
