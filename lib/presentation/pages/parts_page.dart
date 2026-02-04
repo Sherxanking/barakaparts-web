@@ -18,6 +18,7 @@ import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../../data/services/image_service.dart';
 import '../../data/services/excel_import_service.dart';
+import '../../data/services/hive_box_service.dart';
 import '../../infrastructure/datasources/supabase_client.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
@@ -43,6 +44,7 @@ class _PartsPageState extends State<PartsPage> {
   // Repository
   final PartRepository _partRepository = ServiceLocator.instance.partRepository;
   final ExcelImportService _excelImportService = ExcelImportService();
+  final HiveBoxService _boxService = HiveBoxService();
 
   // Data state (for initial load only)
   bool _isInitialLoading = true;
@@ -1465,6 +1467,7 @@ class _PartsPageState extends State<PartsPage> {
         ) ?? <Part>[];
         
         final lowStockParts = _getLowStockParts(parts);
+        // Use live parts list to match filtered view
         final lowStockCount = lowStockParts.length;
         final filteredParts = _getFilteredParts(parts);
         final showFilterBanner = _showLowStockOnly || _searchController.text.isNotEmpty;
@@ -1479,6 +1482,7 @@ class _PartsPageState extends State<PartsPage> {
         final canEditParts = currentUser?.canEditParts() ?? false;
         final canDeleteParts = currentUser?.canDeleteParts() ?? false;
 
+        final l10n = AppLocalizations.of(context);
         return Scaffold(
           appBar: AppBar(
             title: Row(
@@ -1667,38 +1671,7 @@ class _PartsPageState extends State<PartsPage> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Row(
-                                        children: [
-                                          Text(
-                                            'Jami qismlar: ',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.blue.shade800,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                          Text(
-                                            '$totalParts ta',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.blue.shade900,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          if (filteredCount != totalParts) ...[
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '($filteredCount ko\'rsatilmoqda)',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.blue.shade600,
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 0),
                                       Row(
                                         children: [
                                           Text(
@@ -1816,12 +1789,33 @@ class _PartsPageState extends State<PartsPage> {
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                          child: const Text(
-                            'Parts List',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                l10n?.translate('partsList') ?? 'Parts List',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.blue.shade200, width: 1),
+                                ),
+                                child: Text(
+                                  '${l10n?.translate('totalParts') ?? 'Total parts'}: $totalParts',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -1959,41 +1953,50 @@ class _PartsPageState extends State<PartsPage> {
                                                         ],
                                                       ),
                                                     ),
-                                                    // Min Quantity badge (agar low stock bo'lsa)
-                                                    if (isLowStock)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.red.shade50,
-                                                          borderRadius: BorderRadius.circular(8),
-                                                          border: Border.all(
-                                                            color: Colors.red.shade300,
-                                                            width: 1,
-                                                          ),
-                                                        ),
-                                                        child: Row(
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            Icon(
-                                                              Icons.warning_amber_rounded,
-                                                              size: 14,
-                                                              color: Colors.red.shade700,
-                                                            ),
-                                                            const SizedBox(width: 4),
-                                                            Text(
-                                                              'Min: ${part.minQuantity}',
-                                                              style: TextStyle(
-                                                                fontSize: 12,
-                                                                fontWeight: FontWeight.bold,
-                                                                color: Colors.red.shade900,
-                                                              ),
-                                                            ),
-                                                          ],
+                                                    // Min Quantity badge (har doim ko'rsatish)
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: isLowStock
+                                                            ? Colors.red.shade50
+                                                            : Colors.grey.shade100,
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        border: Border.all(
+                                                          color: isLowStock
+                                                              ? Colors.red.shade300
+                                                              : Colors.grey.shade300,
+                                                          width: 1,
                                                         ),
                                                       ),
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Icon(
+                                                            Icons.warning_amber_rounded,
+                                                            size: 14,
+                                                            color: isLowStock
+                                                                ? Colors.red.shade700
+                                                                : Colors.grey.shade700,
+                                                          ),
+                                                          const SizedBox(width: 4),
+                                                          Text(
+                                                            part.minQuantity > 0
+                                                                ? 'Min: ${part.minQuantity}'
+                                                                : 'Min: -',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              fontWeight: FontWeight.bold,
+                                                              color: isLowStock
+                                                                  ? Colors.red.shade900
+                                                                  : Colors.grey.shade800,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
                                                   ],
                                                 ),
                                                 const SizedBox(height: 6),

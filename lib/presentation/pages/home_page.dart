@@ -11,6 +11,9 @@ import  'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../data/models/part_model.dart';
 import '../../data/services/hive_box_service.dart';
+import '../../core/di/service_locator.dart';
+import '../../domain/repositories/part_repository.dart';
+import '../../domain/entities/part.dart';
 import '../../l10n/app_localizations.dart';
 import 'orders_page.dart';
 import 'departments_page.dart';
@@ -31,12 +34,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late final List<Widget> _pages;
   late final List<GlobalKey<NavigatorState>> _navigatorKeys;
   final HiveBoxService _boxService = HiveBoxService();
+  final PartRepository _partRepository = ServiceLocator.instance.partRepository;
 
   @override
   void initState() {
     super.initState();
     // Har bir sahifa uchun navigator key yaratish
     _navigatorKeys = List.generate(5, (_) => GlobalKey<NavigatorState>());
+    // Refresh cache once at startup to reduce badge mismatch
+    _refreshPartsCache();
     
     // Sahifalarni yaratish
     _pages = [
@@ -47,12 +53,44 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       SettingsPage(key: _navigatorKeys[4]),
     ];
   }
+  
+  Future<void> _refreshPartsCache() async {
+    try {
+      final result = await _partRepository.getAllParts();
+      result.fold(
+        (_) {},
+        (parts) async {
+          if (!Hive.isBoxOpen('partsBox')) {
+            await Hive.openBox<PartModel>('partsBox');
+          }
+          final box = Hive.box<PartModel>('partsBox');
+          await box.clear();
+          for (final Part part in parts) {
+            final model = PartModel(
+              id: part.id,
+              name: part.name,
+              quantity: part.quantity,
+              minQuantity: part.minQuantity ?? 3,
+              imagePath: part.imagePath,
+              status: part.quantity <= (part.minQuantity ?? 3)
+                  ? 'lowstock'
+                  : 'available',
+            );
+            await box.add(model);
+          }
+        },
+      );
+    } catch (_) {
+      // Ignore cache refresh errors
+    }
+  }
 
   /// Kam qolgan qismlarni olish
   int _getLowStockCount() {
     try {
       final partsBox = _boxService.partsBox;
-      return partsBox.values.where((part) => part.quantity < part.minQuantity).length;
+      // Align with Part.isLowStock (<= minQuantity) for consistent counts
+      return partsBox.values.where((part) => part.quantity <= part.minQuantity).length;
     } catch (e) {
       return 0;
     }
