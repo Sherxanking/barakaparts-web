@@ -118,6 +118,17 @@ class _PartsPageState extends State<PartsPage> {
   List<Part> _getLowStockParts(List<Part> parts) {
     return parts.where((part) => part.isLowStock).toList();
   }
+  
+  String _getStatusLabel(String status, AppLocalizations? l10n) {
+    final normalized = status.toLowerCase();
+    if (normalized == 'lowstock' || normalized == 'low_stock') {
+      return l10n?.translate('statusLowStock') ?? 'Low stock';
+    }
+    if (normalized == 'available') {
+      return l10n?.translate('statusAvailable') ?? 'Available';
+    }
+    return status.toUpperCase();
+  }
 
   /// Filtrlangan va tartiblangan partlarni olish
   List<Part> _getFilteredParts(List<Part> parts) {
@@ -275,25 +286,29 @@ class _PartsPageState extends State<PartsPage> {
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) =>
-          AlertDialog(
-            title: const Text('Delete Part'),
+      builder: (context) {
+        final l10n = AppLocalizations.of(context);
+        return AlertDialog(
+            title: Text(l10n?.translate('deletePart') ?? 'Delete Part'),
             contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            content: Text('Are you sure you want to delete ${part.name}?'),
+            content: Text(
+              '${l10n?.translate('deletePartConfirm') ?? 'Are you sure you want to delete this part?'}\n${part.name}',
+            ),
             actions: [
               const SizedBox(height: 4),
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: Text(l10n?.translate('cancel') ?? 'Cancel'),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Delete'),
+                child: Text(l10n?.translate('delete') ?? 'Delete'),
               ),
             ],
-          ),
+          );
+      },
     );
 
     if (confirmed == true) {
@@ -341,9 +356,10 @@ class _PartsPageState extends State<PartsPage> {
 
     showDialog(
       context: context,
-      builder: (context) =>
-          AlertDialog(
-            title: const Text('Edit Part'),
+      builder: (context) {
+        final l10n = AppLocalizations.of(context);
+        return AlertDialog(
+            title: Text(l10n?.translate('editPart') ?? 'Edit Part'),
             contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             content: SingleChildScrollView(
@@ -371,19 +387,21 @@ class _PartsPageState extends State<PartsPage> {
                   const SizedBox(height: 20),
                   TextField(
                     controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Part Name',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: l10n?.translate('partName') ?? 'Part Name',
+                      border: const OutlineInputBorder(),
+                      hintText: l10n?.translate('partNameHint') ?? 'Enter part name',
                     ),
                     autofocus: true,
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _quantityController,
-                    decoration: const InputDecoration(
-                      labelText: 'Quantity',
-                      border: OutlineInputBorder(),
-                      helperText: '⚠️ Miqdorni o\'zgartirish tasdiqlash talab qiladi',
+                    decoration: InputDecoration(
+                      labelText: l10n?.translate('quantity') ?? 'Quantity',
+                      border: const OutlineInputBorder(),
+                      helperText: l10n?.translate('quantityChangeHelper') ??
+                          '⚠️ Miqdorni o\'zgartirish tasdiqlash talab qiladi',
                       helperMaxLines: 2,
                     ),
                     keyboardType: TextInputType.number,
@@ -394,45 +412,55 @@ class _PartsPageState extends State<PartsPage> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _minQuantityController,
-                    decoration: const InputDecoration(
-                      labelText: 'Min Quantity (Alert Threshold)',
-                      border: OutlineInputBorder(),
-                      helperText: 'Alert when quantity falls below this',
+                    decoration: InputDecoration(
+                      labelText: l10n?.translate('minQuantityLabel') ?? 'Min Quantity',
+                      border: const OutlineInputBorder(),
+                      helperText: l10n?.translate('minQuantityHelper') ??
+                          'Alert when quantity falls below this',
                     ),
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _broughtByController,
-                    decoration: const InputDecoration(
-                      labelText: 'Kim olib kelgan (Ixtiyoriy)',
-                      border: OutlineInputBorder(),
-                      hintText: 'Masalan: Ahmad, Boss, va hokazo',
-                      prefixIcon: Icon(Icons.person_add),
+                    decoration: InputDecoration(
+                      labelText: l10n?.translate('broughtByLabel') ?? 'Kim olib kelgan (Ixtiyoriy)',
+                      border: const OutlineInputBorder(),
+                      hintText: l10n?.translate('broughtByHint') ??
+                          'Masalan: Ahmad, Boss, va hokazo',
+                      helperText: l10n?.translate('broughtByHelper') ??
+                          'Telefon bo‘lsa pastda Kontakt telefonni kiriting',
+                      prefixIcon: const Icon(Icons.person_add),
                     ),
                     textCapitalization: TextCapitalization.words,
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: _contactNameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Kontakt Ismi (Ixtiyoriy)',
-                      border: OutlineInputBorder(),
-                      hintText: 'Masalan: Ali, Supplier A',
-                      prefixIcon: Icon(Icons.contact_page),
-                      helperText: 'Qismni olib keluvchi shaxs/kompaniya nomi',
+                    decoration: InputDecoration(
+                      labelText: l10n?.translate('contactNameLabel') ??
+                          'Kontakt Ismi (Ixtiyoriy)',
+                      border: const OutlineInputBorder(),
+                      hintText: l10n?.translate('contactNameHint') ??
+                          'Masalan: Ali, Supplier A',
+                      prefixIcon: const Icon(Icons.contact_page),
+                      helperText: l10n?.translate('contactNameHelper') ??
+                          'Qismni olib keluvchi shaxs/kompaniya nomi',
                     ),
                     textCapitalization: TextCapitalization.words,
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _contactPhoneController,
-                    decoration: const InputDecoration(
-                      labelText: 'Kontakt Telefon (Ixtiyoriy)',
-                      border: OutlineInputBorder(),
-                      hintText: 'Masalan: +998901234567',
-                      prefixIcon: Icon(Icons.phone),
-                      helperText: 'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
+                    decoration: InputDecoration(
+                      labelText: l10n?.translate('contactPhoneLabel') ??
+                          'Kontakt Telefon (Ixtiyoriy)',
+                      border: const OutlineInputBorder(),
+                      hintText: l10n?.translate('contactPhoneHint') ??
+                          'Masalan: +998901234567',
+                      prefixIcon: const Icon(Icons.phone),
+                      helperText: l10n?.translate('contactPhoneHelper') ??
+                          'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
                     ),
                     keyboardType: TextInputType.phone,
                   ),
@@ -450,14 +478,17 @@ class _PartsPageState extends State<PartsPage> {
                   _currentEditImagePath = null;
                   Navigator.pop(context);
                 },
-                child: const Text('Cancel'),
+                child: Text(l10n?.translate('cancel') ?? 'Cancel'),
               ),
               TextButton(
                 onPressed: () async {
                   if (_nameController.text
                       .trim()
                       .isEmpty) {
-                    _showSnackBar('Please enter a part name', Colors.red);
+                    _showSnackBar(
+                      l10n?.translate('partNameRequired') ?? 'Please enter a part name',
+                      Colors.red,
+                    );
                     return;
                   }
 
@@ -469,32 +500,39 @@ class _PartsPageState extends State<PartsPage> {
                     final confirmed = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('Miqdorni o\'zgartirish'),
+                        title: Text(
+                          l10n?.translate('quantityChangeTitle') ?? 'Miqdorni o\'zgartirish',
+                        ),
                         content: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Eski miqdor: ${part.quantity}'),
-                            Text('Yangi miqdor: $newQuantity'),
+                            Text(
+                              '${l10n?.translate('oldQuantity') ?? 'Eski miqdor'}: ${part.quantity}',
+                            ),
+                            Text(
+                              '${l10n?.translate('newQuantity') ?? 'Yangi miqdor'}: $newQuantity',
+                            ),
                             const SizedBox(height: 16),
-                            const Text(
-                              'Miqdorni o\'zgartirish part hisobini o\'zgartirishi mumkin. '
-                              'Davom etasizmi?',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                            Text(
+                              l10n?.translate('quantityChangeWarning') ??
+                                  'Miqdorni o\'zgartirish part hisobini o\'zgartirishi mumkin. '
+                                  'Davom etasizmi?',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Bekor qilish'),
+                            child: Text(l10n?.translate('cancel') ?? 'Bekor qilish'),
                           ),
                           ElevatedButton(
                             onPressed: () => Navigator.pop(context, true),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange,
                             ),
-                            child: const Text('Tasdiqlash'),
+                            child: Text(l10n?.translate('confirm') ?? 'Tasdiqlash'),
                           ),
                         ],
                       ),
@@ -566,10 +604,11 @@ class _PartsPageState extends State<PartsPage> {
                     },
                   );
                 },
-                child: const Text('Save'),
+                child: Text(l10n?.translate('save') ?? 'Save'),
               ),
             ],
-          ),
+          );
+      },
     );
   }
 
@@ -585,22 +624,29 @@ class _PartsPageState extends State<PartsPage> {
     final noteController = TextEditingController();
     String actionType = 'issue';
 
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Part chiqarish'),
+        title: Text(l10n?.translate('partOutflow') ?? 'Part chiqarish'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
               value: actionType,
-              decoration: const InputDecoration(
-                labelText: 'Sabab',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n?.translate('reason') ?? 'Sabab',
+                border: const OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(value: 'issue', child: Text('Berib yuborildi')),
-                DropdownMenuItem(value: 'scrap', child: Text('Brak / Yaroqsiz')),
+              items: [
+                DropdownMenuItem(
+                  value: 'issue',
+                  child: Text(l10n?.translate('issued') ?? 'Berib yuborildi'),
+                ),
+                DropdownMenuItem(
+                  value: 'scrap',
+                  child: Text(l10n?.translate('scrap') ?? 'Brak / Yaroqsiz'),
+                ),
               ],
               onChanged: (value) {
                 if (value != null) {
@@ -613,17 +659,18 @@ class _PartsPageState extends State<PartsPage> {
               controller: qtyController,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: 'Miqdor',
+                labelText: l10n?.translate('quantity') ?? 'Miqdor',
                 border: const OutlineInputBorder(),
-                helperText: 'Omborda: ${part.quantity}',
+                helperText:
+                    '${l10n?.translate('inStock') ?? 'Omborda'}: ${part.quantity}',
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: noteController,
-              decoration: const InputDecoration(
-                labelText: 'Izoh (ixtiyoriy)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n?.translate('noteOptional') ?? 'Izoh (ixtiyoriy)',
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -631,11 +678,11 @@ class _PartsPageState extends State<PartsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n?.translate('cancel') ?? 'Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
+            child: Text(l10n?.translate('save') ?? 'Save'),
           ),
         ],
       ),
@@ -711,6 +758,7 @@ class _PartsPageState extends State<PartsPage> {
   /// Batch Add Parts Dialog - Professional yechim
   /// WHY: Bir nechta part'larni bir vaqtda qo'shish (kirim)
   Future<void> _showBatchAddDialog() async {
+    final l10n = AppLocalizations.of(context);
     final currentUser = AuthStateService().currentUser;
     if (currentUser == null || !currentUser.canCreateParts()) {
       _showSnackBar('Access denied: You cannot add parts', Colors.red);
@@ -746,12 +794,14 @@ class _PartsPageState extends State<PartsPage> {
         builder: (context, setDialogState) {
           return allPartsResult.fold(
             (failure) => AlertDialog(
-              title: const Text('Batch Add Parts'),
-              content: Text('Xatolik: ${failure.message}'),
+              title: Text(l10n?.translate('batchAddParts') ?? 'Batch Add Parts'),
+              content: Text(
+                '${l10n?.translate('error') ?? 'Error'}: ${failure.message}',
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
+                  child: Text(l10n?.translate('ok') ?? 'OK'),
                 ),
               ],
             ),
@@ -767,7 +817,7 @@ class _PartsPageState extends State<PartsPage> {
                   children: [
                     const Icon(Icons.add_shopping_cart, color: Colors.green),
                     const SizedBox(width: 8),
-                    const Text('Kirim Qilish'),
+                    Text(l10n?.translate('stockInTitle') ?? 'Kirim Qilish'),
                   ],
                 ),
                 content: SizedBox(
@@ -779,17 +829,17 @@ class _PartsPageState extends State<PartsPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                      const Text(
-                        'Qismlarni tanlang va miqdor kiriting',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
+                          Text(
+                            l10n?.translate('selectPartsAndQuantity') ?? 'Select parts and enter quantity',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                          ),
                       const SizedBox(height: 16),
                       // Search bar
                       TextField(
-                        decoration: const InputDecoration(
-                          hintText: 'Qidirish...',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: l10n?.translate('searchParts') ?? 'Search parts...',
+                          prefixIcon: const Icon(Icons.search),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                         onChanged: (value) {
@@ -805,10 +855,12 @@ class _PartsPageState extends State<PartsPage> {
                           maxHeight: MediaQuery.of(context).size.height * 0.35,
                         ),
                         child: filteredParts.isEmpty
-                            ? const Center(
+                            ? Center(
                                 child: Padding(
-                                  padding: EdgeInsets.all(16.0),
-                                  child: Text('Qismlar topilmadi'),
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Text(
+                                    l10n?.translate('noPartsMatch') ?? 'No parts match your filters',
+                                  ),
                                 ),
                               )
                             : ListView.builder(
@@ -824,7 +876,7 @@ class _PartsPageState extends State<PartsPage> {
                                     color: isSelected ? Colors.green.shade50 : null,
                                     child: ListTile(
                                       title: Text(part.name),
-                                      subtitle: Text('Mavjud: ${part.quantity}'),
+                                      subtitle: Text('${l10n?.translate('quantity') ?? 'Quantity'}: ${part.quantity}'),
                                       trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -851,11 +903,11 @@ class _PartsPageState extends State<PartsPage> {
                                                 controller: controller,
                                                 keyboardType: TextInputType.number,
                                                 textAlign: TextAlign.center,
-                                                decoration: const InputDecoration(
-                                                  hintText: 'Miqdor',
+                                                decoration: InputDecoration(
+                                                  hintText: l10n?.translate('quantity') ?? 'Quantity',
                                                   isDense: true,
-                                                  border: OutlineInputBorder(),
-                                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                  border: const OutlineInputBorder(),
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                                                 ),
                                                 onChanged: (value) {
                                                   if (value.trim().isEmpty) {
@@ -902,7 +954,7 @@ class _PartsPageState extends State<PartsPage> {
                       }
                       Navigator.pop(context);
                     },
-                    child: const Text('Bekor qilish'),
+                    child: Text(l10n?.translate('cancel') ?? 'Cancel'),
                   ),
                   ElevatedButton.icon(
                     onPressed: selectedParts.isEmpty
@@ -919,7 +971,7 @@ class _PartsPageState extends State<PartsPage> {
                             }
                           },
                     icon: const Icon(Icons.add),
-                    label: Text('Qo\'shish (${selectedParts.length})'),
+                    label: Text('${l10n?.translate('add') ?? 'Add'} (${selectedParts.length})'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -1351,23 +1403,24 @@ class _PartsPageState extends State<PartsPage> {
                 return;
               }
 
+              final l10n = AppLocalizations.of(context);
               // 3. Show confirmation dialog
               final shouldImport = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('Import Parts'),
+                  title: Text(l10n?.translate('importPartsTitle') ?? 'Import Parts'),
                   content: Text(
-                    'Found ${parts.length} parts in Excel file.\n\n'
-                    'Do you want to import them?',
+                    '${l10n?.translate('importPartsFound') ?? 'Found parts in Excel file'}: ${parts.length}\n\n'
+                    '${l10n?.translate('importPartsConfirm') ?? 'Do you want to import them?'}',
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel'),
+                      child: Text(l10n?.translate('cancel') ?? 'Cancel'),
                     ),
                     ElevatedButton(
                       onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Import'),
+                      child: Text(l10n?.translate('import') ?? 'Import'),
                     ),
                   ],
                 ),
@@ -1466,6 +1519,7 @@ class _PartsPageState extends State<PartsPage> {
           (parts) => parts,
         ) ?? <Part>[];
         
+        final l10n = AppLocalizations.of(context);
         final lowStockParts = _getLowStockParts(parts);
         // Use live parts list to match filtered view
         final lowStockCount = lowStockParts.length;
@@ -1482,12 +1536,11 @@ class _PartsPageState extends State<PartsPage> {
         final canEditParts = currentUser?.canEditParts() ?? false;
         final canDeleteParts = currentUser?.canDeleteParts() ?? false;
 
-        final l10n = AppLocalizations.of(context);
         return Scaffold(
           appBar: AppBar(
             title: Row(
               children: [
-                const Text('Parts'),
+                Text(l10n?.translate('parts') ?? 'Parts'),
                 if (lowStockCount > 0) ...[
                   const SizedBox(width: 8),
                   Container(
@@ -1512,7 +1565,7 @@ class _PartsPageState extends State<PartsPage> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.arrow_upward),
-                tooltip: 'Scroll to top',
+                tooltip: l10n?.translate('scrollToTop') ?? 'Scroll to top',
                 onPressed: () {
                   if (_scrollController.hasClients) {
                     _scrollController.animateTo(
@@ -1525,7 +1578,7 @@ class _PartsPageState extends State<PartsPage> {
               ),
               PopupMenuButton<SortOption>(
                 icon: const Icon(Icons.sort),
-                tooltip: 'Sort',
+                tooltip: l10n?.translate('sort') ?? 'Sort',
                 initialValue: _selectedSortOption,
                 onSelected: (option) {
                   setState(() {
@@ -1567,8 +1620,10 @@ class _PartsPageState extends State<PartsPage> {
                   });
                 },
                 tooltip: _showLowStockOnly 
-                    ? 'Barcha qismlar' 
-                    : (lowStockCount > 0 ? 'Low Stock ($lowStockCount)' : 'Low Stock filter'),
+                    ? (l10n?.translate('all') ?? 'All')
+                    : (lowStockCount > 0
+                        ? '${l10n?.translate('lowStock') ?? 'Low Stock'} ($lowStockCount)'
+                        : (l10n?.translate('lowStockFilter') ?? 'Low Stock filter')),
               ),
               // Excel Import button (only for managers and boss)
               if (canCreateParts)
@@ -1580,7 +1635,7 @@ class _PartsPageState extends State<PartsPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.upload_file),
-                  tooltip: 'Import from Excel',
+                  tooltip: l10n?.translate('importFromExcel') ?? 'Import from Excel',
                   onPressed: _isImporting ? null : _importFromExcel,
                 ),
             ],
@@ -1607,7 +1662,7 @@ class _PartsPageState extends State<PartsPage> {
                             color: Theme.of(context).colorScheme.surface,
                             child: SearchBarWidget(
                               controller: _searchController,
-                              hintText: 'Search parts...',
+                              hintText: l10n?.translate('searchParts') ?? 'Search parts...',
                               onChanged: (_) => setState(() {}),
                               onClear: () => setState(() {}),
                             ),
@@ -1626,10 +1681,10 @@ class _PartsPageState extends State<PartsPage> {
                                 children: [
                                   const Icon(Icons.filter_alt, size: 16, color: Colors.orange),
                                   const SizedBox(width: 8),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
-                                      'Filter yoqilgan',
-                                      style: TextStyle(fontSize: 12),
+                                      l10n?.translate('filterEnabled') ?? 'Filter enabled',
+                                      style: const TextStyle(fontSize: 12),
                                     ),
                                   ),
                                   TextButton(
@@ -1639,7 +1694,7 @@ class _PartsPageState extends State<PartsPage> {
                                         _showLowStockOnly = false;
                                       });
                                     },
-                                    child: const Text('Clear'),
+                                    child: Text(l10n?.translate('clear') ?? 'Clear'),
                                   ),
                                 ],
                               ),
@@ -1675,7 +1730,7 @@ class _PartsPageState extends State<PartsPage> {
                                       Row(
                                         children: [
                                           Text(
-                                            'Umumiy miqdor: ',
+                                            '${l10n?.translate('totalQuantity') ?? 'Total quantity'}: ',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.blue.shade800,
@@ -1683,7 +1738,7 @@ class _PartsPageState extends State<PartsPage> {
                                             ),
                                           ),
                                           Text(
-                                            '$totalQuantity ta',
+                                            '$totalQuantity',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.blue.shade900,
@@ -1693,7 +1748,7 @@ class _PartsPageState extends State<PartsPage> {
                                           if (filteredQuantity != totalQuantity) ...[
                                             const SizedBox(width: 8),
                                             Text(
-                                              '($filteredQuantity ko\'rsatilmoqda)',
+                                              '($filteredQuantity ${l10n?.translate('showing') ?? 'shown'})',
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 color: Colors.blue.shade600,
@@ -1744,7 +1799,7 @@ class _PartsPageState extends State<PartsPage> {
                                       Icon(Icons.warning, color: Colors.red.shade700, size: 16),
                                       const SizedBox(width: 6),
                                       Text(
-                                        'Kam qism: $lowStockCount',
+                                        '${l10n?.translate('lowStockShort') ?? 'Low stock'}: $lowStockCount',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           color: Colors.red.shade700,
@@ -1762,7 +1817,7 @@ class _PartsPageState extends State<PartsPage> {
                                     _showLowStockOnly = true;
                                   });
                                 },
-                                child: const Text('View All'),
+                                child: Text(l10n?.translate('viewAll') ?? 'View All'),
                               ),
                             ],
                           ),
@@ -1776,11 +1831,11 @@ class _PartsPageState extends State<PartsPage> {
                           child: EmptyStateWidget(
                             icon: Icons.build,
                             title: parts.isEmpty
-                                ? 'No parts yet'
-                                : 'No parts match your filters',
+                                ? (l10n?.translate('noParts') ?? 'No parts yet')
+                                : (l10n?.translate('noPartsMatch') ?? 'No parts match your filters'),
                             subtitle: parts.isEmpty
-                                ? 'Tap the + button to add a part'
-                                : 'Try adjusting your search or filters',
+                                ? (l10n?.translate('addFirstPart') ?? 'Tap the + button to add a part')
+                                : (l10n?.translate('tryAdjustingFilters') ?? 'Try adjusting your search or filters'),
                           ),
                         ),
                       ),
@@ -1905,96 +1960,29 @@ class _PartsPageState extends State<PartsPage> {
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
                                                 const SizedBox(height: 6),
-                                                // Quantity va Min Quantity ma'lumotlari
-                                                Wrap(
-                                                  spacing: 8,
-                                                  runSpacing: 4,
-                                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                                // Qoldi va Min (bitta qatorda)
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
                                                   children: [
-                                                    // Quantity badge
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        color: isLowStock
-                                                            ? Colors.orange.shade50
-                                                            : Colors.blue.shade50,
-                                                        borderRadius: BorderRadius.circular(8),
-                                                        border: Border.all(
-                                                          color: isLowStock
-                                                              ? Colors.orange.shade300
-                                                              : Colors.blue.shade300,
-                                                          width: 1,
-                                                        ),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Icon(
-                                                            Icons.inventory_2,
-                                                            size: 14,
-                                                            color: isLowStock
-                                                                ? Colors.orange.shade700
-                                                                : Colors.blue.shade700,
-                                                          ),
-                                                          const SizedBox(width: 4),
-                                                          Text(
-                                                            '${part.quantity}',
-                                                            style: TextStyle(
-                                                              fontSize: 13,
-                                                              fontWeight: FontWeight.bold,
-                                                              color: isLowStock
-                                                                  ? Colors.orange.shade900
-                                                                  : Colors.blue.shade900,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
+                                                    Icon(
+                                                      Icons.inventory_2,
+                                                      size: 14,
+                                                      color: isLowStock
+                                                          ? Colors.orange.shade700
+                                                          : Colors.blue.shade700,
                                                     ),
-                                                    // Min Quantity badge (har doim ko'rsatish)
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                      decoration: BoxDecoration(
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      '${l10n?.translate('stockLabel') ?? 'Stock'} '
+                                                      '${part.quantity} · '
+                                                      '${l10n?.translate('minLabel') ?? 'Min'} '
+                                                      '${part.minQuantity}',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w600,
                                                         color: isLowStock
-                                                            ? Colors.red.shade50
-                                                            : Colors.grey.shade100,
-                                                        borderRadius: BorderRadius.circular(8),
-                                                        border: Border.all(
-                                                          color: isLowStock
-                                                              ? Colors.red.shade300
-                                                              : Colors.grey.shade300,
-                                                          width: 1,
-                                                        ),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Icon(
-                                                            Icons.warning_amber_rounded,
-                                                            size: 14,
-                                                            color: isLowStock
-                                                                ? Colors.red.shade700
-                                                                : Colors.grey.shade700,
-                                                          ),
-                                                          const SizedBox(width: 4),
-                                                          Text(
-                                                            part.minQuantity > 0
-                                                                ? 'Min: ${part.minQuantity}'
-                                                                : 'Min: -',
-                                                            style: TextStyle(
-                                                              fontSize: 12,
-                                                              fontWeight: FontWeight.bold,
-                                                              color: isLowStock
-                                                                  ? Colors.red.shade900
-                                                                  : Colors.grey.shade800,
-                                                            ),
-                                                          ),
-                                                        ],
+                                                            ? Colors.red.shade700
+                                                            : Colors.grey.shade700,
                                                       ),
                                                     ),
                                                   ],
@@ -2014,7 +2002,7 @@ class _PartsPageState extends State<PartsPage> {
                                                         borderRadius: BorderRadius.circular(8),
                                                       ),
                                                       child: Text(
-                                                        part.status.toUpperCase(),
+                                                        _getStatusLabel(part.status, l10n),
                                                         style: TextStyle(
                                                           fontSize: 10,
                                                           color: statusColor,
@@ -2032,18 +2020,18 @@ class _PartsPageState extends State<PartsPage> {
                                                           color: Colors.red.withOpacity(0.2),
                                                           borderRadius: BorderRadius.circular(8),
                                                         ),
-                                                        child: const Row(
+                                                        child: Row(
                                                           mainAxisSize: MainAxisSize.min,
                                                           children: [
-                                                            Icon(
+                                                            const Icon(
                                                               Icons.warning,
                                                               size: 12,
                                                               color: Colors.red,
                                                             ),
-                                                            SizedBox(width: 4),
+                                                            const SizedBox(width: 4),
                                                             Text(
-                                                              'Low Stock',
-                                                              style: TextStyle(
+                                                              l10n?.translate('lowStock') ?? 'Low Stock',
+                                                              style: const TextStyle(
                                                                 fontSize: 10,
                                                                 color: Colors.red,
                                                                 fontWeight: FontWeight.bold,
@@ -2262,7 +2250,7 @@ class _PartsPageState extends State<PartsPage> {
                     children: [
                       ListTile(
                         leading: const Icon(Icons.add),
-                        title: const Text('Add Single Part'),
+                        title: Text(l10n?.translate('addSinglePart') ?? 'Add Single Part'),
                         onTap: () {
                           Navigator.pop(context);
                           _nameController.clear();
@@ -2274,9 +2262,11 @@ class _PartsPageState extends State<PartsPage> {
                           _selectedImage = null;
                           showDialog(
                             context: context,
-                            builder: (context) => AlertDialog(
+                            builder: (context) {
+                              final l10n = AppLocalizations.of(context);
+                              return AlertDialog(
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              title: const Text('Add New Part'),
+                              title: Text(l10n?.translate('addPart') ?? 'Add New Part'),
                               contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                               actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               content: SingleChildScrollView(
@@ -2295,11 +2285,12 @@ class _PartsPageState extends State<PartsPage> {
                                     const SizedBox(height: 20),
                                     TextField(
                                       controller: _nameController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Part Name',
-                                        border: OutlineInputBorder(),
-                                        hintText: 'Enter part name',
-                                        prefixIcon: Icon(Icons.label),
+                                      decoration: InputDecoration(
+                                        labelText: l10n?.translate('partName') ?? 'Part Name',
+                                        border: const OutlineInputBorder(),
+                                        hintText: l10n?.translate('partNameHint') ??
+                                            'Enter part name',
+                                        prefixIcon: const Icon(Icons.label),
                                       ),
                                       autofocus: true,
                                       onSubmitted: (_) => _addPart(),
@@ -2307,11 +2298,12 @@ class _PartsPageState extends State<PartsPage> {
                                     const SizedBox(height: 20),
                                     TextField(
                                       controller: _quantityController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Quantity',
-                                        border: OutlineInputBorder(),
-                                        hintText: 'Enter quantity',
-                                        prefixIcon: Icon(Icons.numbers),
+                                      decoration: InputDecoration(
+                                        labelText: l10n?.translate('quantity') ?? 'Quantity',
+                                        border: const OutlineInputBorder(),
+                                        hintText: l10n?.translate('quantityHint') ??
+                                            'Enter quantity',
+                                        prefixIcon: const Icon(Icons.numbers),
                                       ),
                                       keyboardType: TextInputType.number,
                                       onSubmitted: (_) => _addPart(),
@@ -2319,38 +2311,30 @@ class _PartsPageState extends State<PartsPage> {
                                     const SizedBox(height: 12),
                                     TextField(
                                       controller: _minQuantityController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Min Quantity (Alert Threshold)',
-                                        border: OutlineInputBorder(),
-                                        hintText: 'Enter minimum quantity',
-                                        prefixIcon: Icon(Icons.warning),
-                                        helperText: 'Alert when quantity falls below this',
+                                      decoration: InputDecoration(
+                                        labelText: l10n?.translate('minQuantityLabel') ??
+                                            'Min Quantity',
+                                        border: const OutlineInputBorder(),
+                                        hintText: l10n?.translate('minQuantityHint') ??
+                                            'Enter minimum quantity',
+                                        prefixIcon: const Icon(Icons.warning),
+                                        helperText: l10n?.translate('minQuantityHelper') ??
+                                            'Alert when quantity falls below this',
                                       ),
                                       keyboardType: TextInputType.number,
                                       onSubmitted: (_) => _addPart(),
                                     ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _broughtByController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Kim olib kelgan (Ixtiyoriy)',
-                                        border: OutlineInputBorder(),
-                                        hintText: 'Masalan: Ahmad, Boss, va hokazo',
-                                        prefixIcon: Icon(Icons.person_add),
-                                        helperText: 'Qismni kim olib kelganini kiriting',
-                                      ),
-                                      textCapitalization: TextCapitalization.words,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                    const SizedBox(height: 20),
                                     TextField(
                                       controller: _contactNameController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Kontakt Ismi (Ixtiyoriy)',
-                                        border: OutlineInputBorder(),
-                                        hintText: 'Masalan: Ali, Supplier A',
-                                        prefixIcon: Icon(Icons.contact_page),
-                                        helperText: 'Qismni olib keluvchi shaxs/kompaniya nomi',
+                                      decoration: InputDecoration(
+                                        labelText: l10n?.translate('contactNameLabel') ??
+                                            'Kontakt Ismi (Ixtiyoriy)',
+                                        border: const OutlineInputBorder(),
+                                        hintText: l10n?.translate('contactNameHint') ??
+                                            'Masalan: Ali, Supplier A',
+                                        prefixIcon: const Icon(Icons.contact_page),
+                                        helperText: l10n?.translate('contactNameHelper') ??
+                                            'Qismni olib keluvchi shaxs/kompaniya nomi',
                                       ),
                                       textCapitalization: TextCapitalization.words,
                                       onSubmitted: (_) => _addPart(),
@@ -2358,14 +2342,31 @@ class _PartsPageState extends State<PartsPage> {
                                     const SizedBox(height: 20),
                                     TextField(
                                       controller: _contactPhoneController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Kontakt Telefon (Ixtiyoriy)',
-                                        border: OutlineInputBorder(),
-                                        hintText: 'Masalan: +998901234567',
-                                        prefixIcon: Icon(Icons.phone),
-                                        helperText: 'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
+                                      decoration: InputDecoration(
+                                        labelText: l10n?.translate('contactPhoneLabel') ??
+                                            'Kontakt Telefon (Ixtiyoriy)',
+                                        border: const OutlineInputBorder(),
+                                        hintText: l10n?.translate('contactPhoneHint') ??
+                                            'Masalan: +998901234567',
+                                        prefixIcon: const Icon(Icons.phone),
+                                        helperText: l10n?.translate('contactPhoneHelper') ??
+                                            'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
                                       ),
                                       keyboardType: TextInputType.phone,
+                                      onSubmitted: (_) => _addPart(),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TextField(
+                                      controller: _broughtByController,
+                                      decoration: InputDecoration(
+                                        labelText: l10n?.translate('noteOptional') ??
+                                            'Izoh (ixtiyoriy)',
+                                        border: const OutlineInputBorder(),
+                                        hintText: l10n?.translate('noteHint') ??
+                                            'Masalan: kim olib keldi, qayerdan keldi',
+                                        prefixIcon: const Icon(Icons.note_alt),
+                                      ),
+                                      textCapitalization: TextCapitalization.sentences,
                                       onSubmitted: (_) => _addPart(),
                                     ),
                                   ],
@@ -2383,7 +2384,7 @@ class _PartsPageState extends State<PartsPage> {
                                     _selectedImage = null;
                                     Navigator.pop(context);
                                   },
-                                  child: const Text('Cancel'),
+                                  child: Text(l10n?.translate('cancel') ?? 'Cancel'),
                                 ),
                                 ElevatedButton(
                                   onPressed: _addPart,
@@ -2391,16 +2392,17 @@ class _PartsPageState extends State<PartsPage> {
                                     backgroundColor: Theme.of(context).colorScheme.primary,
                                     foregroundColor: Colors.white,
                                   ),
-                                  child: const Text('Add'),
+                                  child: Text(l10n?.translate('add') ?? 'Add'),
                                 ),
                               ],
-                            ),
+                            );
+                            },
                           );
                         },
                       ),
                       ListTile(
                         leading: const Icon(Icons.playlist_add),
-                        title: const Text('Batch Add Parts'),
+                        title: Text(l10n?.translate('batchAddParts') ?? 'Batch Add Parts'),
                         onTap: () {
                           Navigator.pop(context);
                           _showBatchAddDialog();
@@ -2411,7 +2413,7 @@ class _PartsPageState extends State<PartsPage> {
                 );
               },
               icon: const Icon(Icons.add),
-              label: const Text('Add Part'),
+              label: Text(l10n?.translate('addPart') ?? 'Add Part'),
               )
               : null,
         );
@@ -2421,6 +2423,7 @@ class _PartsPageState extends State<PartsPage> {
 
   /// Rasm placeholder widget
   Widget _buildImagePlaceholder(Color statusColor) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       decoration: BoxDecoration(
         color: statusColor.withOpacity(0.1),
@@ -2436,7 +2439,7 @@ class _PartsPageState extends State<PartsPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Tap to add',
+            l10n?.translate('tapToAdd') ?? 'Tap to add',
             style: TextStyle(
               fontSize: 10,
               color: statusColor.withOpacity(0.6),
