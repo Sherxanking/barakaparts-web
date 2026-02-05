@@ -17,6 +17,7 @@ import '../../data/services/product_service.dart';
 import '../../data/services/department_service.dart';
 import '../../data/services/part_service.dart';
 import '../../core/di/service_locator.dart';
+import '../../core/services/auth_state_service.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
@@ -335,6 +336,11 @@ class _ProductsPageState extends State<ProductsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = AuthStateService().currentUser;
+    final canCreateProducts = currentUser != null && (currentUser.isManager || currentUser.isBoss);
+    final canEditProducts = currentUser != null && (currentUser.isManager || currentUser.isBoss);
+    final canDeleteProducts = currentUser != null && currentUser.isBoss;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Products'),
@@ -515,7 +521,8 @@ class _ProductsPageState extends State<ProductsPage> {
                               ),
                           ],
                         ),
-                        onTap: () async {
+                        onTap: canEditProducts
+                            ? () async {
                           // Navigate to edit page
                           final result = await Navigator.push(
                             context,
@@ -527,41 +534,44 @@ class _ProductsPageState extends State<ProductsPage> {
                           if (result == true) {
                             setState(() {});
                           }
-                        },
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Delete Product'),
-                                contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                                actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                content: const Text(
-                                  'Are you sure you want to delete this product?',
-                                ),
-                                actions: [
-                                  const SizedBox(height: 4),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      _deleteProduct(product);
-                                    },
-                                    child: const Text(
-                                      'Delete',
-                                      style: TextStyle(color: Colors.red),
+                        }
+                            : null,
+                        trailing: canDeleteProducts
+                            ? IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Delete Product'),
+                                      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                                      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                      content: const Text(
+                                        'Are you sure you want to delete this product?',
+                                      ),
+                                      actions: [
+                                        const SizedBox(height: 4),
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            _deleteProduct(product);
+                                          },
+                                          child: const Text(
+                                            'Delete',
+                                            style: TextStyle(color: Colors.red),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                          tooltip: 'Delete',
-                        ),
+                                  );
+                                },
+                                tooltip: 'Delete',
+                              )
+                            : null,
                       ),
                     ),
                     );
@@ -573,7 +583,8 @@ class _ProductsPageState extends State<ProductsPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: canCreateProducts
+          ? FloatingActionButton(
         onPressed: () {
           _nameController.clear();
           selectedDepartmentId = null;
@@ -666,7 +677,8 @@ class _ProductsPageState extends State<ProductsPage> {
           );
         },
         child: const Icon(Icons.add),
-      ),
+      )
+          : null,
     );
   }
 }

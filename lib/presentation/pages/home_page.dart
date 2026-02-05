@@ -15,6 +15,7 @@ import '../../core/di/service_locator.dart';
 import '../../domain/repositories/part_repository.dart';
 import '../../domain/entities/part.dart';
 import '../../l10n/app_localizations.dart';
+import '../../core/services/auth_state_service.dart';
 import 'orders_page.dart';
 import 'departments_page.dart';
 import 'parts_page.dart';
@@ -96,6 +97,106 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  BottomNavigationBarItem _buildNavItem(
+    int index,
+    AppLocalizations? l10n,
+    int lowStockCount,
+  ) {
+    switch (index) {
+      case 0:
+        return BottomNavigationBarItem(
+          icon: const Icon(Icons.shopping_cart),
+          activeIcon: const Icon(Icons.shopping_cart),
+          label: l10n?.orders ?? 'Orders',
+        );
+      case 1:
+        return BottomNavigationBarItem(
+          icon: const Icon(Icons.business),
+          activeIcon: const Icon(Icons.business),
+          label: l10n?.departments ?? 'Departments',
+        );
+      case 2:
+        return BottomNavigationBarItem(
+          icon: const Icon(Icons.inventory),
+          activeIcon: const Icon(Icons.inventory),
+          label: l10n?.products ?? 'Products',
+        );
+      case 3:
+        return BottomNavigationBarItem(
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(Icons.build),
+              if (lowStockCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '$lowStockCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          activeIcon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(Icons.build),
+              if (lowStockCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '$lowStockCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          label: l10n?.parts ?? 'Parts',
+        );
+      case 4:
+      default:
+        return BottomNavigationBarItem(
+          icon: const Icon(Icons.settings),
+          activeIcon: const Icon(Icons.settings),
+          label: l10n?.settings ?? 'Settings',
+        );
+    }
+  }
+
   /// Get current page title based on selected index
   String _getPageTitle(AppLocalizations? l10n) {
     if (l10n == null) return 'Baraka Parts';
@@ -118,17 +219,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final currentUser = AuthStateService().currentUser;
+    final isWorker = currentUser?.isWorker ?? false;
+    final visibleIndices = isWorker ? [3, 4] : [0, 1, 2, 3, 4];
     
     return Scaffold(
       body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
+        index: _currentIndex >= visibleIndices.length ? 0 : _currentIndex,
+        children: visibleIndices.map((i) => _pages[i]).toList(),
       ),
       bottomNavigationBar: ValueListenableBuilder(
         valueListenable: _boxService.partsListenable,
         builder: (context, Box<PartModel> box, _) {
           final lowStockCount = _getLowStockCount();
-          
+
+          if (_currentIndex >= visibleIndices.length) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _currentIndex = 0;
+                });
+              }
+            });
+          }
+
           return BottomNavigationBar(
             type: BottomNavigationBarType.fixed,
             currentIndex: _currentIndex,
@@ -139,93 +253,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             },
             selectedItemColor: Theme.of(context).colorScheme.primary,
             unselectedItemColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            items: [
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.shopping_cart),
-                activeIcon: const Icon(Icons.shopping_cart),
-                label: l10n?.orders ?? 'Orders',
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.business),
-                activeIcon: const Icon(Icons.business),
-                label: l10n?.departments ?? 'Departments',
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.inventory),
-                activeIcon: const Icon(Icons.inventory),
-                label: l10n?.products ?? 'Products',
-              ),
-              BottomNavigationBarItem(
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.build),
-                    if (lowStockCount > 0)
-                      Positioned(
-                        right: -8,
-                        top: -8,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            '$lowStockCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                activeIcon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.build),
-                    if (lowStockCount > 0)
-                      Positioned(
-                        right: -8,
-                        top: -8,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            '$lowStockCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                label: l10n?.parts ?? 'Parts',
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.settings),
-                activeIcon: const Icon(Icons.settings),
-                label: l10n?.settings ?? 'Settings',
-              ),
-            ],
+            items: visibleIndices
+                .map((i) => _buildNavItem(i, l10n, lowStockCount))
+                .toList(),
           );
         },
       ),

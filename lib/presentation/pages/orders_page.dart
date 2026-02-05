@@ -85,7 +85,7 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Check if current user can create orders
   bool get _canCreateOrders {
     final user = AuthStateService().currentUser;
-    return user != null; // All authenticated users can create orders
+    return user != null && (user.isManager || user.isBoss);
   }
   
   /// Check if current user can complete orders
@@ -97,13 +97,13 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Check if current user can delete orders
   bool get _canDeleteOrders {
     final user = AuthStateService().currentUser;
-    return user != null && (user.isBoss || user.isManager); // Boss va Manager delete qila oladi
+    return user != null && user.isBoss; // Faqat Boss delete qila oladi
   }
   
   /// Check if current user can edit orders (pending orders only)
   bool get _canEditOrders {
     final user = AuthStateService().currentUser;
-    return user != null; // All authenticated users can edit pending orders
+    return user != null && (user.isManager || user.isBoss);
   }
   
   /// Get current user for department filtering (Manager only)
@@ -1068,6 +1068,8 @@ class _OrdersPageState extends State<OrdersPage> {
         ) ?? <domain.Order>[];
         
         final filteredOrders = _getFilteredOrders(orders);
+        final currentUser = AuthStateService().currentUser;
+        final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
         
         return Scaffold(
           appBar: AppBar(
@@ -1095,17 +1097,17 @@ class _OrdersPageState extends State<OrdersPage> {
                   );
                 }).toList(),
               ),
-              // Analytics button
-              IconButton(
-                icon: const Icon(Icons.analytics),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                  );
-                },
-                tooltip: 'Analytics',
-              ),
+              if (canSeeAnalytics)
+                IconButton(
+                  icon: const Icon(Icons.analytics),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                    );
+                  },
+                  tooltip: 'Analytics',
+                ),
               // Order History button
               IconButton(
                 icon: const Icon(Icons.history),
@@ -1428,7 +1430,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                   
                                   // Create order button
                                   ElevatedButton.icon(
-                                    onPressed: _createOrder,
+                                    onPressed: _canCreateOrders ? _createOrder : null,
                                     icon: const Icon(Icons.add_shopping_cart),
                                     label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
                                     style: ElevatedButton.styleFrom(

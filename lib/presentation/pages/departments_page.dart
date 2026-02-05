@@ -330,6 +330,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
     return StreamBuilder<Either<Failure, List<domain.Department>>>(
       stream: _departmentRepository.watchDepartments(),
       builder: (context, snapshot) {
+        final canSeeAnalytics = AuthStateService().currentUser?.canSeeAllLogs() ?? false;
         // Handle loading state
         if (_isInitialLoading && !snapshot.hasData) {
           return Scaffold(
@@ -338,16 +339,17 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
               elevation: 2,
               actions: [
                 // Analytics button
-                IconButton(
-                  icon: const Icon(Icons.analytics),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                    );
-                  },
-                  tooltip: 'Analytics',
-                ),
+                if (canSeeAnalytics)
+                  IconButton(
+                    icon: const Icon(Icons.analytics),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                      );
+                    },
+                    tooltip: 'Analytics',
+                  ),
               ],
             ),
             body: const Center(child: CircularProgressIndicator()),
@@ -362,16 +364,17 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
               elevation: 2,
               actions: [
                 // Analytics button
-                IconButton(
-                  icon: const Icon(Icons.analytics),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                    );
-                  },
-                  tooltip: 'Analytics',
-                ),
+                if (canSeeAnalytics)
+                  IconButton(
+                    icon: const Icon(Icons.analytics),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                      );
+                    },
+                    tooltip: 'Analytics',
+                  ),
               ],
             ),
             body: ErrorDisplayWidget(
@@ -430,16 +433,17 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                 }).toList(),
               ),
               // Analytics button
-              IconButton(
-                icon: const Icon(Icons.analytics),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                  );
-                },
-                tooltip: 'Analytics',
-              ),
+              if (canSeeAnalytics)
+                IconButton(
+                  icon: const Icon(Icons.analytics),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                    );
+                  },
+                  tooltip: 'Analytics',
+                ),
             ],
           ),
           body: Column(

@@ -1562,6 +1562,7 @@ class _PartsPageState extends State<PartsPage> {
         final canCreateParts = currentUser?.canCreateParts() ?? false;
         final canEditParts = currentUser?.canEditParts() ?? false;
         final canDeleteParts = currentUser?.canDeleteParts() ?? false;
+        final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
 
         return Scaffold(
           appBar: AppBar(
@@ -1624,17 +1625,17 @@ class _PartsPageState extends State<PartsPage> {
                   );
                 }).toList(),
               ),
-              // Analytics button
-              IconButton(
-                icon: const Icon(Icons.analytics),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                  );
-                },
-                tooltip: 'Analytics',
-              ),
+              if (canSeeAnalytics)
+                IconButton(
+                  icon: const Icon(Icons.analytics),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                    );
+                  },
+                  tooltip: 'Analytics',
+                ),
               // Low Stock Filter Toggle (har doim ko'rsatiladi)
               IconButton(
                 icon: Icon(

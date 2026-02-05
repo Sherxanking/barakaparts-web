@@ -19,10 +19,11 @@ import 'auth/login_page.dart';
 import '../../core/services/auth_state_service.dart';
 import '../../core/services/error_handler_service.dart';
 import '../../infrastructure/datasources/supabase_user_datasource.dart';
+import '../../infrastructure/datasources/supabase_client.dart';
 import '../../infrastructure/repositories/user_repository_impl.dart';
 import '../../domain/repositories/user_repository.dart';
 import '../../domain/entities/user.dart' as domain;
-import '../../domain/entities/user.dart' as domain;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -168,6 +169,112 @@ class _SettingsPageState extends State<SettingsPage> {
         });
       }
     }
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    String? errorText;
+    bool isSaving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !isSaving,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text(l10n?.translate('changePassword') ?? 'Change password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: newPasswordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: l10n?.translate('newPassword') ?? 'New password',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmPasswordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: l10n?.translate('confirmPassword') ?? 'Confirm password',
+                    border: const OutlineInputBorder(),
+                    errorText: errorText,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(context),
+                child: Text(l10n?.translate('cancel') ?? 'Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final newPassword = newPasswordController.text.trim();
+                        final confirmPassword = confirmPasswordController.text.trim();
+                        if (newPassword.length < 6) {
+                          setDialogState(() {
+                            errorText = l10n?.translate('passwordTooShort') ??
+                                'Password is too short';
+                          });
+                          return;
+                        }
+                        if (newPassword != confirmPassword) {
+                          setDialogState(() {
+                            errorText = l10n?.translate('passwordMismatch') ??
+                                'Passwords do not match';
+                          });
+                          return;
+                        }
+
+                        setDialogState(() {
+                          errorText = null;
+                          isSaving = true;
+                        });
+
+                        try {
+                          await AppSupabaseClient.instance.client.auth.updateUser(
+                            UserAttributes(password: newPassword),
+                          );
+                          if (mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  l10n?.translate('passwordUpdated') ??
+                                      'Password updated successfully',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            setDialogState(() {
+                              isSaving = false;
+                              errorText = l10n?.translate('passwordUpdateFailed') ??
+                                  'Failed to update password';
+                            });
+                          }
+                        }
+                      },
+                child: Text(l10n?.translate('save') ?? 'Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    newPasswordController.dispose();
+    confirmPasswordController.dispose();
   }
 
   @override
@@ -343,6 +450,19 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Password change section
+                Card(
+                  elevation: 2,
+                  child: ListTile(
+                    leading: const Icon(Icons.lock_outline),
+                    title: Text(l10n.translate('changePassword')),
+                    subtitle: Text(
+                      l10n.translate('changePasswordHint'),
+                    ),
+                    onTap: _showChangePasswordDialog,
                   ),
                 ),
                 const SizedBox(height: 24),
