@@ -71,6 +71,16 @@ class SupabasePartDatasource {
       return Left(ServerFailure('Failed to search parts: $e'));
     }
   }
+
+  /// Request manual low stock summary (event only)
+  Future<Either<Failure, void>> requestManualLowStockSummary() async {
+    try {
+      await _client.client.rpc('request_manual_low_stock_summary');
+      return Right(null);
+    } catch (e) {
+      return Left(ServerFailure('Failed to request manual summary: $e'));
+    }
+  }
   
   /// Create part
   /// WHY: Fixed to ensure created_by is set, validate required fields, and provide detailed error messages

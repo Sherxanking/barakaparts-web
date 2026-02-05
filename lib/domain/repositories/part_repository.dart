@@ -27,6 +27,9 @@ abstract class PartRepository {
   
   /// Delete a part
   Future<Either<Failure, void>> deletePart(String partId);
+
+  /// Request manual low stock summary (event only)
+  Future<Either<Failure, void>> requestManualLowStockSummary();
   
   /// Stream parts for real-time updates
   Stream<Either<Failure, List<Part>>> watchParts();

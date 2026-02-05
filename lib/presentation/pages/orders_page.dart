@@ -920,7 +920,9 @@ class _OrdersPageState extends State<OrdersPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            shortage.partName,
+                            shortage.partName == 'Unknown Part'
+                                ? '${AppLocalizations.of(context)?.translate('unknownPart') ?? 'Unknown Part'} (ID: ${shortage.partId})'
+                                : shortage.partName,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,

@@ -169,10 +169,17 @@ class OrderRepositoryImpl implements OrderRepository {
             if (partsRequired.isNotEmpty) {
               // Get all parts in one request
               final allPartsResult = await _partRepository.getAllParts();
+              Failure? allPartsFailure;
               final allParts = await allPartsResult.fold(
-                (failure) => <String, Part>{},
-                (parts) => {for (var part in parts) part.id: part},
+                (failure) async {
+                  allPartsFailure = failure;
+                  return <String, Part>{};
+                },
+                (parts) async => {for (var part in parts) part.id: part},
               );
+              if (allPartsFailure != null) {
+                return Left<Failure, Order>(allPartsFailure!);
+              }
               
               // Validate all parts first
               for (var entry in partsRequired.entries) {
@@ -182,12 +189,18 @@ class OrderRepositoryImpl implements OrderRepository {
                 
                 final part = allParts[partId];
                 if (part == null) {
-                  return Left<Failure, Order>(ServerFailure('Part not found: $partId'));
+                  return Left<Failure, Order>(
+                    ServerFailure('Part not found: $partId'),
+                  );
                 }
                 
                 // Check if sufficient quantity
                 if (part.quantity < totalQty) {
-                  return Left<Failure, Order>(ServerFailure('Insufficient quantity for part ${part.name}. Required: $totalQty, Available: ${part.quantity}'));
+                  return Left<Failure, Order>(
+                    ServerFailure(
+                      'Insufficient quantity for part ${part.name}. Required: $totalQty, Available: ${part.quantity}',
+                    ),
+                  );
                 }
               }
               

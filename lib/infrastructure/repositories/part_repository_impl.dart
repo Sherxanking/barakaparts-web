@@ -166,6 +166,11 @@ class PartRepositoryImpl implements PartRepository {
       return Left<Failure, List<Part>>(ServerFailure('Stream error: $error'));
     });
   }
+
+  @override
+  Future<Either<Failure, void>> requestManualLowStockSummary() async {
+    return await _supabaseDatasource.requestManualLowStockSummary();
+  }
   
   /// Update partsBox with domain parts
   /// FIX: ValueListenableBuilder yangilanishi uchun to'g'ri yozish

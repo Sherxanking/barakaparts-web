@@ -142,9 +142,11 @@ class _ProductEditPageState extends State<ProductEditPage> {
       return;
     }
 
-    // FIX: Qismlarni yangilash - 0 qiymatli qismlarni olib tashlash
+    // FIX: Qismlarni yangilash - 0 qiymatli va o'chirilgan qismlarni olib tashlash
+    final availableParts = kIsWeb ? _webParts : _partService.getAllParts();
+    final availablePartIds = availableParts.map((p) => p.id).toSet();
     final cleanedParts = Map<String, int>.from(_productParts)
-      ..removeWhere((key, value) => value <= 0); // 0 yoki manfiy qiymatlarni olib tashlash
+      ..removeWhere((key, value) => value <= 0 || !availablePartIds.contains(key));
     
     // FIX: Agar qismlar bo'sh bo'lsa, xatolik ko'rsatish
     if (cleanedParts.isEmpty) {
@@ -417,8 +419,12 @@ class _ProductEditPageState extends State<ProductEditPage> {
       // Bu concurrent modification muammosini oldini oladi
       if (mounted) {
         if (savedParts != null) {
+          final availableParts = kIsWeb ? _webParts : _partService.getAllParts();
+          final availablePartIds = availableParts.map((p) => p.id).toSet();
+          final cleanedParts = Map<String, int>.from(savedParts as Map<String, int>)
+            ..removeWhere((key, value) => value <= 0 || !availablePartIds.contains(key));
           setState(() {
-            _productParts = Map<String, int>.from(savedParts as Map<String, int>);
+            _productParts = cleanedParts;
           });
         }
       }
