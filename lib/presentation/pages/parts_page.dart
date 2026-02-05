@@ -771,6 +771,7 @@ class _PartsPageState extends State<PartsPage> {
     // Tanlangan part'lar va ularning miqdorlari
     final Map<String, int> selectedParts = {};
     final Map<String, TextEditingController> quantityControllers = {};
+    final TextEditingController noteController = TextEditingController();
     String searchQuery = '';
     
     allPartsResult.fold(
@@ -788,206 +789,224 @@ class _PartsPageState extends State<PartsPage> {
     
     if (!mounted) return;
     
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
           return allPartsResult.fold(
-            (failure) => AlertDialog(
-              title: Text(l10n?.translate('batchAddParts') ?? 'Batch Add Parts'),
-              content: Text(
-                '${l10n?.translate('error') ?? 'Error'}: ${failure.message}',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(l10n?.translate('ok') ?? 'OK'),
-                ),
-              ],
+          (failure) => AlertDialog(
+            title: Text(l10n?.translate('batchAddParts') ?? 'Batch Add Parts'),
+            content: Text(
+              '${l10n?.translate('error') ?? 'Error'}: ${failure.message}',
             ),
-            (parts) {
-              // Filter parts by search query
-              final filteredParts = searchQuery.isEmpty
-                  ? parts
-                  : parts.where((part) =>
-                      part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
-              
-              return AlertDialog(
-                title: Row(
-                  children: [
-                    const Icon(Icons.add_shopping_cart, color: Colors.green),
-                    const SizedBox(width: 8),
-                    Text(l10n?.translate('stockInTitle') ?? 'Kirim Qilish'),
-                  ],
-                ),
-                content: SizedBox(
-                  width: double.maxFinite,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(l10n?.translate('ok') ?? 'OK'),
+              ),
+            ],
+          ),
+          (parts) {
+            // Filter parts by search query
+            final filteredParts = searchQuery.isEmpty
+                ? parts
+                : parts.where((part) =>
+                    part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+            
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.add_shopping_cart, color: Colors.green),
+                  const SizedBox(width: 8),
+                  Text(l10n?.translate('stockInTitle') ?? 'Kirim Qilish'),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        Text(
+                          l10n?.translate('selectPartsAndQuantity') ?? 'Select parts and enter quantity',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        ),
+                    const SizedBox(height: 16),
+                    // Search bar
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: l10n?.translate('searchParts') ?? 'Search parts...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          searchQuery = value;
+                        });
+                      },
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                          Text(
-                            l10n?.translate('selectPartsAndQuantity') ?? 'Select parts and enter quantity',
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                          ),
-                      const SizedBox(height: 16),
-                      // Search bar
+                    const SizedBox(height: 16),
+                    // Parts list
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height *
+                            (MediaQuery.of(context).viewInsets.bottom > 0 ? 0.22 : 0.35),
+                      ),
+                      child: filteredParts.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  l10n?.translate('noPartsMatch') ?? 'No parts match your filters',
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              itemCount: filteredParts.length,
+                              itemBuilder: (context, index) {
+                                final part = filteredParts[index];
+                                final controller = quantityControllers[part.id]!;
+                                final isSelected = selectedParts.containsKey(part.id);
+                                
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  color: isSelected ? Colors.green.shade50 : null,
+                                  child: ListTile(
+                                    title: Text(part.name),
+                                    subtitle: Text('${l10n?.translate('quantity') ?? 'Quantity'}: ${part.quantity}'),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        // Checkbox
+                                        Checkbox(
+                                          value: isSelected,
+                                          onChanged: (value) {
+                                            setDialogState(() {
+                                              if (value == true) {
+                                                selectedParts[part.id] = 1;
+                                                controller.text = '1';
+                                              } else {
+                                                selectedParts.remove(part.id);
+                                                controller.text = '';
+                                              }
+                                            });
+                                          },
+                                        ),
+                                        // Quantity input
+                                        if (isSelected)
+                                          SizedBox(
+                                            width: 80,
+                                            child: TextField(
+                                              controller: controller,
+                                              keyboardType: TextInputType.number,
+                                              textAlign: TextAlign.center,
+                                              decoration: InputDecoration(
+                                                hintText: l10n?.translate('quantity') ?? 'Quantity',
+                                                isDense: true,
+                                                border: const OutlineInputBorder(),
+                                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                              ),
+                                              onChanged: (value) {
+                                                if (value.trim().isEmpty) {
+                                                  // Allow editing without unselecting the part
+                                                  return;
+                                                }
+                                                final qty = int.tryParse(value) ?? 0;
+                                                setDialogState(() {
+                                                  if (qty > 0) {
+                                                    selectedParts[part.id] = qty;
+                                                  } else {
+                                                    // Keep previous value to avoid accidental uncheck
+                                                    final prevQty = selectedParts[part.id] ?? 1;
+                                                    controller.text = prevQty.toString();
+                                                  }
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    if (selectedParts.isNotEmpty) ...[
+                      const Divider(),
+                      Text(
+                        'Tanlangan: ${selectedParts.length} ta qism',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 12),
                       TextField(
+                        controller: noteController,
                         decoration: InputDecoration(
-                          hintText: l10n?.translate('searchParts') ?? 'Search parts...',
-                          prefixIcon: const Icon(Icons.search),
+                          labelText: l10n?.translate('noteOptional') ?? 'Izoh (ixtiyoriy)',
+                          hintText: l10n?.translate('noteHint') ??
+                              'Masalan: kim olib keldi, qayerdan keldi',
+                          prefixIcon: const Icon(Icons.note_alt),
                           border: const OutlineInputBorder(),
                           isDense: true,
                         ),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            searchQuery = value;
-                          });
-                        },
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLines: 2,
                       ),
-                      const SizedBox(height: 16),
-                      // Parts list
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.35,
-                        ),
-                        child: filteredParts.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Text(
-                                    l10n?.translate('noPartsMatch') ?? 'No parts match your filters',
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: filteredParts.length,
-                                itemBuilder: (context, index) {
-                                  final part = filteredParts[index];
-                                  final controller = quantityControllers[part.id]!;
-                                  final isSelected = selectedParts.containsKey(part.id);
-                                  
-                                  return Card(
-                                    margin: const EdgeInsets.symmetric(vertical: 4),
-                                    color: isSelected ? Colors.green.shade50 : null,
-                                    child: ListTile(
-                                      title: Text(part.name),
-                                      subtitle: Text('${l10n?.translate('quantity') ?? 'Quantity'}: ${part.quantity}'),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Checkbox
-                                          Checkbox(
-                                            value: isSelected,
-                                            onChanged: (value) {
-                                              setDialogState(() {
-                                                if (value == true) {
-                                                  selectedParts[part.id] = 1;
-                                                  controller.text = '1';
-                                                } else {
-                                                  selectedParts.remove(part.id);
-                                                  controller.text = '';
-                                                }
-                                              });
-                                            },
-                                          ),
-                                          // Quantity input
-                                          if (isSelected)
-                                            SizedBox(
-                                              width: 80,
-                                              child: TextField(
-                                                controller: controller,
-                                                keyboardType: TextInputType.number,
-                                                textAlign: TextAlign.center,
-                                                decoration: InputDecoration(
-                                                  hintText: l10n?.translate('quantity') ?? 'Quantity',
-                                                  isDense: true,
-                                                  border: const OutlineInputBorder(),
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                                ),
-                                                onChanged: (value) {
-                                                  if (value.trim().isEmpty) {
-                                                    // Allow editing without unselecting the part
-                                                    return;
-                                                  }
-                                                  final qty = int.tryParse(value) ?? 0;
-                                                  setDialogState(() {
-                                                    if (qty > 0) {
-                                                      selectedParts[part.id] = qty;
-                                                    } else {
-                                                      // Keep previous value to avoid accidental uncheck
-                                                      final prevQty = selectedParts[part.id] ?? 1;
-                                                      controller.text = prevQty.toString();
-                                                    }
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                      if (selectedParts.isNotEmpty) ...[
-                        const Divider(),
-                        Text(
-                          'Tanlangan: ${selectedParts.length} ta qism',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
                     ],
+                  ],
+                ),
+              ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: Text(l10n?.translate('cancel') ?? 'Cancel'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: selectedParts.isEmpty
+                      ? null
+                      : () async {
+                          // Batch add parts
+                          await _batchAddParts(
+                            selectedParts,
+                            note: noteController.text.trim(),
+                          );
+                          if (mounted) {
+                            Navigator.pop(context);
+                          }
+                        },
+                  icon: const Icon(Icons.add),
+                  label: Text('${l10n?.translate('add') ?? 'Add'} (${selectedParts.length})'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
                   ),
                 ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      // Cleanup controllers
-                      for (var controller in quantityControllers.values) {
-                        controller.dispose();
-                      }
-                      Navigator.pop(context);
-                    },
-                    child: Text(l10n?.translate('cancel') ?? 'Cancel'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: selectedParts.isEmpty
-                        ? null
-                        : () async {
-                            // Batch add parts
-                            await _batchAddParts(selectedParts);
-                            // Cleanup controllers
-                            for (var controller in quantityControllers.values) {
-                              controller.dispose();
-                            }
-                            if (mounted) {
-                              Navigator.pop(context);
-                            }
-                          },
-                    icon: const Icon(Icons.add),
-                    label: Text('${l10n?.translate('add') ?? 'Add'} (${selectedParts.length})'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              );
+              ],
+            );
             },
           );
         },
       ),
     );
+    for (var controller in quantityControllers.values) {
+      controller.dispose();
+    }
+    noteController.dispose();
   }
   
   /// Batch add parts - bir nechta part'larni bir vaqtda qo'shish
-  Future<void> _batchAddParts(Map<String, int> partsToAdd) async {
+  Future<void> _batchAddParts(
+    Map<String, int> partsToAdd, {
+    String? note,
+  }) async {
     if (partsToAdd.isEmpty) return;
     
     // Loading dialog
@@ -1003,6 +1022,8 @@ class _PartsPageState extends State<PartsPage> {
       int successCount = 0;
       int failCount = 0;
       
+      final l10n = AppLocalizations.of(context);
+      final trimmedNote = (note ?? '').trim();
       // Har bir part uchun quantity ni oshirish
       for (var entry in partsToAdd.entries) {
         final partId = entry.key;
@@ -1025,7 +1046,13 @@ class _PartsPageState extends State<PartsPage> {
                 updatedAt: DateTime.now(),
               );
               
-              final updateResult = await _partRepository.updatePart(updatedPart);
+              final updateResult = await _partRepository.updatePart(
+                updatedPart,
+                historyAction: 'add',
+                historyNotes: trimmedNote.isEmpty
+                    ? null
+                    : '${l10n?.translate('stockInNote') ?? 'Kirim izohi'}: $trimmedNote (+$quantityToAdd)',
+              );
               await updateResult.fold(
                 (failure) async {
                   failCount++;
@@ -2438,11 +2465,17 @@ class _PartsPageState extends State<PartsPage> {
             color: statusColor.withOpacity(0.6),
           ),
           const SizedBox(height: 4),
-          Text(
-            l10n?.translate('tapToAdd') ?? 'Tap to add',
-            style: TextStyle(
-              fontSize: 10,
-              color: statusColor.withOpacity(0.6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              l10n?.translate('tapToAdd') ?? 'Tap to add',
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9,
+                color: statusColor.withOpacity(0.6),
+              ),
             ),
           ),
         ],
