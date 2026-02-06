@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/order.dart' as domain;
 import '../../data/models/department_model.dart';
 import '../../data/models/product_model.dart';
+import '../../data/models/order_model.dart' as data; // Import the data model
 import '../../data/services/product_service.dart';
 import '../../data/services/part_service.dart';
 import '../../data/services/order_service.dart'; // OrderService import
@@ -21,6 +22,7 @@ import '../../l10n/app_localizations.dart';
 
 class OrderItemWidget extends StatefulWidget {
   final domain.Order order;
+  final data.Order? dataOrder; // Optional data model for extended fields
   final Department? department;
   final VoidCallback? onComplete; // Nullable - permission-based
   final VoidCallback? onEdit; // Nullable - for pending orders
@@ -36,6 +38,7 @@ class OrderItemWidget extends StatefulWidget {
   const OrderItemWidget({
     super.key,
     required this.order,
+    this.dataOrder,
     this.department,
     this.onComplete,
     this.onEdit,
@@ -405,6 +408,27 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                     ],
                   ),
                 ],
+                // Show fully completed at date if available
+                if (widget.order.fullyCompletedAt != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Colors.green[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Fully Completed: ${widget.order.fullyCompletedAt!.toString().substring(0, 16)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (widget.order.durationHours != null) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -483,6 +507,60 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                         return _buildPartsList(context);
                       },
                     ),
+                    // Show taken items if any
+                    if (widget.dataOrder?.takenItems != null && widget.dataOrder!.takenItems.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Divider(color: Colors.grey[300]),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Taken Items',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...widget.dataOrder!.takenItems.map((takenItem) {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          color: Colors.green[50],
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.check,
+                                  size: 16,
+                                  color: Colors.green[700],
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Quantity: ${takenItem.quantity}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green[800],
+                                    ),
+                                  ),
+                                ),
+                                if (takenItem.notes != null && takenItem.notes!.isNotEmpty)
+                                  Expanded(
+                                    child: Text(
+                                      'Notes: ${takenItem.notes}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.green[800],
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ],
                 ],
                 

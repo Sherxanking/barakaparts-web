@@ -51,7 +51,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
   
   # Assets for environment configuration
   assets:
     - assets/env
+
+  # Localization
+  # arb files should be placed in lib/l10n directory

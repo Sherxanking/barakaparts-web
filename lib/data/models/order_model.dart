@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'taken_item.dart'; // TakenItem modelini import qilish
 part 'order_model.g.dart';
 
 @HiveType(typeId: 3)
@@ -51,6 +52,12 @@ class Order extends HiveObject {
   @HiveField(15)
   double? durationHours; // Order bajarishga ketgan vaqt (yangi qo'shildi)
 
+  @HiveField(16)
+  List<TakenItem> takenItems; // Olingan narsalarni kuzatish (yangi qo'shildi)
+
+  @HiveField(17)
+  DateTime? fullyCompletedAt; // Hammasi olingan vaqti (yangi qo'shildi)
+
   Order({
     required this.id,
     required this.departmentId,
@@ -68,5 +75,7 @@ class Order extends HiveObject {
     this.partsRequired,
     this.startedAt,
     this.durationHours,
+    this.takenItems = const [],
+    this.fullyCompletedAt,
   }) : createdAt = createdAt ?? DateTime.now();
 }

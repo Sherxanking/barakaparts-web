@@ -31,13 +31,17 @@ class OrderAdapter extends TypeAdapter<Order> {
       completedBy: fields[11] as String?,
       notes: fields[12] as String?,
       partsRequired: (fields[13] as Map?)?.cast<dynamic, dynamic>(),
+      startedAt: fields[14] as DateTime?,
+      durationHours: fields[15] as double?,
+      takenItems: (fields[16] as List).cast<TakenItem>(),
+      fullyCompletedAt: fields[17] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Order obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -65,7 +69,15 @@ class OrderAdapter extends TypeAdapter<Order> {
       ..writeByte(12)
       ..write(obj.notes)
       ..writeByte(13)
-      ..write(obj.partsRequired);
+      ..write(obj.partsRequired)
+      ..writeByte(14)
+      ..write(obj.startedAt)
+      ..writeByte(15)
+      ..write(obj.durationHours)
+      ..writeByte(16)
+      ..write(obj.takenItems)
+      ..writeByte(17)
+      ..write(obj.fullyCompletedAt);
   }
 
   @override

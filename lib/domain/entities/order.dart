@@ -22,6 +22,7 @@ class Order {
   final DateTime? completedAt; // Order tugatilgan vaqt
   final DateTime? startedAt; // Order boshlangan vaqt
   final double? durationHours; // Order bajarishga ketgan vaqt (soatda)
+  final DateTime? fullyCompletedAt; // Hammasi olingan vaqti
 
   const Order({
     required this.id,
@@ -43,6 +44,7 @@ class Order {
     this.completedAt,
     this.startedAt,
     this.durationHours,
+    this.fullyCompletedAt,
   });
 
   /// Check if order is pending
@@ -98,6 +100,7 @@ class Order {
     DateTime? completedAt,
     DateTime? startedAt,
     double? durationHours,
+    DateTime? fullyCompletedAt,
   }) {
     return Order(
       id: id ?? this.id,
@@ -119,6 +122,7 @@ class Order {
       completedAt: completedAt ?? this.completedAt,
       startedAt: startedAt ?? this.startedAt,
       durationHours: durationHours ?? this.durationHours,
+      fullyCompletedAt: fullyCompletedAt ?? this.fullyCompletedAt,
     );
   }
 

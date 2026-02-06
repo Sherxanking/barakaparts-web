@@ -4,6 +4,7 @@
 /// tartiblash va order completion (stock reduction) funksiyalarini boshqaradi.
 import 'package:flutter/foundation.dart';
 import '../models/order_model.dart' as data;
+import '../models/taken_item.dart'; // TakenItem model
 import '../models/product_model.dart';
 import 'hive_box_service.dart';
 import 'product_service.dart';
@@ -982,7 +983,7 @@ class OrderService {
 
   /// Order deletion methods - Secure implementation with audit trail
 
-  /// Soft delete order (manager and boss can use this)
+  /// Soft delete order (manager and boss can use this)Order nomi ochilgan sanasi product qancha tanlangani
   /// This marks order as deleted but keeps it in database for audit
   Future<bool> softDeleteOrder(String orderId, {String? reason}) async {
     try {
@@ -1481,6 +1482,202 @@ class OrderService {
       return orders.take(limit).toList();
     } catch (e) {
       debugPrint('❌ Error getting recently completed orders: $e');
+      return [];
+    }
+  }
+
+  /// Create order with parts snapshot (for showing shortages in pending state)
+  Future<bool> createOrderWithPartsSnapshot({
+    required String id,
+    required String departmentId,
+    required String productName,
+    required int quantity,
+    String? soldTo,
+    String? notes,
+  }) async {
+    try {
+      // Get product to create parts snapshot
+      final productService = ProductService();
+      final product = productService.getAllProducts().firstWhere(
+        (p) => p.name == productName,
+        orElse: () => throw StateError('Product not found'),
+      );
+
+      // Create parts snapshot (the required parts for this order)
+      final partsSnapshot = <String, int>{};
+      for (final entry in product.parts.entries) {
+        partsSnapshot[entry.key] = entry.value * quantity;
+      }
+
+      // Create order with parts snapshot
+      final order = data.Order(
+        id: id,
+        departmentId: departmentId,
+        productName: productName,
+        quantity: quantity,
+        status: 'pending',
+        soldTo: soldTo,
+        notes: notes,
+        partsRequired: partsSnapshot,
+        // Initially no taken items
+        takenItems: [],
+      );
+
+      // Check for parts shortage
+      final shortages = _checkPartsShortage(product, quantity);
+      
+      // Even if there are shortages, create the order in pending state
+      final result = await addOrder(order);
+      
+      // Send notification that order is ready
+      if (result) {
+        TelegramNotificationService.sendReadyOrderNotification(quantity, 'Courier');
+      }
+      
+      return result;
+    } catch (e) {
+      debugPrint('❌ Error creating order with parts snapshot: $e');
+      return false;
+    }
+  }
+
+  /// Check parts shortage for a product
+  List<Map<String, dynamic>> _checkPartsShortage(Product product, int quantity) {
+    final partService = PartService();
+    final shortages = <Map<String, dynamic>>[];
+    
+    for (final entry in product.parts.entries) {
+      final partId = entry.key;
+      final part = partService.getPartById(partId);
+      if (part != null) {
+        final required = entry.value * quantity;
+        final available = part.quantity;
+        final shortage = required - available;
+        
+        if (shortage > 0) {
+          shortages.add({
+            'partId': partId,
+            'partName': part.name,
+            'required': required,
+            'available': available,
+            'shortage': shortage,
+          });
+        }
+      }
+    }
+    
+    return shortages;
+  }
+
+  /// Add taken item to order
+  Future<bool> addTakenItemToOrder({
+    required String orderId,
+    required String courierId,
+    required int quantity,
+    String? notes,
+  }) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        debugPrint('❌ Order not found: $orderId');
+        return false;
+      }
+
+      // Import the taken_item model
+      final takenItem = TakenItem(
+        courierId: courierId,
+        quantity: quantity,
+        notes: notes,
+      );
+
+      // Add to the order's taken items list
+      order.takenItems = [...order.takenItems, takenItem];
+
+      // Update the order status to reflect that items are being taken
+      if (order.status == 'pending') {
+        order.status = 'in_progress';
+      }
+
+      // Check if all items have been taken to update the overall completion status
+      final totalTaken = order.takenItems.fold(0, (sum, item) => sum + item.quantity);
+      if (totalTaken >= order.quantity) {
+        order.status = 'completed';
+        order.fullyCompletedAt = DateTime.now();
+        // Update completedAt if not already set
+        order.completedAt ??= DateTime.now();
+      }
+
+      // Update the order in both Hive and Supabase
+      final result = await updateOrder(order);
+      if (!result) {
+        debugPrint('⚠️ Failed to update order after adding taken item');
+      }
+
+      // Send notification about the taken items
+      TelegramNotificationService.sendOrderTakenNotification(
+        order.productName,
+        quantity,
+        totalTaken,
+        order.quantity,
+      );
+
+      return result;
+    } catch (e) {
+      debugPrint('❌ Error adding taken item to order: $e');
+      return false;
+    }
+  }
+
+  /// Get taken items for an order
+  List<TakenItem> getTakenItemsForOrder(String orderId) {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return [];
+      }
+      return order.takenItems;
+    } catch (e) {
+      debugPrint('❌ Error getting taken items for order $orderId: $e');
+      return [];
+    }
+  }
+
+  /// Get total quantity taken for an order
+  int getTotalTakenQuantity(String orderId) {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return 0;
+      }
+      return order.takenItems.fold(0, (sum, item) => sum + item.quantity);
+    } catch (e) {
+      debugPrint('❌ Error getting total taken quantity for order $orderId: $e');
+      return 0;
+    }
+  }
+
+  /// Check if an order is fully taken
+  bool isOrderFullyTaken(String orderId) {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      final totalTaken = getTotalTakenQuantity(orderId);
+      return totalTaken >= order.quantity;
+    } catch (e) {
+      debugPrint('❌ Error checking if order is fully taken $orderId: $e');
+      return false;
+    }
+  }
+
+  /// Get all orders that have been partially or fully taken
+  List<data.Order> getOrdersWithTakenItems() {
+    try {
+      final allOrders = getAllOrders();
+      return allOrders.where((order) => order.takenItems.isNotEmpty).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting orders with taken items: $e');
       return [];
     }
   }

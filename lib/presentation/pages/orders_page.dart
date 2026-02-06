@@ -1811,8 +1811,11 @@ class _OrdersPageState extends State<OrdersPage> {
                               final domainOrder = filteredOrders[index];
                               final department = _departmentService.getDepartmentById(domainOrder.departmentId);
                               
+                              // Get the corresponding data model for extended fields
+                              final dataOrder = _orderService.getOrderById(domainOrder.id);
                               return OrderItemWidget(
                                 order: domainOrder, // Domain Order'dan to'g'ridan-to'g'ri foydalanish
+                                dataOrder: dataOrder, // Pass data model for extended fields
                                 department: department,
                                 onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
                                 onEdit: (domainOrder.status == 'pending' && _canEditOrders) ? () => _editOrder(domainOrder) : null,
