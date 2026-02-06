@@ -36,6 +36,8 @@ class StatusBadgeWidget extends StatelessWidget {
         return Colors.red;
       case 'new':
         return Colors.blue;
+      case 'partially_completed':
+        return Colors.blue;
       default:
         return Theme.of(context).colorScheme.primary;
     }
@@ -54,6 +56,9 @@ class StatusBadgeWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: statusColor, width: 1),
       ),
+      constraints: const BoxConstraints(
+        maxWidth: 80, // Max kenglikni cheklash
+      ),
       child: Text(
         localizedStatus,
         style: TextStyle(
@@ -61,8 +66,9 @@ class StatusBadgeWidget extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
+        overflow: TextOverflow.ellipsis, // Agar uzun bo'lsa, ... qo'yish
+        maxLines: 1,
       ),
     );
   }
 }
-

@@ -39,6 +39,8 @@ import '../../core/services/error_handler_service.dart';
 import 'order_history_page.dart';
 import 'analytics_page.dart';
 import '../../l10n/app_localizations.dart';
+import '../widgets/courier_assignment_dialog.dart';
+import '../../core/services/telegram_notification_service.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -82,6 +84,9 @@ class _OrdersPageState extends State<OrdersPage> {
   // Search debounce timer
   Timer? _searchDebounceTimer;
   
+  // Loading state for courier assignment
+  bool _isLoading = false;
+  
   /// Check if current user can create orders
   bool get _canCreateOrders {
     final user = AuthStateService().currentUser;
@@ -103,9 +108,10 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Check if current user can edit orders (pending orders only)
   bool get _canEditOrders {
     final user = AuthStateService().currentUser;
+    // Faqat Boss va Manager edit qila oladi
     return user != null && (user.isManager || user.isBoss);
   }
-  
+
   /// Get current user for department filtering (Manager only)
   domain.User? get _currentUser => AuthStateService().currentUser;
 
@@ -164,15 +170,16 @@ class _OrdersPageState extends State<OrdersPage> {
     });
   }
 
-  /// Filtrlangan va tartiblangan orderlarni olish
-  /// Repository pattern - works for both web and mobile
-  /// Manager uchun department filter qo'shildi
+  /// Get filtered orders based on user role
   List<domain.Order> _getFilteredOrders(List<domain.Order> orders) {
-    // Start with provided orders
-    
-    // Manager uchun department filter (faqat o'z department'idagi orders)
     final user = _currentUser;
-    if (user != null && user.isManager && user.departmentId != null) {
+    
+    // Workerlar uchun faqat o'zlariga tayinlangan orderlarni ko'rsatish
+    if (user != null && user.isWorker) {
+      orders = orders.where((o) => o.workerId == user.id).toList();
+    }
+    // Manager uchun department filter (faqat o'z department'idagi orders)
+    else if (user != null && user.isManager && user.departmentId != null) {
       orders = orders.where((o) => o.departmentId == user.departmentId).toList();
     }
 
@@ -230,8 +237,208 @@ class _OrdersPageState extends State<OrdersPage> {
     );
   }
 
-  /// Yangi buyurtma yaratish
-  /// Repository pattern - works for both web and mobile
+  /// Calculate parts shortage for order and notify manager
+  void _calculateAndNotifyPartsShortage(String productName, int quantity) {
+    final product = _productService.getAllProducts().firstWhere(
+      (p) => p.name == productName,
+      orElse: () => Product(id: '', name: productName, parts: {}, departmentId: ''),
+    );
+
+    if (product.id.isEmpty) {
+      _showSnackBar('Product not found: $productName', Colors.red);
+      return;
+    }
+
+    final shortages = <PartShortage>[];
+    
+    for (var entry in product.parts.entries) {
+      final partId = entry.key;
+      final qtyPerProduct = entry.value;
+      final requiredQty = qtyPerProduct * quantity;
+      
+      final part = _partService.getPartById(partId);
+      if (part == null) {
+        _showSnackBar('Part not found: $partId', Colors.red);
+        return;
+      }
+
+      if (part.quantity < requiredQty) {
+        final shortage = PartShortage(
+          partId: partId,
+          partName: part.name,
+          required: requiredQty,
+          available: part.quantity,
+        );
+        shortages.add(shortage);
+      }
+    }
+
+    // If there are shortages, notify manager (simulated)
+    if (shortages.isNotEmpty) {
+      _notifyManagerAboutShortage(shortages);
+    }
+  }
+
+  /// Notify manager about parts shortage via Telegram (simulated)
+  void _notifyManagerAboutShortage(List<PartShortage> shortages) {
+    final shortageMessages = shortages.map((s) => 
+      "${s.partName}: ${s.shortage} dona yetmayapti"
+    ).join(", ");
+    
+    // Simulate sending message to manager via Telegram
+    debugPrint('🔔 TELEGRAM NOTIFICATION TO MANAGER: Yetmaydigan qismlar: $shortageMessages');
+    
+    // In real app, you would call Telegram Bot API here
+    // For now, just show in UI
+    _showSnackBar(
+      'Yetmaydigan qismlar aniqlandi: $shortageMessages', 
+      Colors.orange
+    );
+  }
+
+  /// Notify manager about ready orders via Telegram (simulated)
+  void _notifyManagerAboutReadyOrders(int count, String courierName) {
+    // Simulate sending message to manager via Telegram
+    debugPrint('🔔 TELEGRAM NOTIFICATION TO MANAGER: $count ta tayyor, $courierName olib ketishi mumkin');
+    
+    // Send notification via Telegram
+    TelegramNotificationService.sendReadyOrderNotification(count, courierName);
+    
+    _showSnackBar(
+      '$count ta tayyor, $courierName olib ketishi mumkin', 
+      Colors.green
+    );
+  }
+
+  /// Show courier assignment dialog
+  void _showCourierAssignmentDialog(String orderId, int orderQuantity) {
+    showDialog(
+      context: context,
+      builder: (context) => CourierAssignmentDialog(
+        orderId: orderId,
+        orderQuantity: orderQuantity,
+        onAssign: (courierId, quantity) {
+          _assignCourierToOrder(orderId, courierId, quantity);
+        },
+      ),
+    );
+  }
+
+  /// Assign courier to order
+  Future<void> _assignCourierToOrder(String orderId, String courierId, int quantity) async {
+    setState(() {
+      _isLoading = true; // Using existing _isLoading state
+    });
+
+    try {
+      final success = await _orderService.assignCourierToOrder(orderId, courierId, quantity);
+      
+      if (success) {
+        // Find the courier name
+        // Load user to get courier name
+        final userRepository = ServiceLocator.instance.userRepository;
+        final result = await userRepository.getUserById(courierId);
+        String courierName = 'Courier';
+        
+        result.fold(
+          (failure) {
+            courierName = 'Courier';
+          },
+          (user) {
+            courierName = user?.name ?? 'Courier';
+          },
+        );
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('\$quantity ta \$courierName ga tayinlandi'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Reload orders
+          // Data will be reloaded by the stream automatically
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Courier tayinlashda xatolik yuz berdi'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Xatolik: \$e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Show analytics for courier assignments
+  void _showCourierAnalytics() {
+    final analytics = _orderService.getCourierAnalytics();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Courier Analytics',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: analytics.isEmpty
+                      ? const Center(child: Text('No courier analytics data'))
+                      : ListView.builder(
+                          itemCount: analytics.length,
+                          itemBuilder: (context, index) {
+                            final entry = analytics.entries.elementAt(index);
+                            return ListTile(
+                              title: Text(entry.key),
+                              subtitle: Text('\${entry.value} items taken'),
+                              trailing: const Icon(Icons.check_circle, color: Colors.green),
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Yangi order yaratish funksiyasi
   Future<void> _createOrder() async {
     // Validatsiya
     if (selectedDepartmentId == null || selectedProductId == null) {
@@ -301,10 +508,14 @@ class _OrdersPageState extends State<OrdersPage> {
             _soldToController.clear();
             _showSoldToError = false;
           });
+          
           // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
           if (!calculationResult.hasShortage) {
             _showSnackBar(AppLocalizations.of(context)?.translate('orderCreated') ?? 'Order created successfully', Colors.green);
           }
+          
+          // Hisoblash va xabarnoma yuborish
+          _calculateAndNotifyPartsShortage(product.name, quantity);
         },
       );
     }
@@ -508,7 +719,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                   ),
                                 ),
                                 ...departments.map((dept) {
-                                  return DropdownMenuItem<String>(
+                                  return DropdownMenuItem(
                                     value: dept.id,
                                     child: Text(dept.name),
                                   );
@@ -1022,6 +1233,90 @@ class _OrdersPageState extends State<OrdersPage> {
     );
   }
 
+  // State for take away functionality
+  List<String> _selectedTakeAwayOrderIds = [];
+
+  /// Toggle order selection for take away
+  void _toggleTakeAwayOrderSelection(String orderId) {
+    setState(() {
+      if (_selectedTakeAwayOrderIds.contains(orderId)) {
+        _selectedTakeAwayOrderIds.remove(orderId);
+      } else {
+        _selectedTakeAwayOrderIds.add(orderId);
+      }
+    });
+  }
+
+  /// Mark selected orders as taken away
+  Future<void> _markOrdersAsTakenAway() async {
+    if (_selectedTakeAwayOrderIds.isEmpty) {
+      _showSnackBar('Hech qanday order tanlanmagan', Colors.red);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tasdiqlash'),
+        content: Text('Siz ${_selectedTakeAwayOrderIds.length} ta orderlarni olib ketdi deb belgilamoqchimisiz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Bekor qilish'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Tasdiqlash'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _isInitialLoading = true;
+      });
+
+      try {
+        int completedCount = 0;
+        
+        for (final orderId in _selectedTakeAwayOrderIds) {
+          // Use repository directly
+          final result = await _orderRepository.completeOrder(orderId);
+          result.fold(
+            (failure) {
+              debugPrint('❌ Failed to complete order: ${failure.message}');
+            },
+            (completedOrder) {
+              completedCount++;
+            },
+          );
+        }
+
+        if (mounted) {
+          setState(() {
+            _selectedTakeAwayOrderIds.clear();
+            _isInitialLoading = false;
+          });
+          
+          _showSnackBar('$completedCount ta order olib ketdi deb belgilandi', Colors.green);
+        }
+      } catch (e) {
+        setState(() {
+          _isInitialLoading = false;
+        });
+        _showSnackBar('Xatolik yuz berdi: $e', Colors.red);
+      }
+    }
+  }
+
+  /// Clear take away selection
+  void _clearTakeAwaySelection() {
+    setState(() {
+      _selectedTakeAwayOrderIds.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Either<Failure, List<domain.Order>>>(
@@ -1194,6 +1489,43 @@ class _OrdersPageState extends State<OrdersPage> {
                   ],
                 ),
               ),
+
+              // Take away action bar (only for managers/boss)
+              if (_canCompleteOrders && _selectedTakeAwayOrderIds.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  color: Colors.green.shade50,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${_selectedTakeAwayOrderIds.length} ta order tanlangan',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: _clearTakeAwaySelection,
+                            child: const Text('Tozalash'),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed: _markOrdersAsTakenAway,
+                            icon: const Icon(Icons.check),
+                            label: const Text('Olib ketdi'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
 
               // FIX: Main content - CustomScrollView + SliverList ishlatish
               // Bu nested scroll muammosini hal qiladi va performance ni yaxshilaydi
@@ -1486,6 +1818,14 @@ class _OrdersPageState extends State<OrdersPage> {
                                 onEdit: (domainOrder.status == 'pending' && _canEditOrders) ? () => _editOrder(domainOrder) : null,
                                 onDelete: _canDeleteOrders ? () => _deleteOrder(domainOrder) : null,
                                 isCompleting: _completingOrderId == domainOrder.id,
+                                // Add take away functionality
+                                onTakeAwayToggle: _canCompleteOrders 
+                                    ? () => _toggleTakeAwayOrderSelection(domainOrder.id) 
+                                    : null,
+                                isTakeAwaySelected: _selectedTakeAwayOrderIds.contains(domainOrder.id),
+                                // Courier assignment functionality
+                                onCourierAssign: () => _showCourierAssignmentDialog(domainOrder.id, domainOrder.quantity),
+                                isCourierMode: (_currentUser?.isManager == true || _currentUser?.isBoss == true), // Only managers/boss can assign couriers
                               );
                             },
                             childCount: filteredOrders.length,

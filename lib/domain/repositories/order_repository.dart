@@ -46,5 +46,16 @@ abstract class OrderRepository {
   
   /// Get production count for a month
   Future<Either<Failure, int>> getProductionCountForMonth(DateTime month);
+  
+  /// Soft delete order (manager and boss)
+  Future<Either<Failure, bool>> softDeleteOrder(String orderId, {String? reason});
+  
+  /// Restore deleted order (boss only)
+  Future<Either<Failure, bool>> restoreOrder(String orderId);
+  
+  /// Permanently delete order (boss only)
+  Future<Either<Failure, bool>> permanentlyDeleteOrder(String orderId);
+  
+  /// Get deleted orders (boss only)
+  Future<Either<Failure, List<Order>>> getDeletedOrders();
 }
-

@@ -47,11 +47,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     
     // Sahifalarni yaratish
     _pages = [
-      OrdersPage(key: _navigatorKeys[0]),
-      DepartmentsPage(key: _navigatorKeys[1]),
-      ProductsPage(key: _navigatorKeys[2]),
-      PartsPage(key: _navigatorKeys[3]),
-      SettingsPage(key: _navigatorKeys[4]),
+      AnalyticsPage(key: _navigatorKeys[0]),
+      PartsPage(key: _navigatorKeys[1]),
+      OrdersPage(key: _navigatorKeys[2]),
+      DepartmentsPage(key: _navigatorKeys[3]),
+      ProductsPage(key: _navigatorKeys[4]),
     ];
   }
   
@@ -105,23 +105,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     switch (index) {
       case 0:
         return BottomNavigationBarItem(
-          icon: const Icon(Icons.shopping_cart),
-          activeIcon: const Icon(Icons.shopping_cart),
-          label: l10n?.orders ?? 'Orders',
+          icon: const Icon(Icons.analytics),
+          activeIcon: const Icon(Icons.analytics),
+          label: l10n?.translate('analytics') ?? 'Analytics',
         );
       case 1:
-        return BottomNavigationBarItem(
-          icon: const Icon(Icons.business),
-          activeIcon: const Icon(Icons.business),
-          label: l10n?.departments ?? 'Departments',
-        );
-      case 2:
-        return BottomNavigationBarItem(
-          icon: const Icon(Icons.inventory),
-          activeIcon: const Icon(Icons.inventory),
-          label: l10n?.products ?? 'Products',
-        );
-      case 3:
         return BottomNavigationBarItem(
           icon: Stack(
             clipBehavior: Clip.none,
@@ -187,12 +175,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
           label: l10n?.parts ?? 'Parts',
         );
+      case 2:
+        return BottomNavigationBarItem(
+          icon: const Icon(Icons.shopping_cart),
+          activeIcon: const Icon(Icons.shopping_cart),
+          label: l10n?.orders ?? 'Orders',
+        );
+      case 3:
+        return BottomNavigationBarItem(
+          icon: const Icon(Icons.business),
+          activeIcon: const Icon(Icons.business),
+          label: l10n?.departments ?? 'Departments',
+        );
       case 4:
       default:
         return BottomNavigationBarItem(
-          icon: const Icon(Icons.settings),
-          activeIcon: const Icon(Icons.settings),
-          label: l10n?.settings ?? 'Settings',
+          icon: const Icon(Icons.inventory),
+          activeIcon: const Icon(Icons.inventory),
+          label: l10n?.products ?? 'Products',
         );
     }
   }
@@ -202,15 +202,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (l10n == null) return 'Baraka Parts';
     switch (_currentIndex) {
       case 0:
-        return l10n.orders;
+        return l10n.translate('analytics') ?? 'Analytics';
       case 1:
-        return l10n.departments;
-      case 2:
-        return l10n.products;
-      case 3:
         return l10n.parts;
+      case 2:
+        return l10n.orders;
+      case 3:
+        return l10n.departments;
       case 4:
-        return l10n.settings ?? 'Settings';
+        return l10n.products;
       default:
         return 'Baraka Parts';
     }
@@ -221,7 +221,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final l10n = AppLocalizations.of(context);
     final currentUser = AuthStateService().currentUser;
     final isWorker = currentUser?.isWorker ?? false;
-    final visibleIndices = isWorker ? [3, 4] : [0, 1, 2, 3, 4];
+    final isCourier = currentUser?.isCourier ?? false;
+    
+    // Courierlar ham analytics, parts, va orders sahifalarini ko'ra oladi
+    final visibleIndices = isCourier 
+        ? [0, 1, 2]  // 0: Analytics, 1: Parts, 2: Orders
+        : isWorker 
+            ? [0, 1, 2]  // 0: Analytics, 1: Parts, 2: Orders
+            : [0, 1, 2, 3, 4]; // Barcha sahifalar boshqalarga
     
     return Scaffold(
       body: IndexedStack(

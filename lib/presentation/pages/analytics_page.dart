@@ -6,10 +6,12 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../data/services/analytics_service.dart';
+import '../../data/services/order_service.dart'; // OrderService import qo'shildi
 import '../../domain/entities/part.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
 import '../../l10n/app_localizations.dart';
+import '../pages/settings_page.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -35,6 +37,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   int _totalProducts = 0;
   int _totalDepartments = 0;
   Map<String, int> _monthlyProduction = {};
+  // Time tracking statistics
+  double _averageCompletionTime = 0.0; // Average completion time in hours
+  Map<String, double> _avgCompletionTimeByProduct = {}; // Average completion time by product
+  Map<String, double> _avgCompletionTimeByDepartment = {}; // Average completion time by department
 
   @override
   void initState() {
@@ -60,6 +66,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final monthlyResult = await _analyticsService.getProductionCountForLastMonths(6);
     final partsUsageResult = await _analyticsService.getPartsUsageByNameForMonth(DateTime.now(), limit: 10);
     final totalPartsUsedResult = await _analyticsService.getTotalPartsUsedForMonth(DateTime.now());
+
+    // Load time tracking statistics
+    final orderService = OrderService();
+    _averageCompletionTime = orderService.getAverageCompletionTime();
+    _avgCompletionTimeByProduct = _calculateAvgCompletionTimeByProduct();
+    _avgCompletionTimeByDepartment = _calculateAvgCompletionTimeByDepartment();
 
     if (!mounted) return;
 
@@ -129,12 +141,71 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     });
   }
 
+  /// Calculate average completion time by product
+  Map<String, double> _calculateAvgCompletionTimeByProduct() {
+    final orderService = OrderService();
+    final orders = orderService.getOrdersWithTimeTracking()
+        .where((order) => order.hasStarted && order.isFullyCompleted)
+        .toList();
+    
+    final Map<String, List<double>> timeMap = {};
+    
+    for (final order in orders) {
+      final duration = order.getDurationInHours();
+      if (duration != null) {
+        timeMap.putIfAbsent(order.productName, () => []).add(duration);
+      }
+    }
+    
+    final Map<String, double> result = {};
+    timeMap.forEach((productName, durations) {
+      result[productName] = durations.reduce((a, b) => a + b) / durations.length;
+    });
+    
+    return result;
+  }
+
+  /// Calculate average completion time by department
+  Map<String, double> _calculateAvgCompletionTimeByDepartment() {
+    final orderService = OrderService();
+    final orders = orderService.getOrdersWithTimeTracking()
+        .where((order) => order.hasStarted && order.isFullyCompleted)
+        .toList();
+    
+    final Map<String, List<double>> timeMap = {};
+    
+    for (final order in orders) {
+      final duration = order.getDurationInHours();
+      if (duration != null) {
+        timeMap.putIfAbsent(order.departmentId, () => []).add(duration);
+      }
+    }
+    
+    final Map<String, double> result = {};
+    timeMap.forEach((departmentId, durations) {
+      result[departmentId] = durations.reduce((a, b) => a + b) / durations.length;
+    });
+    
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)?.translate('analytics') ?? 'Analytics'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              // Navigate to settings page
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsPage()),
+              );
+            },
+            tooltip: 'Settings',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadAnalytics,
@@ -177,6 +248,22 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     
                     // Production by Product Chart
                     _buildProductionByProductChart(),
+                    const SizedBox(height: 24),
+                    
+                    // Time Tracking Analytics
+                    _buildTimeTrackingAnalytics(),
+                    const SizedBox(height: 24),
+                    
+                    // Courier Analytics
+                    _buildCourierAnalytics(),
+                    const SizedBox(height: 24),
+                    
+                    // Latest Ready Orders
+                    _buildLatestReadyOrders(),
+                    const SizedBox(height: 24),
+                    
+                    // In Progress Orders
+                    _buildInProgressOrders(),
                     const SizedBox(height: 24),
                     
                     // Top Used Parts (This Month)
@@ -299,6 +386,59 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 color: Colors.grey[600],
               ),
             ),
+            const SizedBox(height: 16),
+            // Product breakdown
+            if (_productionByProduct.isNotEmpty) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'Product breakdown:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 8),
+              ..._productionByProduct.entries.map((entry) {
+                final percentage = _thisMonthProduction > 0 
+                    ? (entry.value / _thisMonthProduction * 100).round()
+                    : 0;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${entry.value} (${percentage}%)',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'No product breakdown available',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -638,7 +778,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 Icon(Icons.inventory, color: Colors.purple),
                 const SizedBox(width: 8),
                 Text(
-                  'Mahsulotlar bo\'yicha ishlab chiqarish (Bu oy)',
+                  'Ishlab chiqarish (Bu oy)',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ],
@@ -882,6 +1022,429 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     Text(
                       '${part.quantity} / ${part.minQuantity}',
                       style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeTrackingAnalytics() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.timer, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Time Tracking Analytics',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Average Completion Time
+            Card(
+              color: Colors.orange.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Average Completion Time',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      '${_averageCompletionTime.toStringAsFixed(2)} hours',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Average Completion Time by Product
+            if (_avgCompletionTimeByProduct.isNotEmpty) ...[
+              const Text(
+                'Average Completion Time by Product',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              ..._avgCompletionTimeByProduct.entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${entry.value.toStringAsFixed(2)}h',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 16),
+            ],
+            
+            // Average Completion Time by Department
+            if (_avgCompletionTimeByDepartment.isNotEmpty) ...[
+              const Text(
+                'Average Completion Time by Department',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              ..._avgCompletionTimeByDepartment.entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${entry.value.toStringAsFixed(2)}h',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCourierAnalytics() {
+    final orderService = OrderService();
+    final analytics = orderService.getCourierAnalytics();
+    
+    if (analytics.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.delivery_dining, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Courier Analytics',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'No courier assignment data available',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.delivery_dining, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Courier Analytics',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...analytics.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        entry.key,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '\${entry.value} items',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLatestReadyOrders() {
+    final orderService = OrderService();
+    final recentOrders = orderService.getRecentlyCompletedOrders(limit: 5);
+    
+    if (recentOrders.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green),
+                  const SizedBox(width: 8),
+                  Text(
+                    'So\'nggi tayyor buyurtmalar',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'Hozircha tayyor buyurtmalar yo\'q',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(
+                  'So\'nggi tayyor buyurtmalar',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...recentOrders.map((order) {
+              final completedAt = order.completedAt ?? order.updatedAt ?? order.createdAt;
+              final timeDiff = DateTime.now().difference(completedAt);
+              String timeAgo;
+              
+              if (timeDiff.inDays > 0) {
+                timeAgo = '\${timeDiff.inDays} kun oldin';
+              } else if (timeDiff.inHours > 0) {
+                timeAgo = '\${timeDiff.inHours} soat oldin';
+              } else {
+                timeAgo = '\${timeDiff.inMinutes} daqiqa oldin';
+              }
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.check, size: 16, color: Colors.green[700]),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '\${order.quantity} ta \${order.productName}',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            'Bo\'lim: \${order.departmentId} • \$timeAgo',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInProgressOrders() {
+    final orderService = OrderService();
+    final inProgressOrders = orderService.getInProgressOrders(limit: 5);
+    
+    if (inProgressOrders.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.hourglass_top, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Jarayondagi buyurtmalar',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'Hozircha jarayondagi buyurtmalar yo\'q',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.hourglass_top, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(
+                  'Jarayondagi buyurtmalar',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...inProgressOrders.map((order) {
+              final startedAt = order.startedAt ?? order.updatedAt ?? order.createdAt;
+              final timeDiff = DateTime.now().difference(startedAt);
+              String timeAgo;
+              
+              if (timeDiff.inDays > 0) {
+                timeAgo = '\${timeDiff.inDays} kun oldin';
+              } else if (timeDiff.inHours > 0) {
+                timeAgo = '\${timeDiff.inHours} soat oldin';
+              } else {
+                timeAgo = '\${timeDiff.inMinutes} daqiqa oldin';
+              }
+              
+              // Calculate completion percentage
+              final percentage = order.quantity > 0 
+                  ? (order.completedQuantity / order.quantity * 100).round()
+                  : 0;
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.hourglass_bottom, size: 16, color: Colors.orange[700]),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '\${order.completedQuantity}/\${order.quantity} \${order.productName} (\$percentage%)',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            'Bo\'lim: \${order.departmentId} • \$timeAgo',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          const SizedBox(height: 4),
+                          LinearProgressIndicator(
+                            value: percentage / 100,
+                            backgroundColor: Colors.grey[200],
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

@@ -9,8 +9,12 @@ import 'hive_box_service.dart';
 import 'product_service.dart';
 import 'part_service.dart';
 import '../../domain/entities/order.dart' as domain;
+import '../../domain/entities/user.dart' as user_domain; // To'g'ri import
 import '../../core/di/service_locator.dart';
 import '../../core/utils/either.dart';
+import '../../core/services/auth_state_service.dart'; // AuthStateService import
+import '../../domain/repositories/user_repository.dart'; // UserRepository import
+import '../../core/services/telegram_notification_service.dart'; // Telegram notification service
 
 class OrderService {
   final HiveBoxService _boxService = HiveBoxService();
@@ -456,5 +460,1030 @@ class OrderService {
     });
     return sorted;
   }
+
+  /// Order lifecycle methods - Yangi qo'shilayotgan metodlar
+
+  /// Orderga worker tayinlash
+  /// Repository pattern - works for both web and mobile
+  Future<bool> assignWorkerToOrder(String orderId, String workerId) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: order.status,
+        workerId: workerId, // Worker ID qo'shildi
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to assign worker to order: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.workerId = workerId; // Yangi maydonni yangilash
+            order.updatedAt = DateTime.now(); // Yangilangan vaqtini belgilash
+            order.save();
+            debugPrint('✅ Worker assigned to order in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Worker assigned to order in Supabase but failed to save to Hive: $e');
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in assignWorkerToOrder: $e');
+      return false;
+    }
+  }
+
+  /// Start order with time tracking (when assigned to worker)
+  Future<bool> startOrderWithTimeTracking(String orderId, String workerId) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // Statusni tekshirish
+      if (order.status != 'pending') {
+        debugPrint('⚠️ Order status is not pending: ${order.status}');
+        return false;
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: 'in_progress', // Statusni yangilash
+        workerId: workerId, // Worker ID qo'shish
+        startedAt: DateTime.now(), // Boshlangan vaqtni belgilash
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to start order with time tracking: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.status = 'in_progress';
+            order.workerId = workerId;
+            order.startedAt = DateTime.now(); // Boshlangan vaqtni belgilash
+            order.updatedAt = DateTime.now();
+            order.save();
+            debugPrint('✅ Order started with time tracking successfully in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order started with time tracking in Supabase but failed to save to Hive: $e');
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in startOrderWithTimeTracking: $e');
+      return false;
+    }
+  }
+
+  /// Order statusini 'in_progress' ga o'tkazish (worker tayinlanganda)
+  Future<bool> startOrder(String orderId, String workerId) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // Statusni tekshirish
+      if (order.status != 'pending') {
+        debugPrint('⚠️ Order status is not pending: ${order.status}');
+        return false;
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: 'in_progress', // Statusni yangilash
+        workerId: workerId, // Worker ID qo'shish
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to start order: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.status = 'in_progress';
+            order.workerId = workerId;
+            order.updatedAt = DateTime.now();
+            order.save();
+            debugPrint('✅ Order started successfully in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order started in Supabase but failed to save to Hive: $e');
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in startOrder: $e');
+      return false;
+    }
+  }
+
+  /// Qisman (partial) completion - order bajarilishini qismman belgilash
+  Future<bool> partiallyCompleteOrder(String orderId, int completedQuantity) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // Statusni tekshirish - faqat in_progress yoki partially completed bo'lsa mumkin
+      if (order.status != 'in_progress' && order.status != 'partially_completed') {
+        debugPrint('⚠️ Order status is not in_progress or partially_completed: ${order.status}');
+        return false;
+      }
+      
+      // Completed miqdorini tekshirish
+      if (completedQuantity <= 0 || completedQuantity >= order.quantity) {
+        debugPrint('⚠️ Invalid completed quantity: $completedQuantity (total: ${order.quantity})');
+        return false;
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        completedQuantity: completedQuantity, // Completed miqdorini yangilash
+        departmentId: order.departmentId,
+        status: 'partially_completed', // Statusni partially_completed qilish
+        workerId: order.workerId,
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to partially complete order: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.status = 'partially_completed';
+            order.completedQuantity = completedQuantity;
+            order.updatedAt = DateTime.now();
+            order.save();
+            debugPrint('✅ Order partially completed successfully in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order partially completed in Supabase but failed to save to Hive: $e');
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in partiallyCompleteOrder: $e');
+      return false;
+    }
+  }
+
+  /// Orderga qo'shimcha miqdor qo'shish (partial completion davom ettirish)
+  Future<bool> addPartialCompletion(String orderId, int additionalQuantity) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // Statusni tekshirish
+      if (order.status != 'partially_completed') {
+        debugPrint('⚠️ Order status is not partially_completed: ${order.status}');
+        return false;
+      }
+      
+      // Yangi completed miqdorini hisoblash
+      final newCompletedQuantity = order.completedQuantity + additionalQuantity;
+      
+      // Cheklov: completed miqdori umumiy miqdordan oshmasligi kerak
+      if (newCompletedQuantity > order.quantity) {
+        debugPrint('⚠️ New completed quantity exceeds total quantity: $newCompletedQuantity > ${order.quantity}');
+        return false;
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Statusni aniqlash - agar barchasi bajarilgan bo'lsa 'completed' qilish
+      final newStatus = newCompletedQuantity >= order.quantity ? 'completed' : 'partially_completed';
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        completedQuantity: newCompletedQuantity, // Yangilangan completed miqdor
+        departmentId: order.departmentId,
+        status: newStatus, // Statusni yangilash
+        workerId: order.workerId,
+        completedBy: newStatus == 'completed' ? AuthStateService().currentUser?.id : null, // Agar to'liq completed bo'lsa, kim tugatganini belgilash
+        completedAt: newStatus == 'completed' ? DateTime.now() : null, // Completed vaqtini belgilash
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to add partial completion: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.status = newStatus;
+            order.completedQuantity = newCompletedQuantity;
+            order.completedBy = newStatus == 'completed' ? AuthStateService().currentUser?.id : null;
+            order.completedAt = newStatus == 'completed' ? DateTime.now() : null;
+            order.updatedAt = DateTime.now();
+            order.save();
+            debugPrint('✅ Partial completion added successfully in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Partial completion added in Supabase but failed to save to Hive: $e');
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in addPartialCompletion: $e');
+      return false;
+    }
+  }
+
+  /// Order rejection - buyurtmani rad etish
+  Future<bool> rejectOrder(String orderId, String reason) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        departmentId: order.departmentId,
+        status: 'rejected', // Statusni rejected qilish
+        notes: reason, // Rad etish sababini saqlash
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to reject order: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.status = 'rejected';
+            order.notes = reason;
+            order.updatedAt = DateTime.now();
+            order.save();
+            debugPrint('✅ Order rejected successfully in both Supabase and Hive');
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Order rejected in Supabase but failed to save to Hive: $e');
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in rejectOrder: $e');
+      return false;
+    }
+  }
+
+  /// Get workers - foydalanuvchilarni worker sifatida olish
+  Future<List<user_domain.User>> getWorkers() async {
+    try {
+      // UserRepository orqali barcha foydalanuvchilarni olish
+      final userRepository = ServiceLocator.instance.userRepository;
+      final result = await userRepository.getAllUsers();
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to get users: ${failure.message}');
+          return <user_domain.User>[];
+        },
+        (users) {
+          // Faqat worker va manager larni qaytarish
+          return users.where((user) => user.isWorker || user.isManager).toList();
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error getting workers: $e');
+      return [];
+    }
+  }
+
+  /// Get orders by worker - workerga tayinlangan buyurtmalarni olish
+  List<data.Order> getOrdersByWorker(String workerId) {
+    try {
+      return getAllOrders().where((order) => order.workerId == workerId).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting orders by worker: $e');
+      return [];
+    }
+  }
+
+  /// Get orders by status - status bo'yicha buyurtmalarni olish
+  List<data.Order> getOrdersByStatus(String status) {
+    try {
+      return getAllOrders().where((order) => order.status == status).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting orders by status: $e');
+      return [];
+    }
+  }
+
+  /// Get pending orders - kutayotgan buyurtmalarni olish
+  List<data.Order> getPendingOrders() {
+    return getOrdersByStatus('pending');
+  }
+
+  /// Get in progress orders - bajarilayotgan buyurtmalarni olish
+  List<data.Order> getInProgressOrders({int limit = 10}) {
+    try {
+      final orders = getAllOrders()
+          .where((order) => order.status == 'in_progress' || order.status == 'partially_completed')
+          .toList();
+      
+      // Sort by start time (most recent first)
+      orders.sort((a, b) {
+        final timeA = a.startedAt ?? a.updatedAt ?? a.createdAt;
+        final timeB = b.startedAt ?? b.updatedAt ?? b.createdAt;
+        return timeB.compareTo(timeA); // Descending order (newest first)
+      });
+      
+      return orders.take(limit).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting in-progress orders: $e');
+      return [];
+    }
+  }
+
+  /// Get completed orders - tugallangan buyurtmalarni olish
+  List<data.Order> getCompletedOrders() {
+    return getOrdersByStatus('completed');
+  }
+
+  /// Get rejected orders - rad etilgan buyurtmalarni olish
+  List<data.Order> getRejectedOrders() {
+    return getOrdersByStatus('rejected');
+  }
+
+  /// Get partially completed orders - qisman tugallangan buyurtmalarni olish
+  List<data.Order> getPartiallyCompletedOrders() {
+    try {
+      return getAllOrders().where((order) => order.status == 'partially_completed').toList();
+    } catch (e) {
+      debugPrint('❌ Error getting partially completed orders: $e');
+      return [];
+    }
+  }
+
+  /// Order deletion methods - Secure implementation with audit trail
+
+  /// Soft delete order (manager and boss can use this)
+  /// This marks order as deleted but keeps it in database for audit
+  Future<bool> softDeleteOrder(String orderId, {String? reason}) async {
+    try {
+      // Permission check
+      final currentUser = AuthStateService().currentUser;
+      if (currentUser == null || (!currentUser.isManager && !currentUser.isBoss)) {
+        debugPrint('❌ User does not have permission to delete orders');
+        return false;
+      }
+      
+      // Use repository to soft delete
+      final result = await _orderRepository.softDeleteOrder(orderId, reason: reason);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to soft delete order: ${failure.message}');
+          return false;
+        },
+        (success) {
+          if (success) {
+            debugPrint('✅ Order soft deleted successfully');
+            return true;
+          } else {
+            debugPrint('⚠️ Order not found or already deleted');
+            return false;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in softDeleteOrder: $e');
+      return false;
+    }
+  }
+
+  /// Restore deleted order (boss only)
+  Future<bool> restoreOrder(String orderId) async {
+    try {
+      // Permission check - only boss
+      final currentUser = AuthStateService().currentUser;
+      if (currentUser == null || !currentUser.isBoss) {
+        debugPrint('❌ Only boss can restore deleted orders');
+        return false;
+      }
+      
+      // Use repository to restore
+      final result = await _orderRepository.restoreOrder(orderId);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to restore order: ${failure.message}');
+          return false;
+        },
+        (success) {
+          if (success) {
+            debugPrint('✅ Order restored successfully');
+            return true;
+          } else {
+            debugPrint('⚠️ Order not found or not deleted');
+            return false;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in restoreOrder: $e');
+      return false;
+    }
+  }
+
+  /// Permanently delete order (boss only) - USE WITH CAUTION
+  /// This completely removes the order from database
+  Future<bool> permanentlyDeleteOrder(String orderId) async {
+    try {
+      // Permission check - only boss
+      final currentUser = AuthStateService().currentUser;
+      if (currentUser == null || !currentUser.isBoss) {
+        debugPrint('❌ Only boss can permanently delete orders');
+        return false;
+      }
+      
+      // Confirmation required in UI before calling this
+      final result = await _orderRepository.permanentlyDeleteOrder(orderId);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to permanently delete order: ${failure.message}');
+          return false;
+        },
+        (success) {
+          if (success) {
+            debugPrint('✅ Order permanently deleted');
+            return true;
+          } else {
+            debugPrint('⚠️ Order not found');
+            return false;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in permanentlyDeleteOrder: $e');
+      return false;
+    }
+  }
+
+  /// Get deleted orders (boss only)
+  Future<List<domain.Order>> getDeletedOrders() async {
+    try {
+      // Permission check - only boss
+      final currentUser = AuthStateService().currentUser;
+      if (currentUser == null || !currentUser.isBoss) {
+        debugPrint('❌ Only boss can view deleted orders');
+        return [];
+      }
+      
+      // Use repository to get deleted orders
+      final result = await _orderRepository.getDeletedOrders();
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to get deleted orders: ${failure.message}');
+          return [];
+        },
+        (orders) => orders,
+      );
+    } catch (e) {
+      debugPrint('❌ Error in getDeletedOrders: $e');
+      return [];
+    }
+  }
+
+  /// Complete order with time tracking (when fully completed)
+  Future<bool> completeOrderWithTimeTracking(domain.Order order) async {
+    if (order.status == 'completed') {
+      return false; // Already completed
+    }
+
+    // Check if order is fully completed
+    if (order.completedQuantity < order.quantity) {
+      debugPrint('⚠️ Order is not fully completed yet: ${order.completedQuantity}/${order.quantity}');
+      return false;
+    }
+
+    // Product topish
+    Product? product;
+    try {
+      product = _productService.getAllProducts().firstWhere(
+        (p) => p.name == order.productName,
+        orElse: () => Product(
+          id: '',
+          name: order.productName,
+          parts: {},
+          departmentId: order.departmentId,
+        ),
+      );
+    } catch (e) {
+      return false; // Product not found
+    }
+
+    if (product == null || product.id.isEmpty) {
+      return false; // Product not found
+    }
+
+    // FIX: Barcha partlarni bir marta tekshirish (performance)
+    final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
+    
+    for (var entry in product.parts.entries) {
+      final partId = entry.key;
+      final qtyPerProduct = entry.value;
+      final totalQty = qtyPerProduct * order.quantity;
+      
+      final part = _partService.getPartById(partId);
+      if (part == null) {
+        return false; // Part not found
+      }
+
+      if (part.quantity < totalQty) {
+        return false; // Insufficient stock
+      }
+
+      // Barcha o'zgarishlarni to'plab olish
+      partsToUpdate[partId] = totalQty;
+    }
+
+    // OPTIMIZATION: Barcha partlarni bir marta batch update qilish (tezroq)
+    final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+    if (!batchResult) {
+      debugPrint('❌ Failed to update parts in batch');
+      return false;
+    }
+
+    // Calculate duration if startedAt is available
+    double? durationHours;
+    if (order.startedAt != null) {
+      final difference = DateTime.now().difference(order.startedAt!);
+      durationHours = difference.inMinutes / 60.0; // Convert minutes to hours
+    }
+
+    // Order statusini yangilash (Supabase'ga ham yozish)
+    // Convert domain order to data order
+    final dataOrder = getOrderById(order.id);
+    if (dataOrder != null) {
+      dataOrder.status = 'completed';
+      dataOrder.completedAt = DateTime.now(); // Tugallangan vaqtni belgilash
+      dataOrder.completedBy = AuthStateService().currentUser?.id; // Kim tugatgan
+      dataOrder.durationHours = durationHours; // Duration qo'shish
+      
+      // FIX: Supabase'ga ham yozish (realtime sync uchun)
+      final updateResult = await updateOrder(dataOrder);
+      if (!updateResult) {
+        // Supabase'ga yozish xato bo'lsa ham Hive'ga yozish
+        await dataOrder.save();
+      }
+    }
+
+    return true;
+  }
+
+  /// Get orders with time tracking statistics
+  List<domain.Order> getOrdersWithTimeTracking() {
+    try {
+      return getAllOrders().map((dataOrder) {
+        // Convert data order to domain order with time tracking fields
+        return domain.Order(
+          id: dataOrder.id,
+          productId: dataOrder.productName, // Fallback
+          productName: dataOrder.productName,
+          quantity: dataOrder.quantity,
+          completedQuantity: dataOrder.completedQuantity,
+          departmentId: dataOrder.departmentId,
+          status: dataOrder.status,
+          workerId: dataOrder.workerId,
+          completedBy: dataOrder.completedBy,
+          createdBy: null, // Not available in data model
+          approvedBy: null, // Not available in data model
+          soldTo: dataOrder.soldTo,
+          notes: dataOrder.notes,
+          partsRequired: dataOrder.partsRequired != null 
+              ? Map<String, int>.from(dataOrder.partsRequired as Map) 
+              : null,
+          createdAt: dataOrder.createdAt,
+          updatedAt: dataOrder.updatedAt,
+          completedAt: dataOrder.completedAt,
+          startedAt: dataOrder.startedAt,
+          durationHours: dataOrder.durationHours,
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting orders with time tracking: $e');
+      return [];
+    }
+  }
+
+  /// Calculate average completion time for orders
+  double getAverageCompletionTime() {
+    try {
+      final orders = getOrdersWithTimeTracking().where((order) => 
+          order.hasStarted && order.isFullyCompleted).toList();
+      
+      if (orders.isEmpty) return 0.0;
+      
+      double totalDuration = 0.0;
+      for (final order in orders) {
+        final duration = order.getDurationInHours();
+        if (duration != null) {
+          totalDuration += duration;
+        }
+      }
+      
+      return totalDuration / orders.length;
+    } catch (e) {
+      debugPrint('❌ Error calculating average completion time: $e');
+      return 0.0;
+    }
+  }
+
+  /// Assign courier to order with specific quantity
+  Future<bool> assignCourierToOrder(String orderId, String courierId, int quantity) async {
+    try {
+      final order = getOrderById(orderId);
+      if (order == null) {
+        return false;
+      }
+      
+      // Check if quantity is valid
+      if (quantity <= 0 || quantity > order.quantity) {
+        debugPrint('⚠️ Invalid quantity for courier assignment: $quantity (order quantity: ${order.quantity})');
+        return false;
+      }
+      
+      // Check if order has been taken by another courier
+      // We'll store this information in the notes field temporarily
+      String updatedNotes = '';
+      if (order.notes != null && order.notes!.isNotEmpty) {
+        updatedNotes = '${order.notes!}\nCourier $courierId took $quantity items';
+      } else {
+        updatedNotes = 'Courier $courierId took $quantity items';
+      }
+      
+      // Update order status if needed
+      String newStatus = order.status;
+      if (order.status == 'pending') {
+        newStatus = 'in_progress';
+      }
+      
+      // ProductId topish
+      String? productId;
+      try {
+        final products = _productService.getAllProducts();
+        final product = products.firstWhere(
+          (p) => p.name == order.productName,
+          orElse: () => throw StateError('Product not found'),
+        );
+        productId = product.id;
+      } catch (e) {
+        productId = order.productName; // Fallback
+      }
+      
+      // Domain Order yaratish
+      final domainOrder = domain.Order(
+        id: order.id,
+        productId: productId ?? order.id,
+        productName: order.productName,
+        quantity: order.quantity,
+        completedQuantity: order.completedQuantity,
+        departmentId: order.departmentId,
+        status: newStatus,
+        workerId: order.workerId ?? courierId, // Set courier as worker
+        createdAt: order.createdAt,
+        updatedAt: DateTime.now(),
+        notes: updatedNotes,
+      );
+      
+      // Repository orqali yangilash
+      final result = await _orderRepository.updateOrder(domainOrder);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to assign courier to order: ${failure.message}');
+          return false;
+        },
+        (updatedOrder) {
+          // Hive'ga ham saqlash
+          try {
+            order.workerId = order.workerId ?? courierId;
+            order.notes = updatedNotes;
+            order.status = newStatus;
+            order.updatedAt = DateTime.now();
+            order.save();
+            debugPrint('✅ Courier assigned to order successfully in both Supabase and Hive');
+            
+            // Send notification to manager about ready orders
+            TelegramNotificationService.sendReadyOrderNotification(quantity, 'Courier');
+            
+            return true;
+          } catch (e) {
+            debugPrint('⚠️ Courier assigned to order in Supabase but failed to save to Hive: $e');
+            
+            // Still send notification even if Hive save fails
+            TelegramNotificationService.sendReadyOrderNotification(quantity, 'Courier');
+            
+            return true;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error in assignCourierToOrder: $e');
+      return false;
+    }
+  }
+
+  /// Get orders assigned to a specific courier
+  List<data.Order> getOrdersByCourier(String courierId) {
+    try {
+      return getAllOrders().where((order) => order.workerId == courierId).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting orders by courier: $e');
+      return [];
+    }
+  }
+
+  /// Complete order by courier and deduct parts
+  Future<bool> completeOrderByCourier(data.Order order) async {
+    if (order.status == 'completed') {
+      return false; // Already completed
+    }
+
+    // Product topish
+    Product? product;
+    try {
+      product = _productService.getAllProducts().firstWhere(
+        (p) => p.name == order.productName,
+        orElse: () => Product(
+          id: '',
+          name: order.productName,
+          parts: {},
+          departmentId: order.departmentId,
+        ),
+      );
+    } catch (e) {
+      return false; // Product not found
+    }
+
+    if (product == null || product.id.isEmpty) {
+      return false; // Product not found
+    }
+
+    // Calculate parts to deduct based on completed quantity
+    final completedQty = order.completedQuantity > 0 ? order.completedQuantity : order.quantity;
+    
+    // FIX: Barcha partlarni bir marta tekshirish (performance)
+    final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
+    
+    for (var entry in product.parts.entries) {
+      final partId = entry.key;
+      final qtyPerProduct = entry.value;
+      final totalQty = qtyPerProduct * completedQty;
+      
+      final part = _partService.getPartById(partId);
+      if (part == null) {
+        return false; // Part not found
+      }
+
+      if (part.quantity < totalQty) {
+        return false; // Insufficient stock
+      }
+
+      // Barcha o'zgarishlarni to'plab olish
+      partsToUpdate[partId] = totalQty;
+    }
+
+    // OPTIMIZATION: Barcha partlarni bir marta batch update qilish (tezroq)
+    final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+    if (!batchResult) {
+      debugPrint('❌ Failed to update parts in batch');
+      return false;
+    }
+
+    // Order statusini yangilash (Supabase'ga ham yozish)
+    order.status = 'completed';
+    
+    // FIX: Supabase'ga ham yozish (realtime sync uchun)
+    final updateResult = await updateOrder(order);
+    if (!updateResult) {
+      // Supabase'ga yozish xato bo'lsa ham Hive'ga yozish
+      await order.save();
+    }
+
+    // Send notification about order completion
+    TelegramNotificationService.sendOrderCompletedNotification(order.productName, completedQty);
+
+    return true;
+  }
+
+  /// Notify manager about ready orders
+  void notifyManagerAboutReadyOrders(int count, String courierName) {
+    debugPrint('🔔 TELEGRAM NOTIFICATION TO MANAGER: $count ta tayyor, $courierName olib ketishi mumkin');
+    // Send notification via Telegram
+    TelegramNotificationService.sendReadyOrderNotification(count, courierName);
+  }
+
+  /// Get courier analytics - who took how many items
+  Map<String, int> getCourierAnalytics() {
+    try {
+      final orders = getAllOrders().where((order) => 
+          order.status == 'completed' && order.workerId != null && order.workerId!.isNotEmpty).toList();
+      
+      final Map<String, int> analytics = {};
+      
+      for (final order in orders) {
+        final courierId = order.workerId!;
+        final completedQty = order.completedQuantity > 0 ? order.completedQuantity : order.quantity;
+        
+        analytics[courierId] = (analytics[courierId] ?? 0) + completedQty;
+      }
+      
+      return analytics;
+    } catch (e) {
+      debugPrint('❌ Error getting courier analytics: $e');
+      return {};
+    }
+  }
+
+  /// Get recently completed orders - for showing latest 'ready' notifications
+  List<data.Order> getRecentlyCompletedOrders({int limit = 10}) {
+    try {
+      final orders = getAllOrders()
+          .where((order) => order.status == 'completed')
+          .toList();
+      
+      // Sort by completion time (most recent first)
+      orders.sort((a, b) {
+        final timeA = a.completedAt ?? a.updatedAt ?? a.createdAt;
+        final timeB = b.completedAt ?? b.updatedAt ?? b.createdAt;
+        return timeB.compareTo(timeA); // Descending order (newest first)
+      });
+      
+      return orders.take(limit).toList();
+    } catch (e) {
+      debugPrint('❌ Error getting recently completed orders: $e');
+      return [];
+    }
+  }
+
 }
 

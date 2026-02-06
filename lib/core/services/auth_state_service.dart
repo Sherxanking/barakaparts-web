@@ -251,17 +251,26 @@ class AuthStateService {
   /// NOTE: Role MUST come from public.users.role, NOT from auth metadata
   Future<void> _loadUserProfile() async {
     try {
+      debugPrint('🔄 Loading user profile...');
+      debugPrint('   Current auth UID: ${AppSupabaseClient.instance.currentUserId}');
+      
       final userRepository = UserRepositoryImpl(
         datasource: SupabaseUserDatasource(),
       );
+      
+      debugPrint('🔄 Calling getCurrentUser()...');
       
       // FIX: Force refresh from public.users table
       // WHY: Role source of truth is public.users.role, not auth metadata
       final result = await userRepository.getCurrentUser();
       
+      debugPrint('🔄 getCurrentUser returned, processing result...');
+      debugPrint('   Result type: ${result.runtimeType}');
+      
       result.fold(
         (failure) {
           debugPrint('⚠️ Failed to load user profile: ${failure.message}');
+          debugPrint('   Failure type: ${failure.runtimeType}');
           // Profile not found - user needs to login
           _currentUser = null;
           _notifyAuthStateChange(null);

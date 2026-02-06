@@ -27,6 +27,12 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   String? _errorMessage;
   Map<String, String> _roleChanges = {}; // userId -> newRole
 
+  // Controllers for user creation form
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
+  String? _selectedRole;
+
   @override
   void initState() {
     super.initState();
@@ -75,7 +81,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
           _isLoading = false;
           _errorMessage = failure.message;
         });
-        _showSnackBar('Failed to load users: ${failure.message}', Colors.red);
+        _showMessage('Failed to load users: ${failure.message}', Colors.red);
       },
       (users) {
         setState(() {
@@ -108,47 +114,138 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         setState(() {
           _isLoading = false;
         });
-        _showSnackBar('Failed to update role: ${failure.message}', Colors.red);
+        _showMessage('Failed to update role: ${failure.message}', Colors.red);
       },
       (updatedUser) {
         setState(() {
           _isLoading = false;
           _roleChanges.remove(userId); // Clear from pending changes
         });
-        _showSnackBar('Role updated successfully', Colors.green);
+        _showMessage('Role updated successfully', Colors.green);
         // Reload users to get updated data
         _loadUsers();
       },
     );
   }
 
-  /// Show create user dialog
-  /// WHY: Allow admin to create new users
-  void _showCreateUserDialog() {
+  /// Create a new user with role
+  Future<void> _createNewUser() async {
+    if (_emailController.text.isEmpty || 
+        _passwordController.text.isEmpty || 
+        _nameController.text.isEmpty || 
+        _selectedRole == null) {
+      _showMessage('Iltimos, barcha maydonlarni to\'ldiring', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final result = await _userRepository.createUserByAdmin(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+      name: _nameController.text.trim(),
+      role: _selectedRole!,
+    );
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+
+      result.fold(
+        (failure) {
+          _showMessage('Foydalanuvchi yaratishda xatolik: ${failure.message}', Colors.red);
+        },
+        (user) {
+          _showMessage('Foydalanuvchi muvaffaqiyatli yaratildi', Colors.green);
+          _resetForm();
+          _loadUsers();
+        },
+      );
+    }
+  }
+
+  /// Reset form controllers
+  void _resetForm() {
+    _emailController.clear();
+    _passwordController.clear();
+    _nameController.clear();
+    _selectedRole = null;
+  }
+
+  /// Role selection dropdown
+  Widget _buildRoleDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedRole,
+      decoration: const InputDecoration(
+        labelText: 'Rol tanlang',
+        border: OutlineInputBorder(),
+        prefixIcon: Icon(Icons.person_add),
+      ),
+      items: const [
+        DropdownMenuItem(
+          value: 'worker',
+          child: Text('Worker'),
+        ),
+        DropdownMenuItem(
+          value: 'manager',
+          child: Text('Manager'),
+        ),
+        DropdownMenuItem(
+          value: 'boss',
+          child: Text('Boss'),
+        ),
+        DropdownMenuItem(
+          value: 'courier',
+          child: Text('Courier/Delivery'),
+        ),
+      ],
+      onChanged: (value) {
+        setState(() {
+          _selectedRole = value;
+        });
+      },
+    );
+  }
+
+  /// Show create worker dialog
+  /// WHY: Allow admin to create new workers with detailed info
+  void _showCreateWorkerDialog() {
     if (!_canManageUsers) {
-      _showSnackBar('Access denied: Only managers and boss can create users', Colors.red);
+      _showMessage('Access denied: Only managers and boss can create workers', Colors.red);
       return;
     }
 
     final emailController = TextEditingController();
-    final passwordController = TextEditingController();
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
+    final positionController = TextEditingController();
     String selectedRole = 'worker';
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create New User'),
+          title: const Text('Create New Worker'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name*',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
                   controller: emailController,
                   decoration: const InputDecoration(
-                    labelText: 'Email',
+                    labelText: 'Email*',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.email),
                   ),
@@ -156,21 +253,12 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
                 const SizedBox(height: 16),
                 TextField(
-                  controller: passwordController,
+                  controller: positionController,
                   decoration: const InputDecoration(
-                    labelText: 'Password',
+                    labelText: 'Position/Lavozim*',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock),
-                  ),
-                  obscureText: true,
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person),
+                    prefixIcon: Icon(Icons.work),
+                    hintText: 'e.g., Sotuvchi, Omborchi, Kassir',
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -187,14 +275,17 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 DropdownButtonFormField<String>(
                   value: selectedRole,
                   decoration: const InputDecoration(
-                    labelText: 'Role',
+                    labelText: 'System Role',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.admin_panel_settings),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'worker', child: Text('Worker')),
+                    DropdownMenuItem(value: 'worker', child: Text('Worker (Read-only)')),
+                    DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
+                    DropdownMenuItem(value: 'warehouse', child: Text('Warehouse')),
                     DropdownMenuItem(value: 'manager', child: Text('Manager')),
                     DropdownMenuItem(value: 'boss', child: Text('Boss')),
+                    DropdownMenuItem(value: 'courier', child: Text('Courier/Delivery')),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -203,6 +294,11 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       });
                     }
                   },
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '* Required fields',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ),
@@ -214,16 +310,21 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             ),
             ElevatedButton(
               onPressed: () async {
-                if (emailController.text.trim().isEmpty) {
-                  _showSnackBar('Please enter email', Colors.red);
-                  return;
-                }
-                if (passwordController.text.isEmpty) {
-                  _showSnackBar('Please enter password', Colors.red);
-                  return;
-                }
+                // Validation
                 if (nameController.text.trim().isEmpty) {
-                  _showSnackBar('Please enter name', Colors.red);
+                  _showMessage('Please enter full name', Colors.red);
+                  return;
+                }
+                if (emailController.text.trim().isEmpty) {
+                  _showMessage('Please enter email', Colors.red);
+                  return;
+                }
+                if (positionController.text.trim().isEmpty) {
+                  _showMessage('Please enter position', Colors.red);
+                  return;
+                }
+                if (!emailController.text.contains('@')) {
+                  _showMessage('Please enter valid email', Colors.red);
                   return;
                 }
 
@@ -234,32 +335,54 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   _isLoading = true;
                 });
 
+                // Validate inputs
+                if (nameController.text.trim().isEmpty) {
+                  _showMessage('Please enter worker name', Colors.red);
+                  return;
+                }
+                if (emailController.text.trim().isEmpty) {
+                  _showMessage('Please enter email', Colors.red);
+                  return;
+                }
+                if (positionController.text.trim().isEmpty) {
+                  _showMessage('Please enter position', Colors.red);
+                  return;
+                }
+                
+                Navigator.pop(context);
+                
+                if (!mounted) return;
+                setState(() {
+                  _isLoading = true;
+                });
+                
+                // Call repository to create worker
                 final result = await _userRepository.createUserByAdmin(
                   email: emailController.text.trim(),
-                  password: passwordController.text,
+                  password: 'TempPass123!', // Temporary password
                   name: nameController.text.trim(),
                   role: selectedRole,
                 );
-
+                
                 if (!mounted) return;
-
+                
                 result.fold(
                   (failure) {
                     setState(() {
                       _isLoading = false;
                     });
-                    _showSnackBar('Failed to create user: ${failure.message}', Colors.red);
+                    _showMessage('Failed to create worker: ${failure.message}', Colors.red);
                   },
                   (createdUser) {
                     setState(() {
                       _isLoading = false;
                     });
-                    _showSnackBar('User created successfully', Colors.green);
+                    _showMessage('Worker created successfully! Temporary password: TempPass123!', Colors.green);
                     _loadUsers();
                   },
                 );
               },
-              child: const Text('Create'),
+              child: const Text('Create Worker'),
             ),
           ],
         ),
@@ -269,7 +392,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
 
   /// Show snackbar message
   /// WHY: Centralized error/success message display
-  void _showSnackBar(String message, Color color) {
+  void _showMessage(String message, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -408,6 +531,10 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text('Email: ${user.email ?? 'N/A'}'),
+                                        if (user.position != null && user.position!.isNotEmpty)
+                                          Text('Position: ${user.position}'),
+                                        if (user.phone != null && user.phone!.isNotEmpty)
+                                          Text('Phone: ${user.phone}'),
                                         const SizedBox(height: 4),
                                         if (canManage)
                                           DropdownButtonFormField<String>(
@@ -426,6 +553,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                                                 child: Text('Worker'),
                                               ),
                                               DropdownMenuItem(
+                                                value: 'cashier',
+                                                child: Text('Cashier'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'warehouse',
+                                                child: Text('Warehouse'),
+                                              ),
+                                              DropdownMenuItem(
                                                 value: 'manager',
                                                 child: Text('Manager'),
                                               ),
@@ -433,6 +568,11 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                                                 value: 'boss',
                                                 child: Text('Boss'),
                                               ),
+                                              DropdownMenuItem(
+                                                value: 'courier',
+                                                child: Text('Courier/Delivery'),
+                                              ),
+
                                             ],
                                             onChanged: (newRole) {
                                               if (newRole != null && newRole != user.role) {
@@ -477,9 +617,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
       floatingActionButton: canManage
           ? FloatingActionButton.extended(
-              onPressed: _showCreateUserDialog,
+              onPressed: _showCreateWorkerDialog,
               icon: const Icon(Icons.add),
-              label: const Text('Create User'),
+              label: const Text('Create Worker'),
             )
           : null,
     );

@@ -550,5 +550,81 @@ class OrderRepositoryImpl implements OrderRepository {
   Future<Either<Failure, int>> getProductionCountForMonth(DateTime month) async {
     return await _supabaseDatasource.getProductionCountForMonth(month);
   }
+
+  // Yangi qo'shilayotgan metodlar
+
+  @override
+  Future<Either<Failure, bool>> softDeleteOrder(String orderId, {String? reason}) async {
+    try {
+      final result = await _supabaseDatasource.softDeleteOrder(orderId, reason: reason);
+      return result.fold(
+        (failure) => Left(failure),
+        (success) async {
+          // Cache'dan ham o'chirish
+          if (success) {
+            await _cache.deleteOrder(orderId);
+          }
+          return Right(success);
+        },
+      );
+    } catch (e) {
+      return Left(ServerFailure('Soft delete failed: $e'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, bool>> restoreOrder(String orderId) async {
+    try {
+      final result = await _supabaseDatasource.restoreOrder(orderId);
+      return result.fold(
+        (failure) => Left(failure),
+        (success) async {
+          // Agar muvaffaqiyatli bo'lsa, cache'ga qayta qo'shish
+          if (success) {
+            final orderResult = await getOrderById(orderId);
+            await orderResult.fold(
+              (failure) async {},
+              (order) async {
+                if (order != null) {
+                  await _cache.saveOrder(order);
+                }
+              },
+            );
+          }
+          return Right(success);
+        },
+      );
+    } catch (e) {
+      return Left(ServerFailure('Restore failed: $e'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, bool>> permanentlyDeleteOrder(String orderId) async {
+    try {
+      final result = await _supabaseDatasource.permanentlyDeleteOrder(orderId);
+      return result.fold(
+        (failure) => Left(failure),
+        (success) async {
+          // Cache'dan ham o'chirish
+          if (success) {
+            await _cache.deleteOrder(orderId);
+          }
+          return Right(success);
+        },
+      );
+    } catch (e) {
+      return Left(ServerFailure('Permanent delete failed: $e'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<Order>>> getDeletedOrders() async {
+    try {
+      return await _supabaseDatasource.getDeletedOrders();
+    } catch (e) {
+      return Left(ServerFailure('Failed to get deleted orders: $e'));
+    }
+  }
 }
 

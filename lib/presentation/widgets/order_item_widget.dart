@@ -11,6 +11,9 @@ import '../../data/models/department_model.dart';
 import '../../data/models/product_model.dart';
 import '../../data/services/product_service.dart';
 import '../../data/services/part_service.dart';
+import '../../data/services/order_service.dart'; // OrderService import
+import '../../core/di/service_locator.dart';
+import '../../core/services/auth_state_service.dart'; // AuthStateService import
 import '../widgets/status_badge_widget.dart';
 import '../widgets/animated_list_item.dart';
 import '../widgets/order_parts_list_widget.dart';
@@ -23,6 +26,12 @@ class OrderItemWidget extends StatefulWidget {
   final VoidCallback? onEdit; // Nullable - for pending orders
   final VoidCallback? onDelete; // Nullable - permission-based
   final bool isCompleting; // OPTIMIZATION: Loading state
+  // New parameters for take away functionality
+  final VoidCallback? onTakeAwayToggle;
+  final bool isTakeAwaySelected;
+  // New parameters for courier assignment functionality
+  final VoidCallback? onCourierAssign;
+  final bool isCourierMode; // Flag to enable courier assignment mode
 
   const OrderItemWidget({
     super.key,
@@ -32,6 +41,10 @@ class OrderItemWidget extends StatefulWidget {
     this.onEdit,
     this.onDelete,
     this.isCompleting = false, // Default: not loading
+    this.onTakeAwayToggle,
+    this.isTakeAwaySelected = false,
+    this.onCourierAssign,
+    this.isCourierMode = false,
   });
 
   @override
@@ -86,7 +99,50 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    StatusBadgeWidget(status: widget.order.status),
+                    // Show checkbox if take away functionality is enabled
+                    if (widget.onTakeAwayToggle != null)
+                      Checkbox(
+                        value: widget.isTakeAwaySelected,
+                        onChanged: (_) => widget.onTakeAwayToggle?.call(),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )
+                    else if (widget.isCourierMode) // Show courier assignment button
+                      ElevatedButton.icon(
+                        onPressed: widget.onCourierAssign,
+                        icon: const Icon(Icons.delivery_dining, size: 16),
+                        label: const Text('Assign Courier'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                      )
+                    else
+                      // Show status with completion info
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          StatusBadgeWidget(status: widget.order.status),
+                          const SizedBox(height: 4),
+                          // Show completion info: completed/total (percentage)
+                          Text(
+                            '${widget.order.completedQuantity}/${widget.order.quantity}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${((widget.order.completedQuantity / widget.order.quantity) * 100).round()}%',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: _getPercentageColor((widget.order.completedQuantity / widget.order.quantity) * 100),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -112,6 +168,55 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                   ),
                 const SizedBox(height: 8),
                 
+                // Worker assignment (agar mavjud bo'lsa)
+                if (widget.order.workerId != null && widget.order.workerId!.isNotEmpty) ...[
+                  FutureBuilder<String?>(
+                    future: _getWorkerName(widget.order.workerId!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Row(
+                          children: [
+                            Icon(Icons.person, size: 16, color: Colors.grey),
+                            SizedBox(width: 4),
+                            Text('Loading worker...', 
+                              style: TextStyle(fontSize: 14, color: Colors.grey)),
+                          ],
+                        );
+                      }
+                      
+                      final workerName = snapshot.data ?? 'Unknown Worker';
+                      
+                      return Row(
+                        children: [
+                          Icon(
+                            Icons.engineering,
+                            size: 16,
+                            color: Colors.blue[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Worker: ',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            workerName,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.blue[800],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                
                 // Quantity va Sold To bir qatorda
                 Wrap(
                   spacing: 8,
@@ -136,6 +241,50 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                         ),
                       ],
                     ),
+                    // Completed quantity (agar qisman completed bo'lsa)
+                    if (widget.order.status == 'partially_completed' || widget.order.status == 'completed') ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 16,
+                            color: Colors.green[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Completed: ${widget.order.completedQuantity}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.green[800],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    // Remaining quantity (agar qisman completed bo'lsa)
+                    if (widget.order.status == 'partially_completed') ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.hourglass_empty,
+                            size: 16,
+                            color: Colors.orange[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Remaining: ${widget.order.quantity - widget.order.completedQuantity}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     // Sold To (chiroyli badge formatida - har doim ko'rsatiladi)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -198,7 +347,7 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                 ),
                 const SizedBox(height: 8),
                 
-                // Created date
+                // Created date va Completed date (agar mavjud bo'lsa)
                 Row(
                   children: [
                     Icon(
@@ -216,7 +365,68 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                     ),
                   ],
                 ),
-                
+                if (widget.order.startedAt != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.play_arrow,
+                        size: 16,
+                        color: Colors.blue[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Started: ${widget.order.startedAt!.toString().substring(0, 16)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (widget.order.completedAt != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 16,
+                        color: Colors.green[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Completed: ${widget.order.completedAt!.toString().substring(0, 16)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (widget.order.durationHours != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.timer,
+                        size: 16,
+                        color: Colors.orange[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Duration: ${widget.order.durationHours!.toStringAsFixed(1)} hours',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+
                 // FIX: Barcha orderlar uchun parts ko'rsatish (ixcham - icon bilan yashirib turish)
                 // Completed va Pending orderlar uchun ham
                 ...[
@@ -278,59 +488,139 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                 
                 const SizedBox(height: 12),
                 
-                // Action buttons (only show if permissions allow)
-                if ((widget.order.status == 'pending' && (widget.onComplete != null || widget.onEdit != null)) || widget.onDelete != null)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      // Edit button (only for pending orders)
-                      if (widget.order.status == 'pending' && widget.onEdit != null)
-                        TextButton.icon(
-                          onPressed: widget.onEdit,
-                          icon: const Icon(Icons.edit, size: 18),
-                          label: Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.blue,
-                          ),
+                // Action buttons with proper permissions
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Edit button (only for pending orders and managers/boss)
+                    if (widget.order.status == 'pending' && 
+                        widget.onEdit != null &&
+                        _hasEditPermission()) ...[
+                      TextButton.icon(
+                        onPressed: widget.onEdit,
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.blue,
                         ),
-                      if (widget.order.status == 'pending' && widget.onEdit != null && widget.onComplete != null)
-                        const SizedBox(width: 8),
-                      // Complete button (only for pending orders and if permission granted)
-                      if (widget.order.status == 'pending' && widget.onComplete != null)
-                        TextButton.icon(
-                          onPressed: widget.isCompleting ? null : widget.onComplete, // Disable while loading
-                          icon: widget.isCompleting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-                                  ),
-                                )
-                              : const Icon(Icons.check_circle, size: 18),
-                          label: Text(AppLocalizations.of(context)?.translate('complete') ?? 'Complete'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.green,
-                          ),
-                        ),
-                      if ((widget.order.status == 'pending' && (widget.onComplete != null || widget.onEdit != null)) && widget.onDelete != null)
-                        const SizedBox(width: 8),
-                      // Delete button (only if permission granted)
-                      if (widget.onDelete != null)
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: widget.onDelete,
-                          tooltip: AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
-                        ),
+                      ),
+                      const SizedBox(width: 8),
                     ],
-                  ),
+                    
+                    // Start button (for pending orders - assign worker and start)
+                    if (widget.order.status == 'pending' && 
+                        widget.onComplete != null &&
+                        _hasStartPermission()) ...[
+                      TextButton.icon(
+                        onPressed: () => _showStartOrderDialog(context),
+                        icon: const Icon(Icons.play_arrow, size: 18),
+                        label: const Text('Start'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    
+                    // Partial complete button (for in_progress/partially_completed)
+                    if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
+                        widget.onComplete != null &&
+                        _hasCompletePermission()) ...[
+                      TextButton.icon(
+                        onPressed: () => _showPartialCompleteDialog(context),
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: const Text('Partially Complete'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    
+                    // Complete button (only for pending/in_progress orders and if permission granted)
+                    if ((widget.order.status == 'pending' || widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
+                        widget.onComplete != null &&
+                        _hasCompletePermission()) ...[
+                      TextButton.icon(
+                        onPressed: widget.isCompleting ? null : widget.onComplete, // Disable while loading
+                        icon: widget.isCompleting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                                ),
+                              )
+                            : const Icon(Icons.check_circle, size: 18),
+                        label: Text(AppLocalizations.of(context)?.translate('complete') ?? 'Complete'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    
+                    // Complete 1 item button (for in_progress/partially_completed orders)
+                    if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
+                        widget.onComplete != null &&
+                        _hasCompletePermission() &&
+                        widget.order.quantity > 1 &&
+                        widget.order.completedQuantity < widget.order.quantity) ...[
+                      TextButton.icon(
+                        onPressed: () => _completeOneItem(context),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('+1'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    
+                    // Delete button (permission based - managers can soft delete, boss can permanently delete)
+                    if (_hasDeletePermission()) ...[
+                      IconButton(
+                        icon: Icon(
+                          _isBoss() ? Icons.delete_forever : Icons.delete,
+                          color: _isBoss() ? Colors.red.shade800 : Colors.red.shade600,
+                        ),
+                        onPressed: () => _showDeleteDialog(context),
+                        tooltip: _isBoss() 
+                            ? AppLocalizations.of(context)?.translate('permanentDeleteOrder') ?? 'Permanently Delete Order'
+                            : AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Worker name olish
+  Future<String?> _getWorkerName(String workerId) async {
+    try {
+      // UserRepository orqali worker name olish
+      final userRepository = ServiceLocator.instance.userRepository;
+      final result = await userRepository.getUserById(workerId);
+      
+      return result.fold(
+        (failure) {
+          debugPrint('❌ Failed to get worker name: ${failure.message}');
+          return 'Unknown Worker';
+        },
+        (user) {
+          return user?.name ?? 'Unknown Worker';
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error getting worker name: $e');
+      return 'Unknown Worker';
+    }
   }
 
   /// Parts list'ni ko'rsatish (chiroyli badge'lar bilan)
@@ -384,5 +674,286 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
       partService: partService,
     );
   }
+
+  /// Get color based on completion percentage
+  Color _getPercentageColor(double percentage) {
+    if (percentage >= 100) {
+      return Colors.green[700]!;
+    } else if (percentage >= 50) {
+      return Colors.orange[700]!;
+    } else {
+      return Colors.grey[600]!;
+    }
+  }
+
+  /// Check if current user has edit permission
+  bool _hasEditPermission() {
+    final currentUser = AuthStateService().currentUser;
+    // Faqat Boss va Manager edit qila oladi
+    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
+  }
+
+  /// Check if current user has start permission (assign worker)
+  bool _hasStartPermission() {
+    final currentUser = AuthStateService().currentUser;
+    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
+  }
+
+  /// Check if current user has complete permission
+  bool _hasCompletePermission() {
+    final currentUser = AuthStateService().currentUser;
+    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
+  }
+
+  /// Check if current user has delete permission
+  bool _hasDeletePermission() {
+    final currentUser = AuthStateService().currentUser;
+    // Managers can soft delete, Boss can do everything
+    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
+  }
+
+  /// Check if current user is boss
+  bool _isBoss() {
+    final currentUser = AuthStateService().currentUser;
+    return currentUser != null && currentUser.isBoss;
+  }
+
+  /// Show start order dialog (assign worker)
+  void _showStartOrderDialog(BuildContext context) {
+    // This would open a dialog to assign worker and start the order
+    // Implementation depends on your needs
+    debugPrint('Start order dialog would be shown here');
+  }
+
+  /// Show partial completion dialog
+  void _showPartialCompleteDialog(BuildContext context) {
+    // This would open a dialog to enter how many items to complete
+    // Implementation depends on your needs
+    debugPrint('Partial complete dialog would be shown here');
+  }
+
+  /// Complete one item of the order
+  Future<void> _completeOneItem(BuildContext context) async {
+    final orderService = OrderService();
+    final newCompletedQuantity = widget.order.completedQuantity + 1;
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Complete One Item'),
+        content: Text(
+          'Are you sure you want to complete 1 item of ${widget.order.productName}?\n'
+          'Completed: ${widget.order.completedQuantity + 1}/${widget.order.quantity}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Complete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+      
+      bool success;
+      if (widget.order.status == 'partially_completed' || widget.order.completedQuantity > 0) {
+        // Add to existing partial completion
+        success = await orderService.addPartialCompletion(widget.order.id, 1);
+      } else {
+        // Start with 1 completed
+        success = await orderService.partiallyCompleteOrder(widget.order.id, 1);
+      }
+      
+      if (context.mounted) {
+        Navigator.pop(context); // Close loading dialog
+        
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('1 item completed for ${widget.order.productName}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to complete item'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Show delete confirmation dialog with proper permissions
+  Future<void> _showDeleteDialog(BuildContext context) async {
+    final isBoss = _isBoss();
+    final orderService = OrderService();
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              isBoss ? Icons.delete_forever : Icons.delete,
+              color: isBoss ? Colors.red.shade800 : Colors.red.shade600,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isBoss 
+                  ? AppLocalizations.of(context)?.translate('permanentDeleteOrder') ?? 'Permanently Delete Order'
+                  : AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${AppLocalizations.of(context)?.translate('deleteOrderConfirm') ?? 'Are you sure you want to delete order for'} ${widget.order.productName}?',
+            ),
+            const SizedBox(height: 12),
+            if (isBoss) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning, size: 16, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This will permanently delete the order from the database. This action cannot be undone.',
+                        style: TextStyle(fontSize: 12, color: Colors.red.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This will mark the order as deleted. Only Boss can permanently delete orders.',
+                        style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // Reason input for deletion
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Reason for deletion (optional)',
+                border: const OutlineInputBorder(),
+                helperText: 'Please provide a reason for deleting this order',
+              ),
+              maxLines: 2,
+              onChanged: (value) {
+                // Store reason for use in deletion
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: isBoss ? Colors.red.shade800 : Colors.red.shade600),
+            child: Text(
+              isBoss 
+                  ? AppLocalizations.of(context)?.translate('permanentDelete') ?? 'Permanently Delete'
+                  : AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+      
+      bool success;
+      if (isBoss) {
+        // Boss can permanently delete
+        success = await orderService.permanentlyDeleteOrder(widget.order.id);
+      } else {
+        // Managers do soft delete
+        success = await orderService.softDeleteOrder(widget.order.id);
+      }
+      
+      if (context.mounted) {
+        Navigator.pop(context); // Close loading dialog
+        
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isBoss 
+                    ? 'Order permanently deleted' 
+                    : 'Order deleted successfully',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isBoss 
+                    ? 'Failed to permanently delete order' 
+                    : 'Failed to delete order',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
 }
 

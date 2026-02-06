@@ -16,6 +16,8 @@ import '../../data/services/language_service.dart';
 import '../../main.dart';
 import '../pages/home_page.dart';
 import 'auth/login_page.dart';
+import 'admin_panel_page.dart';
+import 'analytics_page.dart';
 import '../../core/services/auth_state_service.dart';
 import '../../core/services/error_handler_service.dart';
 import '../../infrastructure/datasources/supabase_user_datasource.dart';
@@ -410,6 +412,27 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                 if (_currentUser != null) const SizedBox(height: 16),
+                // Admin Panel Section (only for managers and boss)
+                if (_currentUser != null && (_currentUser!.isManager || _currentUser!.isBoss)) ...[
+                  Card(
+                    elevation: 2,
+                    child: ListTile(
+                      leading: const Icon(Icons.admin_panel_settings, color: Colors.blue),
+                      title: const Text('Admin Panel'),
+                      subtitle: const Text('Manage users and roles'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AdminPanelPage(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 // Language Section
                 Card(
                   elevation: 2,
