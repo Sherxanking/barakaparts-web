@@ -5,9 +5,11 @@
 import 'package:flutter/foundation.dart';
 import '../models/product_model.dart' as data;
 import 'hive_box_service.dart';
+import 'department_service.dart';
 import '../../domain/entities/product.dart' as domain;
 import '../../domain/entities/department.dart' as domainDept;
 import '../../core/di/service_locator.dart';
+import '../../core/services/auth_state_service.dart';
 import '../../core/utils/either.dart';
 
 class ProductService {
@@ -57,66 +59,115 @@ class ProductService {
     }
   }
 
+  /// Validate UUID format
+  bool _isValidUuid(String uuid) {
+    final uuidRegex = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+    return uuidRegex.hasMatch(uuid.toLowerCase());
+  }
+
   /// Product qo'shish
   /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
   /// FIX: Department mavjudligini tekshirish
   /// FIX: Duplicate name validation (case-insensitive, trimmed)
+  /// FIX: Aniq xatolik xabarlari
   Future<bool> addProduct(data.Product product) async {
     try {
+      debugPrint('🔄 Starting product creation process...');
+      debugPrint('   Product name: ${product.name}');
+      debugPrint('   Department ID: ${product.departmentId}');
+      debugPrint('   Parts count: ${product.parts.length}');
+      
       // 0. Local validation: Check for duplicate name
       if (_hasDuplicateName(product.name)) {
         debugPrint('❌ Duplicate product name detected: ${product.name}');
         return false; // Will be handled by UI with proper error message
       }
       
-      // FIX: Department Supabase'da mavjudligini tekshirish
-      // Eslatma: Department repository hozircha ServiceLocator'da yo'q
-      // Shuning uchun faqat xatolik xabarini yaxshilaymiz
-      try {
-        final department = _boxService.departmentsBox.values.firstWhere(
-          (dept) => dept.id == product.departmentId,
-        );
-        debugPrint('✅ Department found in Hive: ${department.name}');
-      } catch (e) {
-        debugPrint('⚠️ Department not found in Hive: ${product.departmentId}');
-        // Department topilmadi, lekin davom etamiz
+      // 1. Validate parts format
+      if (product.parts.isEmpty) {
+        debugPrint('❌ No parts selected for product');
+        return false;
       }
       
-      // 1. Supabase'ga yozish (realtime sync uchun)
+      // Check if all part IDs are valid UUIDs
+      for (final partId in product.parts.keys) {
+        if (!_isValidUuid(partId)) {
+          debugPrint('❌ Invalid part ID format: $partId');
+          return false;
+        }
+      }
+      
+      // 2. Department validation
+      final departmentService = DepartmentService();
+      final department = departmentService.getDepartmentById(product.departmentId);
+      if (department == null) {
+        debugPrint('❌ Department not found in local cache: ${product.departmentId}');
+        return false;
+      }
+      debugPrint('✅ Department validated: ${department.name}');
+      
+      // 3. Check if user has permission to create products
+      final currentUser = AuthStateService().currentUser;
+      if (currentUser == null || (!currentUser.isManager && !currentUser.isBoss)) {
+        debugPrint('❌ User does not have permission to create products');
+        debugPrint('   Current user role: ${currentUser?.role ?? "null"}');
+        return false;
+      }
+      debugPrint('✅ User has permission to create products');
+      
+      // 4. Supabase'ga yozish (realtime sync uchun)
       final domainProduct = domain.Product(
         id: product.id,
         name: product.name,
         departmentId: product.departmentId,
         partsRequired: product.parts,
         createdAt: DateTime.now(),
+        createdBy: currentUser.id,
       );
       
+      debugPrint('🔄 Sending product to Supabase...');
       final result = await _productRepository.createProduct(domainProduct);
       
       return result.fold(
         (failure) {
           debugPrint('❌ Failed to create product in Supabase: ${failure.message}');
-          // FIX: Foreign key constraint xatosi bo'lsa, aniqroq xabar
+          debugPrint('   Failure type: ${failure.runtimeType}');
+          
+          // Provide specific error messages
           if (failure.message.contains('foreign key constraint') || 
               failure.message.contains('departments')) {
-            debugPrint('❌ Department does not exist in Supabase. Please sync departments first.');
+            debugPrint('❌ Foreign key constraint: Department does not exist in Supabase');
+          } else if (failure.message.contains('permission') || 
+                     failure.message.contains('policy')) {
+            debugPrint('❌ Permission denied: User lacks required role (manager/boss)');
+          } else if (failure.message.contains('duplicate') || 
+                     failure.message.contains('unique')) {
+            debugPrint('❌ Duplicate product name detected by database');
+          } else if (failure.message.contains('network') || 
+                     failure.message.contains('connection')) {
+            debugPrint('❌ Network error: Check internet connection');
           }
+          
           // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
           try {
             _boxService.productsBox.add(product);
+            debugPrint('✅ Product saved to local cache (offline mode)');
             return true; // Hive'ga yozildi, lekin sync yo'q
           } catch (e) {
+            debugPrint('❌ Failed to save product to local cache: $e');
             return false;
           }
         },
         (createdProduct) {
           // Supabase success already updates productsBox via repository.
-          debugPrint('✅ Product created in Supabase');
+          debugPrint('✅ Product created successfully in Supabase');
+          debugPrint('   Product ID: ${createdProduct.id}');
           return true;
         },
       );
-    } catch (e) {
-      debugPrint('❌ Error in addProduct: $e');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Unexpected error in addProduct: $e');
+      debugPrint('   Stack trace: $stackTrace');
       return false;
     }
   }

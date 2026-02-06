@@ -88,14 +88,23 @@ class _ProductsPageState extends State<ProductsPage> {
   }
 
   /// Yangi mahsulot qo'shish
+  /// FIX: Batafsil debug log
   Future<void> _addProduct() async {
     if (_isSavingProduct) return;
     _isSavingProduct = true;
+    
+    debugPrint('🔄 Starting product creation flow...');
+    debugPrint('   Product name: ${_nameController.text.trim()}');
+    debugPrint('   Department ID: $selectedDepartmentId');
+    debugPrint('   Parts count: ${selectedParts.length}');
+    
     if (mounted) {
       setState(() {});
     }
 
+    // Validatsiya
     if (_nameController.text.trim().isEmpty) {
+      debugPrint('❌ Product name is empty');
       _showSnackBar('Please enter a product name', Colors.red);
       _isSavingProduct = false;
       if (mounted) {
@@ -105,6 +114,7 @@ class _ProductsPageState extends State<ProductsPage> {
     }
 
     if (selectedDepartmentId == null) {
+      debugPrint('❌ No department selected');
       _showSnackBar('Please select a department', Colors.red);
       _isSavingProduct = false;
       if (mounted) {
@@ -114,12 +124,26 @@ class _ProductsPageState extends State<ProductsPage> {
     }
 
     if (selectedParts.isEmpty) {
+      debugPrint('❌ No parts selected');
       _showSnackBar('Please select at least one part', Colors.red);
       _isSavingProduct = false;
       if (mounted) {
         setState(() {});
       }
       return;
+    }
+    
+    // Validate part IDs
+    for (final partId in selectedParts.keys) {
+      if (!_isValidUuid(partId)) {
+        debugPrint('❌ Invalid part ID: $partId');
+        _showSnackBar('Invalid part selected. Please try again.', Colors.red);
+        _isSavingProduct = false;
+        if (mounted) {
+          setState(() {});
+        }
+        return;
+      }
     }
 
     try {
@@ -130,10 +154,14 @@ class _ProductsPageState extends State<ProductsPage> {
         parts: Map.from(selectedParts),
       );
 
+      debugPrint('✅ Validation passed, creating product...');
+      
       // FIX: Service endi bool qaytaradi - muvaffaqiyatni tekshirish
       final success = await _productService.addProduct(product);
+      
       if (mounted) {
         if (success) {
+          debugPrint('✅ Product created successfully');
           // Department productIds ni yangilash
           await _departmentService.assignProductToDepartment(
             selectedDepartmentId!,
@@ -148,8 +176,15 @@ class _ProductsPageState extends State<ProductsPage> {
           _showSnackBar('Product added successfully', Colors.green);
           Navigator.pop(context);
         } else {
+          debugPrint('❌ Failed to create product');
           _showSnackBar('Failed to add product. Please try again.', Colors.red);
         }
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ Unexpected error in _addProduct: $e');
+      debugPrint('   Stack trace: $stackTrace');
+      if (mounted) {
+        _showSnackBar('Unexpected error occurred. Please try again.', Colors.red);
       }
     } finally {
       if (mounted) {
@@ -158,6 +193,12 @@ class _ProductsPageState extends State<ProductsPage> {
         });
       }
     }
+  }
+  
+  /// Validate UUID format
+  bool _isValidUuid(String uuid) {
+    final uuidRegex = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+    return uuidRegex.hasMatch(uuid.toLowerCase());
   }
 
   /// Mahsulotni o'chirish

@@ -83,13 +83,23 @@ class SupabaseProductDatasource {
   
   Future<Either<Failure, Product>> createProduct(Product product) async {
     try {
-      final json = _mapToJson(product);
       debugPrint('🔄 Creating product in Supabase:');
       debugPrint('   ID: ${product.id}');
       debugPrint('   Name: ${product.name}');
       debugPrint('   Department ID: ${product.departmentId}');
       debugPrint('   Parts Required: ${product.partsRequired}');
-      debugPrint('   JSON: $json');
+      debugPrint('   Created by: ${product.createdBy}');
+      
+      final json = _mapToJson(product);
+      debugPrint('   JSON payload: $json');
+      
+      // Check user authentication
+      final currentUserId = _client.currentUserId;
+      if (currentUserId == null) {
+        debugPrint('❌ No authenticated user');
+        return Left(AuthFailure('You must be logged in to create products'));
+      }
+      debugPrint('   Current user ID: $currentUserId');
       
       final response = await _client.client
           .from(_tableName)
@@ -98,26 +108,37 @@ class SupabaseProductDatasource {
           .single();
       
       debugPrint('✅ Product created successfully in Supabase');
+      debugPrint('   Response ID: ${response['id']}');
       return Right(_mapFromJson(response));
     } catch (e, stackTrace) {
       debugPrint('❌ Failed to create product in Supabase: $e');
       debugPrint('   Stack trace: $stackTrace');
-      final errorStr = e.toString();
+      final errorStr = e.toString().toLowerCase();
       
       // Provide specific error messages
-      if (errorStr.contains('null value') || errorStr.contains('NOT NULL')) {
+      if (errorStr.contains('null value') || errorStr.contains('not null')) {
+        debugPrint('❌ Missing required field');
         return Left(ValidationFailure('Missing required field. Please check all inputs.'));
       } else if (errorStr.contains('permission') || errorStr.contains('policy')) {
-        return Left(PermissionFailure('You do not have permission to create products.'));
+        debugPrint('❌ Permission denied');
+        return Left(PermissionFailure('You do not have permission to create products. Required role: manager or boss.'));
+      } else if (errorStr.contains('foreign key') || errorStr.contains('department')) {
+        debugPrint('❌ Foreign key constraint - department not found');
+        return Left(ValidationFailure('Department does not exist. Please refresh departments and try again.'));
       } else if (errorStr.contains('network') || errorStr.contains('connection')) {
+        debugPrint('❌ Network error');
         return Left(ServerFailure('Network error. Please check your internet connection.'));
       } else if (errorStr.contains('duplicate key') || 
                  errorStr.contains('unique constraint') || 
                  errorStr.contains('idx_products_name_unique')) {
-        // Duplicate name detected by database
+        debugPrint('❌ Duplicate product name');
         return Left(ValidationFailure('A product with this name already exists. Please use a different name.'));
+      } else if (errorStr.contains('invalid input syntax') || errorStr.contains('uuid')) {
+        debugPrint('❌ Invalid UUID format');
+        return Left(ValidationFailure('Invalid data format. Please check your inputs.'));
       }
       
+      debugPrint('❌ Unknown error type');
       return Left(ServerFailure('Failed to create product: $e'));
     }
   }

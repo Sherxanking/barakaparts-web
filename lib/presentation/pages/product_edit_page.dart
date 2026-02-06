@@ -128,33 +128,59 @@ class _ProductEditPageState extends State<ProductEditPage> {
   /// 
   /// Bu metod mahsulot nomi, bo'limi va qismlarini tekshirib,
   /// barcha o'zgarishlarni Hive'ga saqlaydi.
+  /// FIX: Batafsil debug log va validation
   Future<void> _saveProduct() async {
     final l10n = AppLocalizations.of(context);
     
+    debugPrint('🔄 Starting product update process...');
+    debugPrint('   Product ID: ${widget.product.id}');
+    debugPrint('   Product name: ${_nameController.text.trim()}');
+    debugPrint('   Department ID: $_selectedDepartmentId');
+    debugPrint('   Parts count: ${_productParts.length}');
+    
     // Tekshirish (Validation)
     if (_nameController.text.trim().isEmpty) {
+      debugPrint('❌ Product name is empty');
       _showSnackBar(l10n?.translate('enterProductName') ?? 'Please enter a product name', Colors.red);
       return;
     }
 
     if (_selectedDepartmentId == null) {
+      debugPrint('❌ No department selected');
       _showSnackBar(l10n?.translate('pleaseSelectDepartment') ?? 'Please select a department', Colors.red);
       return;
     }
 
     // FIX: Qismlarni yangilash - 0 qiymatli va o'chirilgan qismlarni olib tashlash
     final availableParts = kIsWeb ? _webParts : _partService.getAllParts();
+    debugPrint('   Available parts: ${availableParts.length}');
+    
     final availablePartIds = availableParts.map((p) => p.id).toSet();
     final cleanedParts = Map<String, int>.from(_productParts)
       ..removeWhere((key, value) => value <= 0 || !availablePartIds.contains(key));
     
+    debugPrint('   Cleaned parts: ${cleanedParts.length}');
+    
     // FIX: Agar qismlar bo'sh bo'lsa, xatolik ko'rsatish
     if (cleanedParts.isEmpty) {
+      debugPrint('❌ No valid parts selected');
       _showSnackBar(
         l10n?.translate('selectAtLeastOnePart') ?? 'Please select at least one part',
         Colors.red,
       );
       return;
+    }
+    
+    // Validate parts format
+    for (final partId in cleanedParts.keys) {
+      if (!_isValidUuid(partId)) {
+        debugPrint('❌ Invalid part ID format: $partId');
+        _showSnackBar(
+          'Invalid part ID format. Please select valid parts.',
+          Colors.red,
+        );
+        return;
+      }
     }
     
     // FIX: Yangi Product yaratish - service mavjud productni topib yangilaydi
@@ -165,8 +191,11 @@ class _ProductEditPageState extends State<ProductEditPage> {
       parts: cleanedParts, // Tozalangan map
     );
     
+    debugPrint('✅ Validation passed, updating product...');
+    
     // Bo'lim o'zgarishini boshqarish
     if (widget.product.departmentId != _selectedDepartmentId) {
+      debugPrint('🔄 Department changed from ${widget.product.departmentId} to $_selectedDepartmentId');
       // Eski bo'limdan olib tashlash
       await _departmentService.removeProductFromDepartment(
         widget.product.departmentId,
@@ -186,6 +215,7 @@ class _ProductEditPageState extends State<ProductEditPage> {
     
     if (mounted) {
       if (success) {
+        debugPrint('✅ Product updated successfully');
         // FIX: UI ni darhol yangilash - navigator pop dan oldin
         setState(() {});
         // FIX: Chrome'da partslarni qayta yuklash
@@ -198,12 +228,19 @@ class _ProductEditPageState extends State<ProductEditPage> {
         );
         Navigator.pop(context, true); // Muvaffaqiyatni bildirish uchun true qaytarish
       } else {
+        debugPrint('❌ Failed to update product');
         _showSnackBar(
           l10n?.translate('productUpdateFailed') ?? 'Failed to update product. Please try again.',
           Colors.red,
         );
       }
     }
+  }
+  
+  /// Validate UUID format
+  bool _isValidUuid(String uuid) {
+    final uuidRegex = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+    return uuidRegex.hasMatch(uuid.toLowerCase());
   }
 
   /// Qismlar tanlash dialogini ko'rsatish
@@ -525,12 +562,53 @@ class _ProductEditPageState extends State<ProductEditPage> {
               valueListenable: _boxService.departmentsListenable,
               builder: (context, Box<Department> deptBox, _) {
                 final departments = deptBox.values.toList();
+                
+                // FIX: Department topilmasa, warning ko'rsatish
+                if (departments.isEmpty) {
+                  return Card(
+                    color: Colors.red.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error, color: Colors.red),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'No departments found. Please refresh or contact admin.',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                
+                // FIX: Tanlangan department mavjudligini tekshirish
+                final selectedDeptExists = _selectedDepartmentId != null && 
+                    departments.any((dept) => dept.id == _selectedDepartmentId);
+                
+                if (_selectedDepartmentId != null && !selectedDeptExists) {
+                  debugPrint('⚠️ Selected department not found: $_selectedDepartmentId');
+                  // Avtomatik ravishda birinchi department'ni tanlash
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() {
+                        _selectedDepartmentId = departments.first.id;
+                      });
+                    }
+                  });
+                }
+                
                 return DropdownButtonFormField<String>(
-                  value: _selectedDepartmentId,
+                  value: selectedDeptExists ? _selectedDepartmentId : departments.first.id,
                   decoration: InputDecoration(
                     labelText: l10n?.translate('selectDepartment') ?? 'Select Department',
                     border: const OutlineInputBorder(),
                     prefixIcon: const Icon(Icons.business),
+                    // Agar department topilmasa, warning border
+                    errorText: !selectedDeptExists && _selectedDepartmentId != null
+                        ? 'Department not found'
+                        : null,
                   ),
                   items: departments.map((dept) {
                     return DropdownMenuItem(
@@ -539,9 +617,11 @@ class _ProductEditPageState extends State<ProductEditPage> {
                     );
                   }).toList(),
                   onChanged: (value) {
-                    setState(() {
-                      _selectedDepartmentId = value;
-                    });
+                    if (value != null) {
+                      setState(() {
+                        _selectedDepartmentId = value;
+                      });
+                    }
                   },
                 );
               },
@@ -587,7 +667,23 @@ class _ProductEditPageState extends State<ProductEditPage> {
                     else
                       ..._productParts.entries.map((entry) {
                         final part = _partService.getPartById(entry.key);
-                        if (part == null) return const SizedBox.shrink();
+                        // FIX: Part topilmasa, xatolik emas, warning ko'rsatish
+                        if (part == null) {
+                          debugPrint('⚠️ Part not found for ID: ${entry.key}');
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            color: Colors.orange.shade50,
+                            child: ListTile(
+                              leading: const Icon(Icons.warning, color: Colors.orange),
+                              title: Text('Unknown Part (${entry.key.substring(0, 8)}...)'),
+                              subtitle: Text('Part ID: ${entry.key}'),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _removePart(entry.key),
+                              ),
+                            ),
+                          );
+                        }
                         
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
