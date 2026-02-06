@@ -4,6 +4,8 @@
 /// Handles parts CRUD operations with real-time sync and proper error handling
 
 import 'dart:async';
+import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -87,9 +89,9 @@ class _PartsPageState extends State<PartsPage> {
     };
     _searchController.addListener(_searchListener);
     
-    // Initial load - after first stream event, hide loading
+    // Reduce initial loading time to prevent UI blocking
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(seconds: 2), () {
+      Future.delayed(const Duration(milliseconds: 500), () { // Reduced from 2 seconds to 500ms
         if (mounted) {
           setState(() {
             _isInitialLoading = false;
@@ -1230,50 +1232,20 @@ class _PartsPageState extends State<PartsPage> {
                       padding: const EdgeInsets.all(16),
                       child: hasImage
                           ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(8),
                               child: hasNetworkImage
                                   ? Image.network(
                                       part.imagePath!,
-                                      fit: BoxFit.contain,
+                                      fit: BoxFit.cover,
                                       errorBuilder: (context, error, stackTrace) {
-                                        return Container(
-                                          width: 300,
-                                          height: 300,
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[200],
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: const Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.broken_image, size: 64, color: Colors.grey),
-                                              SizedBox(height: 8),
-                                              Text('Image not found', style: TextStyle(color: Colors.grey)),
-                                            ],
-                                          ),
-                                        );
+                                        return _buildImagePlaceholder(Colors.grey); // Use grey as default
                                       },
                                     )
                                   : Image.file(
                                       imageFile!,
-                                      fit: BoxFit.contain,
+                                      fit: BoxFit.cover,
                                       errorBuilder: (context, error, stackTrace) {
-                                        return Container(
-                                          width: 300,
-                                          height: 300,
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[200],
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: const Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.broken_image, size: 64, color: Colors.grey),
-                                              SizedBox(height: 8),
-                                              Text('Image not found', style: TextStyle(color: Colors.grey)),
-                                            ],
-                                          ),
-                                        );
+                                        return _buildImagePlaceholder(Colors.grey); // Use grey as default
                                       },
                                     ),
                             )
@@ -1957,6 +1929,22 @@ class _PartsPageState extends State<PartsPage> {
                                                             fit: BoxFit.cover,
                                                             errorBuilder: (context, error, stackTrace) {
                                                               return _buildImagePlaceholder(statusColor);
+                                                            },
+                                                            loadingBuilder: (context, child, loadingProgress) {
+                                                              if (loadingProgress == null) return child;
+                                                              return Container(
+                                                                decoration: BoxDecoration(
+                                                                  color: statusColor.withOpacity(0.1),
+                                                                  borderRadius: BorderRadius.circular(10),
+                                                                ),
+                                                                child: const Center(
+                                                                  child: SizedBox(
+                                                                    width: 24,
+                                                                    height: 24,
+                                                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                                                  ),
+                                                                ),
+                                                              );
                                                             },
                                                           )
                                                         : Image.file(

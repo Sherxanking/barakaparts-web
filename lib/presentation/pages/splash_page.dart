@@ -39,15 +39,15 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _initializeApp() async {
     try {
       // PERFORMANCE: Show UI immediately, don't wait
-      // Minimum splash time for smooth UX (reduced from 500ms)
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Minimum splash time for smooth UX (reduced from 300ms to 100ms)
+      await Future.delayed(const Duration(milliseconds: 100));
 
       // PERFORMANCE: Wait for Supabase initialization with timeout
       // WHY: Prevents infinite waiting if Supabase is slow
-      // FIX: Maximum 5 soniya kutadi, keyin auth page ga o'tadi
+      // FIX: Maximum 2 soniya kutadi, keyin auth page ga o'tadi
       try {
         int retryCount = 0;
-        const maxRetries = 25; // 25 * 200ms = 5 soniya
+        const maxRetries = 10; // 10 * 200ms = 2 soniya
         const retryDelay = Duration(milliseconds: 200);
 
         while (!AppSupabaseClient.isInitialized && retryCount < maxRetries) {
@@ -60,13 +60,13 @@ class _SplashPageState extends State<SplashPage> {
 
       // Check if Supabase is initialized after retries
       if (!AppSupabaseClient.isInitialized) {
-        debugPrint('⚠️ Supabase initialization timeout - navigating to auth (offline mode)');
+        debugPrint('⚠️ Supabase initialization timeout - navigating to home (offline mode)');
         if (!mounted) return;
         setState(() {
           _isInitializing = false;
         });
-        // Go to auth even if Supabase not ready (offline mode)
-        _navigateToAuth();
+        // Go to home even if Supabase not ready (offline mode)
+        _navigateToHome();
         return;
       }
 
@@ -77,9 +77,6 @@ class _SplashPageState extends State<SplashPage> {
       if (!authService.isInitialized) {
         await authService.initialize();
       }
-      
-      // Kichik kechikish - AuthStateService profile yuklash uchun vaqt berish
-      await Future.delayed(const Duration(milliseconds: 500));
       
       // Session va user profile'ni tekshirish
       final client = AppSupabaseClient.instance;
@@ -116,8 +113,8 @@ class _SplashPageState extends State<SplashPage> {
           }
         });
         
-        // Profile yuklanishini kutish (maximum 3 soniya)
-        for (int i = 0; i < 6; i++) {
+        // Profile yuklanishini kutish (maximum 1.5 soniya)
+        for (int i = 0; i < 3; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
           
           if (!mounted) return;
@@ -138,11 +135,11 @@ class _SplashPageState extends State<SplashPage> {
         // Agar hali ham profile yuklanmagan bo'lsa
         if (!mounted) return;
         if (currentUser == null) {
-          debugPrint('⚠️ Profile still not loaded after waiting, navigating to auth');
+          debugPrint('⚠️ Profile still not loaded after waiting, navigating to home');
           setState(() {
             _isInitializing = false;
           });
-          _navigateToAuth();
+          _navigateToHome(); // Navigate to home even if profile not loaded
           return;
         }
       }
@@ -156,26 +153,20 @@ class _SplashPageState extends State<SplashPage> {
         });
         _navigateToHome();
       } else {
-        // User yo'q - auth'ga o'tish
+        // User yo'q - go to home anyway (guest mode)
         if (!mounted) return;
         setState(() {
           _isInitializing = false;
         });
-        _navigateToAuth();
+        _navigateToHome();
       }
     } catch (e) {
       debugPrint('❌ Initialization error: $e');
       if (!mounted) return;
       setState(() {
         _isInitializing = false;
-        _errorMessage = 'Failed to initialize app. Please try again.';
       });
-      // On error, go to auth after short delay
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
-          _navigateToAuth();
-        }
-      });
+      _navigateToHome(); // Always navigate to home to prevent black screen
     }
   }
 

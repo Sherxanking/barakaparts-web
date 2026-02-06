@@ -71,7 +71,8 @@ void main() async {
 
   // Barcha boxlarni ochish (ma'lumotlar bazasi fayllari)
   // Boxlar ochilgunga qadar ularga kirish mumkin emas
-  await Future.wait([
+  // PERFORMANCE: Open boxes in background to prevent UI blocking
+  final boxesFuture = Future.wait([
     Hive.openBox<Department>('departmentsBox'),
     Hive.openBox<PartModel>('partsBox'),
     Hive.openBox<Product>('productsBox'),
@@ -90,6 +91,14 @@ void main() async {
   // Default ma'lumotlarni yuklash (agar boxlar bo'sh bo'lsa)
   // Bu MVP uchun test ma'lumotlari
   _initializeDefaultData(); // Don't await - let it run in background
+
+  // Wait for boxes to open but with timeout to prevent hanging
+  try {
+    await boxesFuture.timeout(const Duration(seconds: 10));
+  } catch (e) {
+    debugPrint('⚠️ Boxes opening timeout: $e');
+    // Continue anyway to prevent app from freezing
+  }
 
   // Global error handling
   _setupErrorHandling();
@@ -137,7 +146,7 @@ Future<void> _initializeServicesInBackground() async {
     // PERFORMANCE: Initialize with timeout to prevent hanging
     try {
       await AppSupabaseClient.initialize().timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 8), // Reduced from 10 to 8 seconds
         onTimeout: () {
           if (kDebugMode) {
             debugPrint('⚠️ Supabase initialization timeout');
@@ -156,9 +165,9 @@ Future<void> _initializeServicesInBackground() async {
       // WHY: App reinstall qilinganda Supabase'dan ma'lumotlarni yuklash kerak
       // FIX: Background'da ishlaydi - appni bloklamaydi
       // IMPORTANT: Timeout qo'shildi - agar uzoq davom etsa, o'tkazib yuboriladi
-      Future.delayed(const Duration(milliseconds: 500)).then((_) {
+      Future.microtask(() { // Changed from delayed to microtask for faster execution
         _syncInitialDataFromSupabase().timeout(
-          const Duration(seconds: 15),
+          const Duration(seconds: 12), // Reduced from 15 to 12 seconds
           onTimeout: () {
             debugPrint('⚠️ Data sync timeout - app offline mode da ishlaydi');
           },

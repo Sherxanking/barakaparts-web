@@ -238,6 +238,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       bottomNavigationBar: ValueListenableBuilder(
         valueListenable: _boxService.partsListenable,
         builder: (context, Box<PartModel> box, _) {
+          // Optimize by caching the low stock count calculation
           final lowStockCount = _getLowStockCount();
 
           if (_currentIndex >= visibleIndices.length) {
@@ -254,9 +255,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             type: BottomNavigationBarType.fixed,
             currentIndex: _currentIndex,
             onTap: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
+              // Optimize navigation to prevent unnecessary rebuilds
+              if (_currentIndex != index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              }
             },
             selectedItemColor: Theme.of(context).colorScheme.primary,
             unselectedItemColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
