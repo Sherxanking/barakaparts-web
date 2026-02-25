@@ -131,7 +131,9 @@ class _PartsPageState extends State<PartsPage> {
   }
 
   /// Filtrlangan va tartiblangan partlarni olish
-  List<Part> _getFilteredParts(List<Part> parts) {
+  List<Part> _getFilteredParts(List<Part> originalParts) {
+    // FIX: Har doim yangi ro'yxat yaratish (Sort paytida "Unsupported operation" xatosini oldini olish uchun)
+    List<Part> parts = List.from(originalParts);
 
     // Search filter
     if (_searchController.text.isNotEmpty) {
@@ -765,394 +767,52 @@ class _PartsPageState extends State<PartsPage> {
       return;
     }
 
-    // Mavjud part'larni olish
     final allPartsResult = await _partRepository.getAllParts();
-    
-    // Tanlangan part'lar va ularning miqdorlari
+    if (allPartsResult.isLeft) {
+      allPartsResult.fold((f) => _showSnackBar('Xatolik: ${f.message}', Colors.red), (_) {});
+      return;
+    }
+
+    final parts = allPartsResult.fold((_) => <Part>[], (r) => r);
     final Map<String, int> selectedParts = {};
     final Map<String, TextEditingController> quantityControllers = {};
     final TextEditingController noteController = TextEditingController();
     String searchQuery = '';
     
-    allPartsResult.fold(
-      (failure) {
-        _showSnackBar('Xatolik: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
-        return;
-      },
-      (parts) {
-        // Barcha part'lar uchun controller yaratish
-        for (var part in parts) {
-          quantityControllers[part.id] = TextEditingController();
-        }
-      },
-    );
+    for (var part in parts) {
+      quantityControllers[part.id] = TextEditingController();
+    }
     
     if (!mounted) return;
     
     await showDialog(
       context: context,
+      barrierDismissible: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          return allPartsResult.fold(
-          (failure) => AlertDialog(
-            title: Text(l10n?.translate('batchAddParts') ?? 'Batch Add Parts'),
-            content: Text(
-              '${l10n?.translate('error') ?? 'Error'}: ${failure.message}',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(l10n?.translate('ok') ?? 'OK'),
-              ),
-            ],
-          ),
-          (parts) {
-            // Filter parts by search query
-            final filteredParts = searchQuery.isEmpty
-                ? parts
-                : parts.where((part) =>
-                    part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
-            
-            return AlertDialog(
-              title: Row(
-                children: [
-                  const Icon(Icons.add_shopping_cart, color: Colors.green),
-                  const SizedBox(width: 8),
-                  Text(l10n?.translate('stockInTitle') ?? 'Kirim Qilish'),
-                ],
-              ),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                        Text(
-                          l10n?.translate('selectPartsAndQuantity') ?? 'Select parts and enter quantity',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                        ),
-                    const SizedBox(height: 16),
-                    // Search bar
-                    TextField(
-                      decoration: InputDecoration(
-                        hintText: l10n?.translate('searchParts') ?? 'Search parts...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          searchQuery = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    // Parts list
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height *
-                            (MediaQuery.of(context).viewInsets.bottom > 0 ? 0.22 : 0.35),
-                      ),
-                      child: filteredParts.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Text(
-                                  l10n?.translate('noPartsMatch') ?? 'No parts match your filters',
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              shrinkWrap: true,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              itemCount: filteredParts.length,
-                              itemBuilder: (context, index) {
-                                final part = filteredParts[index];
-                                final controller = quantityControllers[part.id]!;
-                                final isSelected = selectedParts.containsKey(part.id);
-                                
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(vertical: 4),
-                                  color: isSelected ? Colors.green.shade50 : null,
-                                  child: ListTile(
-                                    title: Text(part.name),
-                                    subtitle: Text('${l10n?.translate('quantity') ?? 'Quantity'}: ${part.quantity}'),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        // Checkbox
-                                        Checkbox(
-                                          value: isSelected,
-                                          onChanged: (value) {
-                                            setDialogState(() {
-                                              if (value == true) {
-                                                selectedParts[part.id] = 1;
-                                                controller.text = '1';
-                                              } else {
-                                                selectedParts.remove(part.id);
-                                                controller.text = '';
-                                              }
-                                            });
-                                          },
-                                        ),
-                                        // Quantity input
-                                        if (isSelected)
-                                          SizedBox(
-                                            width: 80,
-                                            child: TextField(
-                                              controller: controller,
-                                              keyboardType: TextInputType.number,
-                                              textAlign: TextAlign.center,
-                                              decoration: InputDecoration(
-                                                hintText: l10n?.translate('quantity') ?? 'Quantity',
-                                                isDense: true,
-                                                border: const OutlineInputBorder(),
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                              ),
-                                              onChanged: (value) {
-                                                if (value.trim().isEmpty) {
-                                                  // Allow editing without unselecting the part
-                                                  return;
-                                                }
-                                                final qty = int.tryParse(value) ?? 0;
-                                                setDialogState(() {
-                                                  if (qty > 0) {
-                                                    selectedParts[part.id] = qty;
-                                                  } else {
-                                                    // Keep previous value to avoid accidental uncheck
-                                                    final prevQty = selectedParts[part.id] ?? 1;
-                                                    controller.text = prevQty.toString();
-                                                  }
-                                                });
-                                              },
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                    if (selectedParts.isNotEmpty) ...[
-                      const Divider(),
-                      Text(
-                        'Tanlangan: ${selectedParts.length} ta qism',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: noteController,
-                        decoration: InputDecoration(
-                          labelText: l10n?.translate('noteOptional') ?? 'Izoh (ixtiyoriy)',
-                          hintText: l10n?.translate('noteHint') ??
-                              'Masalan: kim olib keldi, qayerdan keldi',
-                          prefixIcon: const Icon(Icons.note_alt),
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        textCapitalization: TextCapitalization.sentences,
-                        maxLines: 2,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text(l10n?.translate('cancel') ?? 'Cancel'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: selectedParts.isEmpty
-                      ? null
-                      : () async {
-                          // Batch add parts
-                          await _batchAddParts(
-                            selectedParts,
-                            note: noteController.text.trim(),
-                          );
-                          if (mounted) {
-                            Navigator.pop(context);
-                          }
-                        },
-                  icon: const Icon(Icons.add),
-                  label: Text('${l10n?.translate('add') ?? 'Add'} (${selectedParts.length})'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            );
-            },
-          );
-        },
-      ),
-    );
-    for (var controller in quantityControllers.values) {
-      controller.dispose();
-    }
-    noteController.dispose();
-  }
-  
-  /// Batch add parts - bir nechta part'larni bir vaqtda qo'shish
-  Future<void> _batchAddParts(
-    Map<String, int> partsToAdd, {
-    String? note,
-  }) async {
-    if (partsToAdd.isEmpty) return;
-    
-    // Loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
-    
-    try {
-      int successCount = 0;
-      int failCount = 0;
-      
-      final l10n = AppLocalizations.of(context);
-      final trimmedNote = (note ?? '').trim();
-      // Har bir part uchun quantity ni oshirish
-      for (var entry in partsToAdd.entries) {
-        final partId = entry.key;
-        final quantityToAdd = entry.value;
-        
-        if (quantityToAdd <= 0) continue;
-        
-        // Part ni olish
-        final partResult = await _partRepository.getPartById(partId);
-        await partResult.fold(
-          (failure) async {
-            failCount++;
-            debugPrint('❌ Failed to get part $partId: ${failure.message}');
-          },
-          (part) async {
-            if (part != null) {
-              // Quantity ni oshirish
-              final updatedPart = part.copyWith(
-                quantity: part.quantity + quantityToAdd,
-                updatedAt: DateTime.now(),
-              );
-              
-              final updateResult = await _partRepository.updatePart(
-                updatedPart,
-                historyAction: 'add',
-                historyNotes: trimmedNote.isEmpty
-                    ? null
-                    : '${l10n?.translate('stockInNote') ?? 'Kirim izohi'}: $trimmedNote (+$quantityToAdd)',
-              );
-              await updateResult.fold(
-                (failure) async {
-                  failCount++;
-                  debugPrint('❌ Failed to update part ${part.name}: ${failure.message}');
-                },
-                (_) async {
-                  successCount++;
-                  debugPrint('✅ Added $quantityToAdd to ${part.name}');
-                },
-              );
-            } else {
-              failCount++;
-            }
-          },
-        );
-      }
-      
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        
-        if (successCount > 0) {
-          _showSnackBar(
-            '$successCount ta qism muvaffaqiyatli qo\'shildi${failCount > 0 ? ", $failCount ta xatolik" : ""}',
-            failCount > 0 ? Colors.orange : Colors.green,
-          );
-        } else {
-          _showSnackBar('Hech qanday qism qo\'shilmadi', Colors.red);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        _showSnackBar('Xatolik: $e', Colors.red);
-      }
-    }
-  }
-
-  /// Batch outflow parts - bir nechta part'larni guruhli chiqim qilish
-  Future<void> _showBatchOutflowDialog() async {
-    final l10n = AppLocalizations.of(context);
-    final currentUser = AuthStateService().currentUser;
-    if (currentUser == null || !currentUser.canEditParts()) {
-      _showSnackBar('Access denied: You cannot adjust parts stock', Colors.red);
-      return;
-    }
-
-    final allPartsResult = await _partRepository.getAllParts();
-    final Map<String, int> selectedParts = {};
-    final Map<String, TextEditingController> quantityControllers = {};
-    final TextEditingController noteController = TextEditingController();
-    String searchQuery = '';
-    String actionType = 'issue'; // 'issue' or 'scrap'
-
-    allPartsResult.fold(
-      (failure) => _showSnackBar('Xatolik: ${failure.message}', Colors.red),
-      (parts) {
-        for (var part in parts) {
-          quantityControllers[part.id] = TextEditingController();
-        }
-      },
-    );
-
-    if (!mounted || allPartsResult.isLeft) return;
-
-    await showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final parts = allPartsResult.fold((_) => [], (r) => r);
           final filteredParts = searchQuery.isEmpty
               ? parts
               : parts.where((part) =>
                   part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
-
+          
           return AlertDialog(
             title: Row(
               children: [
-                const Icon(Icons.outbox_rounded, color: Colors.orange),
+                const Icon(Icons.add_shopping_cart, color: Colors.green),
                 const SizedBox(width: 8),
-                Text(l10n?.translate('batchOutflowTitle') ?? 'Guruhli Chiqim'),
+                Text(l10n?.translate('stockInTitle') ?? 'Kirim Qilish'),
               ],
             ),
             content: SizedBox(
               width: double.maxFinite,
               child: SingleChildScrollView(
+                padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      value: actionType,
-                      decoration: InputDecoration(
-                        labelText: l10n?.translate('reason') ?? 'Sabab',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: [
-                        DropdownMenuItem(value: 'issue', child: Text(l10n?.translate('issued') ?? 'Berib yuborildi')),
-                        DropdownMenuItem(value: 'scrap', child: Text(l10n?.translate('scrap') ?? 'Brak / Yaroqsiz')),
-                      ],
-                      onChanged: (value) => setDialogState(() => actionType = value!),
+                    Text(
+                      l10n?.translate('selectPartsAndQuantity') ?? 'Select parts and enter quantity',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -1181,16 +841,16 @@ class _PartsPageState extends State<PartsPage> {
                                 
                                 return Card(
                                   margin: const EdgeInsets.symmetric(vertical: 4),
-                                  color: isSelected ? Colors.orange.shade50 : null,
+                                  color: isSelected ? Colors.green.shade50 : null,
                                   child: ListTile(
-                                    title: Text(part.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                    subtitle: Text('${l10n?.translate('quantity') ?? 'Stock'}: ${part.quantity}', style: const TextStyle(fontSize: 11)),
+                                    title: Text(part.name),
+                                    subtitle: Text('${l10n?.translate('quantity') ?? 'Stock'}: ${part.quantity}'),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         if (isSelected)
                                           SizedBox(
-                                            width: 70,
+                                            width: 80,
                                             child: TextField(
                                               controller: controller,
                                               keyboardType: TextInputType.number,
@@ -1198,11 +858,7 @@ class _PartsPageState extends State<PartsPage> {
                                               decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
                                               onChanged: (value) {
                                                 final qty = int.tryParse(value) ?? 0;
-                                                if (qty > part.quantity) {
-                                                  _showSnackBar('${part.name}: Omborda yetarli emas!', Colors.red);
-                                                  controller.text = part.quantity.toString();
-                                                  setDialogState(() => selectedParts[part.id] = part.quantity);
-                                                } else if (qty > 0) {
+                                                if (qty > 0) {
                                                   setDialogState(() => selectedParts[part.id] = qty);
                                                 }
                                               },
@@ -1210,12 +866,8 @@ class _PartsPageState extends State<PartsPage> {
                                           ),
                                         Checkbox(
                                           value: isSelected,
-                                          activeColor: Colors.orange,
+                                          activeColor: Colors.green,
                                           onChanged: (value) {
-                                            if (part.quantity <= 0 && value == true) {
-                                              _showSnackBar('Omborda mavjud emas!', Colors.orange);
-                                              return;
-                                            }
                                             setDialogState(() {
                                               if (value == true) {
                                                 selectedParts[part.id] = 1;
@@ -1235,6 +887,14 @@ class _PartsPageState extends State<PartsPage> {
                             ),
                     ),
                     if (selectedParts.isNotEmpty) ...[
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Tanlangan: ${selectedParts.length} ta', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text('Jami: ${selectedParts.values.fold<int>(0, (sum, q) => sum + q)} ta', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                        ],
+                      ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: noteController,
@@ -1252,13 +912,228 @@ class _PartsPageState extends State<PartsPage> {
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n?.translate('cancel') ?? 'Cancel')),
+              ElevatedButton.icon(
+                onPressed: selectedParts.isEmpty ? null : () async {
+                  await _batchAddParts(selectedParts, note: noteController.text.trim());
+                  if (mounted) Navigator.pop(context);
+                },
+                icon: const Icon(Icons.add),
+                label: Text('${l10n?.translate('add') ?? 'Add'} (${selectedParts.length})'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    
+    for (var controller in quantityControllers.values) {
+      controller.dispose();
+    }
+    noteController.dispose();
+  }
+  
+  Future<void> _batchAddParts(Map<String, int> partsToAdd, {String? note}) async {
+    if (partsToAdd.isEmpty) return;
+    showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
+    
+    try {
+      int successCount = 0;
+      final l10n = AppLocalizations.of(context);
+      final trimmedNote = (note ?? '').trim();
+      
+      for (var entry in partsToAdd.entries) {
+        final partResult = await _partRepository.getPartById(entry.key);
+        await partResult.fold(
+          (failure) async => debugPrint('Error: ${failure.message}'),
+          (part) async {
+            if (part != null) {
+              final updatedPart = part.copyWith(quantity: part.quantity + entry.value, updatedAt: DateTime.now());
+              final updateResult = await _partRepository.updatePart(
+                updatedPart,
+                historyAction: 'add',
+                historyNotes: trimmedNote.isEmpty ? null : 'Kirim: +${entry.value}. $trimmedNote',
+              );
+              if (updateResult.isRight) successCount++;
+            }
+          },
+        );
+      }
+      
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar('$successCount ta qism qo\'shildi', successCount > 0 ? Colors.green : Colors.red);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar('Xatolik: $e', Colors.red);
+      }
+    }
+  }
+
+  Future<void> _showBatchOutflowDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final currentUser = AuthStateService().currentUser;
+    if (currentUser == null || !currentUser.canEditParts()) {
+      _showSnackBar('Access denied', Colors.red);
+      return;
+    }
+
+    final allPartsResult = await _partRepository.getAllParts();
+    if (allPartsResult.isLeft) {
+      allPartsResult.fold((f) => _showSnackBar('Xatolik: ${f.message}', Colors.red), (_) {});
+      return;
+    }
+
+    final parts = allPartsResult.fold((_) => <Part>[], (r) => r);
+    final Map<String, int> selectedParts = {};
+    final Map<String, TextEditingController> quantityControllers = {};
+    final TextEditingController noteController = TextEditingController();
+    String searchQuery = '';
+    String actionType = 'issue';
+
+    for (var part in parts) {
+      quantityControllers[part.id] = TextEditingController();
+    }
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final filteredParts = searchQuery.isEmpty
+              ? parts
+              : parts.where((part) =>
+                  part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.outbox_rounded, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(l10n?.translate('batchOutflowTitle') ?? 'Guruhli Chiqim'),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: actionType,
+                      decoration: const InputDecoration(labelText: 'Sabab', border: OutlineInputBorder(), isDense: true),
+                      items: const [
+                        DropdownMenuItem(value: 'issue', child: Text('Berib yuborildi')),
+                        DropdownMenuItem(value: 'scrap', child: Text('Brak / Yaroqsiz')),
+                      ],
+                      onChanged: (v) => setDialogState(() => actionType = v!),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: l10n?.translate('searchParts') ?? 'Search...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (v) => setDialogState(() => searchQuery = v),
+                    ),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.35),
+                      child: filteredParts.isEmpty
+                          ? const Center(child: Text('No parts match'))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filteredParts.length,
+                              itemBuilder: (context, index) {
+                                final part = filteredParts[index];
+                                final controller = quantityControllers[part.id]!;
+                                final isSelected = selectedParts.containsKey(part.id);
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  color: isSelected ? Colors.orange.shade50 : null,
+                                  child: ListTile(
+                                    title: Text(part.name),
+                                    subtitle: Text('Zaxira: ${part.quantity}'),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isSelected)
+                                          SizedBox(
+                                            width: 70,
+                                            child: TextField(
+                                              controller: controller,
+                                              keyboardType: TextInputType.number,
+                                              textAlign: TextAlign.center,
+                                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                                              onChanged: (v) {
+                                                final qty = int.tryParse(v) ?? 0;
+                                                if (qty > part.quantity) {
+                                                  controller.text = part.quantity.toString();
+                                                  setDialogState(() => selectedParts[part.id] = part.quantity);
+                                                } else if (qty > 0) {
+                                                  setDialogState(() => selectedParts[part.id] = qty);
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                        Checkbox(
+                                          value: isSelected,
+                                          activeColor: Colors.orange,
+                                          onChanged: (v) {
+                                            if (part.quantity <= 0 && v == true) return;
+                                            setDialogState(() {
+                                              if (v == true) {
+                                                selectedParts[part.id] = 1;
+                                                controller.text = '1';
+                                              } else {
+                                                selectedParts.remove(part.id);
+                                                controller.text = '';
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    if (selectedParts.isNotEmpty) ...[
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Tanlangan: ${selectedParts.length} ta', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text('Jami: -${selectedParts.values.fold<int>(0, (sum, q) => sum + q)} ta', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: noteController,
+                        decoration: const InputDecoration(labelText: 'Izoh (ixtiyoriy)', border: OutlineInputBorder(), isDense: true),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n?.translate('cancel') ?? 'Cancel')),
               ElevatedButton(
                 onPressed: selectedParts.isEmpty ? null : () async {
                   await _batchOutflowParts(selectedParts, actionType: actionType, note: noteController.text);
                   if (mounted) Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                child: Text('${l10n?.translate('save') ?? 'Save'} (${selectedParts.length})'),
+                child: Text('Saqlash (${selectedParts.length})'),
               ),
             ],
           );
@@ -1275,21 +1150,20 @@ class _PartsPageState extends State<PartsPage> {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
     try {
       int successCount = 0;
-      final l10n = AppLocalizations.of(context);
-      final reasonLabel = actionType == 'scrap' ? 'Brak' : 'Berib yuborildi';
+      final reasonLabel = actionType == 'scrap' ? 'Brak' : 'Chiqim';
+      final trimmedNote = (note ?? '').trim();
 
       for (var entry in partsToOutflow.entries) {
         final partResult = await _partRepository.getPartById(entry.key);
         await partResult.fold(
-          (f) async => debugPrint('❌ Error: ${f.message}'),
+          (f) async => debugPrint('Error: ${f.message}'),
           (part) async {
             if (part != null && part.quantity >= entry.value) {
               final updatedPart = part.copyWith(quantity: part.quantity - entry.value, updatedAt: DateTime.now());
-              final extra = note?.trim().isEmpty ?? true ? '' : '. $note';
               final updateResult = await _partRepository.updatePart(
                 updatedPart,
                 historyAction: 'update',
-                historyNotes: '$reasonLabel: -${entry.value}$extra',
+                historyNotes: '$reasonLabel: -${entry.value}. $trimmedNote',
               );
               if (updateResult.isRight) successCount++;
             }
