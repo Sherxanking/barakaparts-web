@@ -327,11 +327,17 @@ class AuthStateService {
   /// WHY: Centralized sign out that clears all state
   Future<void> signOut() async {
     try {
-      await AppSupabaseClient.instance.client.auth.signOut();
+      // FIX: Only call Supabase signOut if there is an active session
+      if (AppSupabaseClient.instance.client.auth.currentSession != null) {
+        await AppSupabaseClient.instance.client.auth.signOut();
+      }
       _currentUser = null;
       _notifyAuthStateChange(null);
     } catch (e) {
       debugPrint('❌ Sign out error: $e');
+      // Even if Supabase call fails, clear local state
+      _currentUser = null;
+      _notifyAuthStateChange(null);
     }
   }
   

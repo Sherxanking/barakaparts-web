@@ -85,29 +85,33 @@ class SupabaseUserDatasource {
       final userResult = await getUserById(response.user!.id);
       return await userResult.fold(
         (failure) async {
-          debugPrint('⚠️ User profile not found in users table, attempting auto-create...');
-          // Determine role for test accounts
-          final role = _getRoleForTestAccount(email.trim());
-          // Agar users jadvalida topilmasa, avtomatik yaratishga harakat qilamiz
-          return await _autoCreateUser(
-            userId: response.user!.id,
-            email: email.trim(),
-            name: response.user!.userMetadata?['name'] as String? ?? email.split('@')[0],
-            role: role,
-          );
-        },
-        (user) async {
-          if (user == null) {
-            debugPrint('⚠️ User profile is null, attempting auto-create...');
-            // Determine role for test accounts
-            final role = _getRoleForTestAccount(email.trim());
-            // User topilmadi - avtomatik yaratishga harakat qilamiz
+          final testRole = _getRoleForTestAccount(email.trim());
+          if (testRole != null) {
+            debugPrint('⚠️ Test account profile not found, auto-creating with role $testRole...');
             return await _autoCreateUser(
               userId: response.user!.id,
               email: email.trim(),
               name: response.user!.userMetadata?['name'] as String? ?? email.split('@')[0],
-              role: role,
+              role: testRole,
             );
+          }
+          debugPrint('❌ Profile not found and not a test account.');
+          return Left<Failure, domain.User>(AuthFailure('Profilingiz tizimda topilmadi. Iltimos, administratorga murojaat qiling.'));
+        },
+        (user) async {
+          if (user == null) {
+            final testRole = _getRoleForTestAccount(email.trim());
+            if (testRole != null) {
+              debugPrint('⚠️ Test account profile is null, auto-creating with role $testRole...');
+              return await _autoCreateUser(
+                userId: response.user!.id,
+                email: email.trim(),
+                name: response.user!.userMetadata?['name'] as String? ?? email.split('@')[0],
+                role: testRole,
+              );
+            }
+            debugPrint('❌ Profile is null and not a test account.');
+            return Left<Failure, domain.User>(AuthFailure('Profilingiz bo\'sh. Iltimos, administratorga murojaat qiling.'));
           }
           // For test accounts, ensure role is correct (in case it was changed)
           final testRole = _getRoleForTestAccount(email.trim());
@@ -199,29 +203,39 @@ class SupabaseUserDatasource {
       
       return await userResult.fold(
         (failure) async {
-          // Profile fetch failed - try to auto-create
-          debugPrint('⚠️ Profile not found, attempting auto-create...');
-          return await _autoCreateUser(
-            userId: authUser.id,
-            email: authUser.email ?? '',
-            name: authUser.userMetadata?['name'] as String? ?? 
-                  authUser.userMetadata?['full_name'] as String? ??
-                  authUser.email?.split('@')[0] ?? 'User',
-            role: null, // Will be determined by _autoCreateUser
-          );
-        },
-        (user) async {
-          if (user == null) {
-            // Profile is null - try to auto-create
-            debugPrint('⚠️ Profile is null, attempting auto-create...');
+          // Profile fetch failed - try to auto-create ONLY for test accounts
+          final testRole = _getRoleForTestAccount(authUser.email ?? '');
+          if (testRole != null) {
+            debugPrint('⚠️ Test account profile not found, auto-creating with role $testRole...');
             return await _autoCreateUser(
               userId: authUser.id,
               email: authUser.email ?? '',
               name: authUser.userMetadata?['name'] as String? ?? 
                     authUser.userMetadata?['full_name'] as String? ??
                     authUser.email?.split('@')[0] ?? 'User',
-              role: null,
+              role: testRole,
             );
+          }
+          
+          debugPrint('❌ Profile not found and not a test account.');
+          return Left<Failure, domain.User?>(AuthFailure('Profilingiz topilmadi. Iltimos, administratorga murojaat qiling.'));
+        },
+        (user) async {
+          if (user == null) {
+            // Profile is null - try to auto-create ONLY for test accounts
+            final testRole = _getRoleForTestAccount(authUser.email ?? '');
+            if (testRole != null) {
+              debugPrint('⚠️ Test account profile is null, auto-creating with role $testRole...');
+              return await _autoCreateUser(
+                userId: authUser.id,
+                email: authUser.email ?? '',
+                name: authUser.userMetadata?['name'] as String? ?? 
+                      authUser.userMetadata?['full_name'] as String? ??
+                      authUser.email?.split('@')[0] ?? 'User',
+                role: testRole,
+              );
+            }
+            return Left<Failure, domain.User?>(AuthFailure('Profilingiz bo\'sh. Iltimos, qaytadan kiring.'));
           }
           return Right<Failure, domain.User?>(user);
         },

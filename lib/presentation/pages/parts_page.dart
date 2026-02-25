@@ -1090,6 +1090,224 @@ class _PartsPageState extends State<PartsPage> {
     }
   }
 
+  /// Batch outflow parts - bir nechta part'larni guruhli chiqim qilish
+  Future<void> _showBatchOutflowDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final currentUser = AuthStateService().currentUser;
+    if (currentUser == null || !currentUser.canEditParts()) {
+      _showSnackBar('Access denied: You cannot adjust parts stock', Colors.red);
+      return;
+    }
+
+    final allPartsResult = await _partRepository.getAllParts();
+    final Map<String, int> selectedParts = {};
+    final Map<String, TextEditingController> quantityControllers = {};
+    final TextEditingController noteController = TextEditingController();
+    String searchQuery = '';
+    String actionType = 'issue'; // 'issue' or 'scrap'
+
+    allPartsResult.fold(
+      (failure) => _showSnackBar('Xatolik: ${failure.message}', Colors.red),
+      (parts) {
+        for (var part in parts) {
+          quantityControllers[part.id] = TextEditingController();
+        }
+      },
+    );
+
+    if (!mounted || allPartsResult.isLeft) return;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final parts = allPartsResult.fold((_) => [], (r) => r);
+          final filteredParts = searchQuery.isEmpty
+              ? parts
+              : parts.where((part) =>
+                  part.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.outbox_rounded, color: Colors.orange),
+                const SizedBox(width: 8),
+                Text(l10n?.translate('batchOutflowTitle') ?? 'Guruhli Chiqim'),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: actionType,
+                      decoration: InputDecoration(
+                        labelText: l10n?.translate('reason') ?? 'Sabab',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: [
+                        DropdownMenuItem(value: 'issue', child: Text(l10n?.translate('issued') ?? 'Berib yuborildi')),
+                        DropdownMenuItem(value: 'scrap', child: Text(l10n?.translate('scrap') ?? 'Brak / Yaroqsiz')),
+                      ],
+                      onChanged: (value) => setDialogState(() => actionType = value!),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: l10n?.translate('searchParts') ?? 'Search parts...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) => setDialogState(() => searchQuery = value),
+                    ),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.35,
+                      ),
+                      child: filteredParts.isEmpty
+                          ? Center(child: Text(l10n?.translate('noPartsMatch') ?? 'No parts match'))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filteredParts.length,
+                              itemBuilder: (context, index) {
+                                final part = filteredParts[index];
+                                final controller = quantityControllers[part.id]!;
+                                final isSelected = selectedParts.containsKey(part.id);
+                                
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  color: isSelected ? Colors.orange.shade50 : null,
+                                  child: ListTile(
+                                    title: Text(part.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                    subtitle: Text('${l10n?.translate('quantity') ?? 'Stock'}: ${part.quantity}', style: const TextStyle(fontSize: 11)),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isSelected)
+                                          SizedBox(
+                                            width: 70,
+                                            child: TextField(
+                                              controller: controller,
+                                              keyboardType: TextInputType.number,
+                                              textAlign: TextAlign.center,
+                                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                                              onChanged: (value) {
+                                                final qty = int.tryParse(value) ?? 0;
+                                                if (qty > part.quantity) {
+                                                  _showSnackBar('${part.name}: Omborda yetarli emas!', Colors.red);
+                                                  controller.text = part.quantity.toString();
+                                                  setDialogState(() => selectedParts[part.id] = part.quantity);
+                                                } else if (qty > 0) {
+                                                  setDialogState(() => selectedParts[part.id] = qty);
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                        Checkbox(
+                                          value: isSelected,
+                                          activeColor: Colors.orange,
+                                          onChanged: (value) {
+                                            if (part.quantity <= 0 && value == true) {
+                                              _showSnackBar('Omborda mavjud emas!', Colors.orange);
+                                              return;
+                                            }
+                                            setDialogState(() {
+                                              if (value == true) {
+                                                selectedParts[part.id] = 1;
+                                                controller.text = '1';
+                                              } else {
+                                                selectedParts.remove(part.id);
+                                                controller.text = '';
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    if (selectedParts.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: noteController,
+                        decoration: InputDecoration(
+                          labelText: l10n?.translate('noteOptional') ?? 'Izoh (ixtiyoriy)',
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n?.translate('cancel') ?? 'Cancel')),
+              ElevatedButton(
+                onPressed: selectedParts.isEmpty ? null : () async {
+                  await _batchOutflowParts(selectedParts, actionType: actionType, note: noteController.text);
+                  if (mounted) Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                child: Text('${l10n?.translate('save') ?? 'Save'} (${selectedParts.length})'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    for (var c in quantityControllers.values) {
+      c.dispose();
+    }
+    noteController.dispose();
+  }
+
+  Future<void> _batchOutflowParts(Map<String, int> partsToOutflow, {required String actionType, String? note}) async {
+    showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator()));
+    try {
+      int successCount = 0;
+      final l10n = AppLocalizations.of(context);
+      final reasonLabel = actionType == 'scrap' ? 'Brak' : 'Berib yuborildi';
+
+      for (var entry in partsToOutflow.entries) {
+        final partResult = await _partRepository.getPartById(entry.key);
+        await partResult.fold(
+          (f) async => debugPrint('❌ Error: ${f.message}'),
+          (part) async {
+            if (part != null && part.quantity >= entry.value) {
+              final updatedPart = part.copyWith(quantity: part.quantity - entry.value, updatedAt: DateTime.now());
+              final extra = note?.trim().isEmpty ?? true ? '' : '. $note';
+              final updateResult = await _partRepository.updatePart(
+                updatedPart,
+                historyAction: 'update',
+                historyNotes: '$reasonLabel: -${entry.value}$extra',
+              );
+              if (updateResult.isRight) successCount++;
+            }
+          },
+        );
+      }
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar('$successCount ta qism chiqim qilindi', successCount > 0 ? Colors.orange : Colors.red);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar('Xatolik: $e', Colors.red);
+      }
+    }
+  }
+
   /// Rasm tanlash va yangilash
   Future<void> _pickAndUpdateImage(Part part) async {
     final picker = ImagePicker();
@@ -1516,25 +1734,26 @@ class _PartsPageState extends State<PartsPage> {
           (parts) => parts,
         ) ?? <Part>[];
         
-        final l10n = AppLocalizations.of(context);
-        final lowStockParts = _getLowStockParts(parts);
-        // Use live parts list to match filtered view
-        final lowStockCount = lowStockParts.length;
-        final filteredParts = _getFilteredParts(parts);
-        final showFilterBanner = _showLowStockOnly || _searchController.text.isNotEmpty;
-        final totalParts = parts.length;
-        final filteredCount = filteredParts.length;
-        final totalQuantity = parts.fold<int>(0, (sum, part) => sum + part.quantity);
-        final filteredQuantity = filteredParts.fold<int>(0, (sum, part) => sum + part.quantity);
-        // Header height no longer fixed; using normal sliver content to avoid clipping.
-        
-        final currentUser = AuthStateService().currentUser;
-        final canCreateParts = currentUser?.canCreateParts() ?? false;
-        final canEditParts = currentUser?.canEditParts() ?? false;
-        final canDeleteParts = currentUser?.canDeleteParts() ?? false;
-        final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
+        try {
+          final l10n = AppLocalizations.of(context);
+          final lowStockParts = _getLowStockParts(parts);
+          // Use live parts list to match filtered view
+          final lowStockCount = lowStockParts.length;
+          final filteredParts = _getFilteredParts(parts);
+          final showFilterBanner = _showLowStockOnly || _searchController.text.isNotEmpty;
+          final totalParts = parts.length;
+          final filteredCount = filteredParts.length;
+          final totalQuantity = parts.fold<int>(0, (sum, part) => sum + part.quantity);
+          final filteredQuantity = filteredParts.fold<int>(0, (sum, part) => sum + part.quantity);
+          // Header height no longer fixed; using normal sliver content to avoid clipping.
+          
+          final currentUser = AuthStateService().currentUser;
+          final canCreateParts = currentUser?.canCreateParts() ?? false;
+          final canEditParts = currentUser?.canEditParts() ?? false;
+          final canDeleteParts = currentUser?.canDeleteParts() ?? false;
+          final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
 
-        return Scaffold(
+          return Scaffold(
           appBar: AppBar(
             title: Row(
               children: [
@@ -1830,6 +2049,7 @@ class _PartsPageState extends State<PartsPage> {
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
+                              if (index >= filteredParts.length) return const SizedBox.shrink();
                               final part = filteredParts[index];
                               final isLowStock = part.quantity < part.minQuantity;
                               final statusColor = isLowStock ? Colors.red : Colors.green;
@@ -2395,10 +2615,18 @@ class _PartsPageState extends State<PartsPage> {
                       ),
                       ListTile(
                         leading: const Icon(Icons.playlist_add),
-                        title: Text(l10n?.translate('batchAddParts') ?? 'Batch Add Parts'),
+                        title: Text(l10n?.translate('batchAddParts') ?? 'Batch Stock In (Kirim)'),
                         onTap: () {
                           Navigator.pop(context);
                           _showBatchAddDialog();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.playlist_remove),
+                        title: Text(l10n?.translate('batchOutflowParts') ?? 'Batch Stock Out (Chiqim)'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showBatchOutflowDialog();
                         },
                       ),
                     ],
@@ -2409,7 +2637,19 @@ class _PartsPageState extends State<PartsPage> {
               label: Text(l10n?.translate('addPart') ?? 'Add Part'),
               )
               : null,
-        );
+          );
+        } catch (e, stackTrace) {
+          debugPrint('❌ PartsPage build crash: $e');
+          debugPrint('Stack: $stackTrace');
+          return Scaffold(
+            appBar: AppBar(title: const Text('Parts Error')),
+            body: ErrorDisplayWidget(
+              error: e,
+              customMessage: 'Sahifani yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
+              onRetry: () => setState(() {}),
+            ),
+          );
+        }
       },
     );
   }

@@ -52,18 +52,21 @@ class _SettingsPageState extends State<SettingsPage> {
     
     // FIX: Listen to auth state changes for web compatibility
     _currentUser = AuthStateService().currentUser;
-    AuthStateService().onAuthStateChange((user) {
-      if (mounted) {
-        setState(() {
-          _currentUser = user;
-        });
-      }
-    });
+    AuthStateService().onAuthStateChange(_onAuthChanged);
+  }
+
+  void _onAuthChanged(domain.User? user) {
+    if (mounted) {
+      setState(() {
+        _currentUser = user;
+      });
+    }
   }
   
   @override
   void dispose() {
-    // Cleanup callback (optional, but good practice)
+    // FIX: Remove listener to prevent memory leak and "setState after dispose" error
+    AuthStateService().removeAuthStateChangeCallback(_onAuthChanged);
     super.dispose();
   }
 
@@ -105,12 +108,14 @@ class _SettingsPageState extends State<SettingsPage> {
       (_) {
         // FIX: Use global auth state service for logout
         // WHY: Ensures consistent auth state across app
-        AuthStateService().signOut();
-        // Navigate to login
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-          (route) => false, // Barcha oldingi sahifalarni o'chirish
-        );
+        if (mounted) {
+          AuthStateService().signOut();
+          // Navigate to login
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginPage()),
+            (route) => false, // Barcha oldingi sahifalarni o'chirish
+          );
+        }
       },
     );
   }
