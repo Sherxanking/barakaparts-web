@@ -30,6 +30,8 @@ import '../widgets/image_picker_widget.dart';
 import '../../l10n/app_localizations.dart';
 import '../../core/services/auth_state_service.dart';
 import '../../core/services/error_handler_service.dart';
+import 'package:flutter/services.dart';
+import '../../core/utils/reporting_utils.dart';
 import 'part_history_page.dart';
 import 'analytics_page.dart';
 
@@ -1443,6 +1445,109 @@ class _PartsPageState extends State<PartsPage> {
     );
   }
 
+  /// Share low stock report
+  Future<void> _shareLowStockReport(List<Part> parts) async {
+    final lowStockParts = _getLowStockParts(parts);
+    if (lowStockParts.isEmpty) {
+      _showSnackBar('Hozirda kam qolgan tovarlar yo\'q', Colors.blue);
+      return;
+    }
+
+    final reportText = ReportingUtils.formatLowStockReport(lowStockParts);
+    
+    // 1. Copy to clipboard
+    await Clipboard.setData(ClipboardData(text: reportText));
+    
+    if (!mounted) return;
+
+    // 2. Show options dialog
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Hisobot tayyor!',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Hisobot nusxalandi. Uni qayerga yubormoqchisiz?',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildShareOption(
+                    icon: Icons.copy,
+                    label: 'Nusxa olish',
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showSnackBar('Nusxa olindi!', Colors.green);
+                    },
+                  ),
+                  _buildShareOption(
+                    icon: Icons.send_rounded,
+                    label: 'Telegram',
+                    color: Colors.lightBlue,
+                    onTap: () async {
+                      Navigator.pop(context);
+                      final url = Uri.parse('tg://msg?text=${Uri.encodeComponent(reportText)}');
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url);
+                      } else {
+                        // Fallback to web link if app not found
+                        final webUrl = Uri.parse('https://t.me/share/url?url=&text=${Uri.encodeComponent(reportText)}');
+                        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildShareOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 32),
+            ),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Import parts from Excel file
   Future<void> _importFromExcel() async {
     setState(() {
@@ -1807,6 +1912,7 @@ class _PartsPageState extends State<PartsPage> {
                             totalParts: totalParts,
                             lowStockCount: lowStockCount,
                             totalQuantity: totalQuantity,
+                            onShareReport: () => _shareLowStockReport(parts),
                           ),
                           const SizedBox(height: 8),
                         ],
@@ -2533,6 +2639,7 @@ class _PartsPageState extends State<PartsPage> {
     required int totalParts,
     required int lowStockCount,
     required int totalQuantity,
+    required VoidCallback onShareReport,
   }) {
     final l10n = AppLocalizations.of(context);
     return SingleChildScrollView(
@@ -2561,6 +2668,14 @@ class _PartsPageState extends State<PartsPage> {
                 ? () => setState(() => _showLowStockOnly = true)
                 : null,
           ),
+          if (lowStockCount > 0)
+            _buildStatCard(
+              label: 'Yuborish',
+              value: 'Hisobot',
+              icon: Icons.share_rounded,
+              color: Colors.green,
+              onTap: onShareReport,
+            ),
         ],
       ),
     );
