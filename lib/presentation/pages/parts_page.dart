@@ -4,8 +4,6 @@
 /// Handles parts CRUD operations with real-time sync and proper error handling
 
 import 'dart:async';
-import 'dart:async';
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -1659,7 +1657,16 @@ class _PartsPageState extends State<PartsPage> {
                         children: [
                           Container(
                             padding: const EdgeInsets.all(16),
-                            color: Theme.of(context).colorScheme.surface,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
                             child: SearchBarWidget(
                               controller: _searchController,
                               hintText: l10n?.translate('searchParts') ?? 'Search parts...',
@@ -1701,69 +1708,12 @@ class _PartsPageState extends State<PartsPage> {
                             ),
                           ],
                           const SizedBox(height: 8),
-                          // Qismlar statistikasi
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.blue.shade200,
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.analytics_outlined,
-                                  size: 20,
-                                  color: Colors.blue.shade700,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 0),
-                                      Row(
-                                        children: [
-                                          Text(
-                                            '${l10n?.translate('totalQuantity') ?? 'Total quantity'}: ',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.blue.shade800,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                          Text(
-                                            '$totalQuantity',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.blue.shade900,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          if (filteredQuantity != totalQuantity) ...[
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '($filteredQuantity ${l10n?.translate('showing') ?? 'shown'})',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.blue.shade600,
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          // Qismlar statistikasi (Premium Dashboard)
+                          _buildInventoryDashboard(
+                            context,
+                            totalParts: totalParts,
+                            lowStockCount: lowStockCount,
+                            totalQuantity: totalQuantity,
                           ),
                           const SizedBox(height: 8),
                         ],
@@ -1893,14 +1843,20 @@ class _PartsPageState extends State<PartsPage> {
                               return AnimatedListItem(
                                 delay: animationDelay,
                                 child: Card(
-                                  margin: const EdgeInsets.only(bottom: 16),
-                                  elevation: 2,
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  elevation: 0,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(20),
+                                    side: BorderSide(
+                                      color: isLowStock 
+                                          ? Colors.red.withOpacity(0.2) 
+                                          : Colors.grey.withOpacity(0.1),
+                                      width: 1.5,
+                                    ),
                                   ),
-                                  color: isLowStock ? Colors.red.shade50 : null,
+                                  color: isLowStock ? Colors.red.shade50.withOpacity(0.3) : Colors.white,
                                   child: InkWell(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(20),
                                     onTap: canEditParts ? () => _editPart(part) : null,
                                     child: Padding(
                                       padding: const EdgeInsets.all(14),
@@ -1914,10 +1870,18 @@ class _PartsPageState extends State<PartsPage> {
                                               width: 76,
                                               height: 76,
                                               decoration: BoxDecoration(
-                                                borderRadius: BorderRadius.circular(10),
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(16),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: statusColor.withOpacity(0.1),
+                                                    blurRadius: 8,
+                                                    offset: const Offset(0, 2),
+                                                  ),
+                                                ],
                                                 border: Border.all(
-                                                  color: statusColor.withOpacity(0.3),
-                                                  width: 1.5,
+                                                  color: statusColor.withOpacity(0.2),
+                                                  width: 1,
                                                 ),
                                               ),
                                             child: hasImage
@@ -2261,9 +2225,22 @@ class _PartsPageState extends State<PartsPage> {
               onPressed: () {
                 showModalBottomSheet(
                   context: context,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+                  ),
                   builder: (context) => Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       ListTile(
                         leading: const Icon(Icons.add),
                         title: Text(l10n?.translate('addSinglePart') ?? 'Add Single Part'),
@@ -2437,7 +2414,93 @@ class _PartsPageState extends State<PartsPage> {
     );
   }
 
-  /// Rasm placeholder widget
+  Widget _buildInventoryDashboard(
+    BuildContext context, {
+    required int totalParts,
+    required int lowStockCount,
+    required int totalQuantity,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          _buildStatCard(
+            label: l10n?.translate('totalItems') ?? 'Items',
+            value: totalParts.toString(),
+            icon: Icons.inventory_2_outlined,
+            color: Colors.blue,
+          ),
+          _buildStatCard(
+            label: l10n?.translate('totalStock') ?? 'Total Stock',
+            value: totalQuantity.toString(),
+            icon: Icons.analytics_outlined,
+            color: Colors.teal,
+          ),
+          _buildStatCard(
+            label: l10n?.translate('lowStock') ?? 'Low Stock',
+            value: lowStockCount.toString(),
+            icon: Icons.warning_amber_rounded,
+            color: lowStockCount > 0 ? Colors.orange : Colors.grey,
+            onTap: lowStockCount > 0
+                ? () => setState(() => _showLowStockOnly = true)
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: color.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildImagePlaceholder(Color statusColor) {
     final l10n = AppLocalizations.of(context);
     return Container(
