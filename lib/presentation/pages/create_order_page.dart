@@ -7,7 +7,9 @@ import '../../data/services/product_service.dart';
 import '../../data/services/order_service.dart';
 import '../../data/services/part_calculator_service.dart';
 import '../../data/services/part_service.dart';
+import '../../data/services/hive_box_service.dart';
 import '../../core/services/auth_state_service.dart';
+import '../../core/di/service_locator.dart';
 import '../widgets/order_parts_list_widget.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -33,12 +35,81 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   final TextEditingController _notesController = TextEditingController();
   bool _showSoldToError = false;
   bool _isLoading = false;
+  bool _isLoadingData = false;
 
   @override
   void initState() {
     super.initState();
     _quantityController.text = _quantity.toString();
     _quantityController.addListener(_onQuantityChanged);
+    // Sahifa ochilganda Supabase'dan yuklash
+    Future.microtask(() => _loadData());
+  }
+
+  /// Supabase'dan departments va products yuklab Hive'ga yozish
+  Future<void> _loadData() async {
+    if (_isLoadingData) return;
+    if (mounted) setState(() => _isLoadingData = true);
+    try {
+      final deptRepo = ServiceLocator.instance.departmentRepository;
+      final productRepo = ServiceLocator.instance.productRepository;
+      final boxService = HiveBoxService();
+      final deptBox = boxService.departmentsBox;
+      final productBox = boxService.productsBox;
+
+      // Departments yuklash
+      final deptResult = await deptRepo.getAllDepartments();
+      await deptResult.fold(
+        (failure) async {
+          debugPrint('❌ Departments yuklanmadi: ${failure.message}');
+        },
+        (departments) async {
+          if (departments.isNotEmpty) {
+            final existingMap = <String, Department>{};
+            for (final d in deptBox.values) {
+              existingMap[d.id] = d;
+            }
+            await deptBox.clear();
+            for (final d in departments) {
+              final existing = existingMap[d.id];
+              await deptBox.add(Department(
+                id: d.id,
+                name: d.name,
+                productIds: existing?.productIds ?? [],
+                productParts: existing?.productParts ?? {},
+              ));
+            }
+            debugPrint('✅ ${departments.length} ta department yuklandi');
+          }
+        },
+      );
+
+      // Products yuklash
+      final productResult = await productRepo.getAllProducts();
+      await productResult.fold(
+        (failure) async {
+          debugPrint('❌ Products yuklanmadi: ${failure.message}');
+        },
+        (products) async {
+          if (products.isNotEmpty) {
+            await productBox.clear();
+            for (final p in products) {
+              await productBox.add(Product(
+                id: p.id,
+                name: p.name,
+                departmentId: p.departmentId,
+                parts: p.partsRequired,
+              ));
+            }
+            debugPrint('✅ ${products.length} ta product yuklandi');
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ _loadData xatosi: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingData = false);
+    }
   }
 
   @override
@@ -141,6 +212,22 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       appBar: AppBar(
         title: const Text('Create Order'),
         elevation: 2,
+        actions: [
+          _isLoadingData
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Yangilash',
+                  onPressed: _loadData,
+                ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

@@ -49,6 +49,7 @@ class _ProductsPageState extends State<ProductsPage> {
   Map<String, int> selectedParts = {};
   SortOption? _selectedSortOption;
   bool _isSavingProduct = false;
+  bool _isRefreshing = false;
 
   // FIX: Listener funksiyasini saqlash - dispose da olib tashlash uchun
   late final VoidCallback _searchListener;
@@ -58,6 +59,44 @@ class _ProductsPageState extends State<ProductsPage> {
     super.initState();
     _searchListener = () => setState(() {});
     _searchController.addListener(_searchListener);
+    // Sahifa ochilganda Supabase'dan yangilash
+    Future.microtask(() => _refreshFromSupabase());
+  }
+
+  /// Supabase'dan fresh ma'lumotlarni yuklash
+  Future<void> _refreshFromSupabase() async {
+    if (_isRefreshing) return;
+    if (mounted) setState(() => _isRefreshing = true);
+
+    try {
+      final productRepository = ServiceLocator.instance.productRepository;
+      final result = await productRepository.getAllProducts();
+
+      await result.fold(
+        (failure) async {
+          debugPrint('❌ Products refresh error: ${failure.message}');
+        },
+        (products) async {
+          if (products.isNotEmpty) {
+            final box = _boxService.productsBox;
+            await box.clear();
+            for (var p in products) {
+              await box.add(Product(
+                id: p.id,
+                name: p.name,
+                departmentId: p.departmentId,
+                parts: p.partsRequired,
+              ));
+            }
+            debugPrint('✅ ${products.length} ta product Supabase\'dan yangilandi');
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Unexpected error during refresh: $e');
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
   @override
@@ -387,6 +426,20 @@ class _ProductsPageState extends State<ProductsPage> {
         title: const Text('Products'),
         elevation: 2,
         actions: [
+          _isRefreshing
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                  onPressed: _refreshFromSupabase,
+                ),
           PopupMenuButton<SortOption>(
             icon: const Icon(Icons.sort),
             tooltip: 'Sort',
@@ -530,93 +583,93 @@ class _ProductsPageState extends State<ProductsPage> {
                     final product = products[index];
                     final department = _departmentService.getDepartmentById(product.departmentId);
 
-                    return AnimatedListItem(
-                      delay: index * 50,
-                      child: Card(
-                      margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                      elevation: 3,
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.inventory),
-                        ),
-                        title: Text(
-                          product.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Department: ${department?.name ?? 'Unknown'}'),
-                            Text('Parts: ${product.parts.length}'),
-                            if (product.parts.isNotEmpty)
-                              Text(
-                                product.parts.entries
-                                    .map((e) {
-                                      final part = _partService.getPartById(e.key);
-                                      return '${part?.name ?? e.key}: ${e.value}';
-                                    })
-                                    .join(', '),
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                      return AnimatedListItem(
+                        delay: index * 50,
+                        child: Card(
+                        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                        elevation: 3,
+                        child: ListTile(
+                          leading: const CircleAvatar(
+                            child: Icon(Icons.inventory),
+                          ),
+                          title: Text(
+                            product.name,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Department: ${department?.name ?? 'Unknown'}'),
+                              Text('Parts: ${product.parts.length}'),
+                              if (product.parts.isNotEmpty)
+                                Text(
+                                  product.parts.entries
+                                      .map((e) {
+                                        final part = _partService.getPartById(e.key);
+                                        return '${part?.name ?? e.key}: ${e.value}';
+                                      })
+                                      .join(', '),
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                          onTap: canEditProducts
+                              ? () async {
+                            // Navigate to edit page
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ProductEditPage(product: product),
                               ),
-                          ],
-                        ),
-                        onTap: canEditProducts
-                            ? () async {
-                          // Navigate to edit page
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ProductEditPage(product: product),
-                            ),
-                          );
-                          // Refresh if product was updated
-                          if (result == true) {
-                            setState(() {});
+                            );
+                            // Refresh if product was updated
+                            if (result == true) {
+                              setState(() {});
+                            }
                           }
-                        }
-                            : null,
-                        trailing: canDeleteProducts
-                            ? IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('Delete Product'),
-                                      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                                      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      content: const Text(
-                                        'Are you sure you want to delete this product?',
-                                      ),
-                                      actions: [
-                                        const SizedBox(height: 4),
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(context),
-                                          child: const Text('Cancel'),
+                              : null,
+                          trailing: canDeleteProducts
+                              ? IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('Delete Product'),
+                                        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                                        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        content: const Text(
+                                          'Are you sure you want to delete this product?',
                                         ),
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                            _deleteProduct(product);
-                                          },
-                                          child: const Text(
-                                            'Delete',
-                                            style: TextStyle(color: Colors.red),
+                                        actions: [
+                                          const SizedBox(height: 4),
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context),
+                                            child: const Text('Cancel'),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                                tooltip: 'Delete',
-                              )
-                            : null,
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              _deleteProduct(product);
+                                            },
+                                            child: const Text(
+                                              'Delete',
+                                              style: TextStyle(color: Colors.red),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                  tooltip: 'Delete',
+                                )
+                              : null,
+                        ),
                       ),
-                    ),
-                    );
-                  },
+                      );
+                    },
                   ),
                 );
               },

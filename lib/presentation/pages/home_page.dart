@@ -231,6 +231,25 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             : [0, 1, 2, 3, 4]; // Barcha sahifalar boshqalarga
     
     return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          _getPageTitle(l10n),
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        elevation: 2,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: l10n?.settings ?? 'Settings',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              );
+            },
+          ),
+        ],
+      ),
       body: IndexedStack(
         index: _currentIndex >= visibleIndices.length ? 0 : _currentIndex,
         children: visibleIndices.map((i) => _pages[i]).toList(),

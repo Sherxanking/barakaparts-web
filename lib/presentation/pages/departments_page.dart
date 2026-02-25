@@ -70,6 +70,7 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
 
   // State
   SortOption? _selectedSortOption;
+  bool _isRefreshing = false;
   
   // State for initial load only
   bool _isInitialLoading = true;
@@ -96,6 +97,9 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
     };
     _searchController.addListener(_searchListener);
     
+    // Sahifa ochilganda Supabase'dan yangilash
+    Future.microtask(() => _refreshFromSupabase());
+    
     // Real-time duplicate name validation will be handled in StreamBuilder
     
     // Initial load - after first stream event, hide loading
@@ -108,6 +112,31 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
         }
       });
     });
+  }
+
+  /// Supabase'dan fresh ma'lumotlarni yuklash
+  Future<void> _refreshFromSupabase() async {
+    if (_isRefreshing) return;
+    if (mounted) setState(() => _isRefreshing = true);
+
+    try {
+      final result = await _departmentRepository.getAllDepartments();
+
+      result.fold(
+        (failure) {
+          debugPrint('❌ Departments refresh error: ${failure.message}');
+        },
+        (departments) {
+          debugPrint('✅ ${departments.length} ta department Supabase\'dan yangilandi');
+          // Hive box stream builder orqali avtomatik yangilanadi (watchDepartments)
+          // Lekin getAllDepartments ham Hive'ni yangilaydi repository ichida
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Unexpected error during departments refresh: $e');
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
   
   /// Validate department name for duplicates (case-insensitive, trimmed)
@@ -413,6 +442,20 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
             title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
             elevation: 2,
             actions: [
+              _isRefreshing
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      ),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh',
+                      onPressed: _refreshFromSupabase,
+                    ),
               PopupMenuButton<SortOption>(
                 icon: const Icon(Icons.sort),
                 tooltip: 'Sort',
