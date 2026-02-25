@@ -10,6 +10,7 @@ import '../../data/services/order_service.dart'; // OrderService import qo'shild
 import '../../domain/entities/part.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
+import '../../core/di/service_locator.dart';
 import '../../l10n/app_localizations.dart';
 import '../pages/settings_page.dart';
 
@@ -37,10 +38,18 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   int _totalProducts = 0;
   int _totalDepartments = 0;
   Map<String, int> _monthlyProduction = {};
-  // Time tracking statistics
-  double _averageCompletionTime = 0.0; // Average completion time in hours
-  Map<String, double> _avgCompletionTimeByProduct = {}; // Average completion time by product
   Map<String, double> _avgCompletionTimeByDepartment = {}; // Average completion time by department
+  
+  // Missing fields restored
+  double _averageCompletionTime = 0.0;
+  Map<String, double> _avgCompletionTimeByProduct = {};
+  
+  // KPI and Product focus
+  List<Map<String, dynamic>> _workerKPIs = [];
+  Map<String, dynamic>? _selectedProductProgress;
+  String? _selectedProductId;
+  Map<String, int> _selectedProductGrowth = {};
+  List<dynamic> _allProducts = []; // List of products for selection
 
   @override
   void initState() {
@@ -136,6 +145,39 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       (total) => _thisMonthPartsUsed = total,
     );
 
+    // Load new KPI and Product analytics
+    final workerKPIsResult = await _analyticsService.getWorkerKPIs();
+    workerKPIsResult.fold(
+      (failure) {},
+      (stats) => _workerKPIs = stats,
+    );
+
+    // Set first product as default if none selected
+    final productsResult = await ServiceLocator.instance.productRepository.getAllProducts();
+    productsResult.fold(
+      (failure) {},
+      (products) {
+        _allProducts = products;
+        if (_selectedProductId == null && products.isNotEmpty) {
+          _selectedProductId = products.first.id;
+        }
+      },
+    );
+
+    if (_selectedProductId != null) {
+      final progressResult = await _analyticsService.getProductProgress(_selectedProductId!);
+      progressResult.fold(
+        (failure) {},
+        (stats) => _selectedProductProgress = stats,
+      );
+
+      final growthResult = await _analyticsService.getProductGrowth(_selectedProductId!);
+      growthResult.fold(
+        (failure) {},
+        (growth) => _selectedProductGrowth = growth,
+      );
+    }
+
     setState(() {
       _isLoading = false;
     });
@@ -225,6 +267,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     // Summary Cards
                     _buildSummaryCards(),
                     const SizedBox(height: 24),
+
+                    // Product Focus Section (New)
+                    _buildProductFocusSection(),
+                    const SizedBox(height: 24),
                     
                     // This Month Production
                     _buildThisMonthProduction(),
@@ -240,6 +286,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     
                     // Orders by Status Chart
                     _buildOrdersByStatusChart(),
+                    const SizedBox(height: 24),
+
+                    // Worker KPI Section (New)
+                    _buildWorkerKPISection(),
                     const SizedBox(height: 24),
                     
                     // Orders by Department Chart
@@ -1455,5 +1505,333 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
     );
   }
+
+  // --- NEW SECTIONS ---
+
+  /// FOCUS PRODUCT SECTION
+  Widget _buildProductFocusSection() {
+    if (_allProducts.isEmpty) return const SizedBox.shrink();
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.star, color: Colors.amber, size: 28),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Mahsulot Analitikasi',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Dropdown to select product
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _selectedProductId,
+                      items: _allProducts.map((p) {
+                        final String id = (p is Map) ? p['id'] : (p as dynamic).id;
+                        final String name = (p is Map) ? p['name'] : (p as dynamic).name;
+                        return DropdownMenuItem<String>(
+                          value: id,
+                          child: Text(
+                            name, 
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: _onProductChanged,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            if (_selectedProductProgress != null) ...[
+              // Plan vs Actual Score
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Progress', style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                      Text(
+                        '${_selectedProductProgress!['percent']}%',
+                        style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Plan: ${_selectedProductProgress!['totalPlan']} dona', 
+                           style: const TextStyle(fontWeight: FontWeight.w500)),
+                      Text('Tayyor: ${_selectedProductProgress!['actual']} dona', 
+                           style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              
+              // Custom Status Bar
+              _buildProgressFunnelBar(),
+              const SizedBox(height: 12),
+              
+              // Legend
+              _buildStatusLegend(),
+              
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+              
+              // Growth Chart for this product
+              Text('Oylik ishlab chiqarish o\'sishi', 
+                   style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[800])),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 150,
+                child: _buildProductGrowthChart(),
+              ),
+            ] else 
+              const Center(child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: CircularProgressIndicator(),
+              )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressFunnelBar() {
+    final stats = _selectedProductProgress!;
+    final int taken = stats['taken'];
+    final int ready = stats['ready'];
+    final int inProgress = stats['inProgress'];
+    final int total = stats['totalPlan'];
+    final int remaining = (total - (taken + ready + inProgress)).clamp(0, 1000000);
+
+    return Container(
+      height: 28,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.grey[200],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Row(
+          children: [
+            if (taken > 0) Expanded(flex: taken, child: Container(color: Colors.green, child: Center(child: Text(taken > total * 0.1 ? 'Olib ketildi' : 'O', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)))),
+            if (ready > 0) Expanded(flex: ready, child: Container(color: Colors.blue, child: Center(child: Text(ready > total * 0.1 ? 'Tayyor' : 'T', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)))),
+            if (inProgress > 0) Expanded(flex: inProgress, child: Container(color: Colors.orange, child: Center(child: Text(inProgress > total * 0.1 ? 'Jarayonda' : 'J', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)))),
+            if (remaining > 0) Expanded(flex: remaining, child: Container(color: Colors.grey[300])),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusLegend() {
+    final stats = _selectedProductProgress!;
+    return Wrap(
+      spacing: 16,
+      runSpacing: 8,
+      children: [
+        _legendItem('Olib ketildi', Colors.green, stats['taken']),
+        _legendItem('Tayyor', Colors.blue, stats['ready']),
+        _legendItem('Jarayonda', Colors.orange, stats['inProgress']),
+        _legendItem('Kutilmoqda', Colors.grey[400]!, (stats['totalPlan'] - (stats['taken'] + stats['ready'] + stats['inProgress']) as int).clamp(0, 1000000)),
+      ],
+    );
+  }
+
+  Widget _legendItem(String label, Color color, int value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text('$label: ', style: const TextStyle(fontSize: 12)),
+        Text('$value', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildProductGrowthChart() {
+    if (_selectedProductGrowth.isEmpty) {
+      return const Center(child: Text('Ma\'lumot yo\'q'));
+    }
+
+    final entries = _selectedProductGrowth.entries.toList();
+    final List<FlSpot> spots = [];
+    for (int i = 0; i < entries.length; i++) {
+      spots.add(FlSpot(i.toDouble(), entries[i].value.toDouble()));
+    }
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                int index = value.toInt();
+                if (index < 0 || index >= entries.length) return const SizedBox.shrink();
+                final key = entries[index].key; // YYYY-MM
+                final month = key.split('-')[1];
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(month, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                );
+              },
+              reservedSize: 22,
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: Colors.blue,
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: true),
+            belowBarData: BarAreaData(
+              show: true,
+              color: Colors.blue.withOpacity(0.2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// WORKER KPI SECTION
+  Widget _buildWorkerKPISection() {
+    if (_workerKPIs.isEmpty) return const SizedBox.shrink();
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                const Icon(Icons.people, color: Colors.deepPurple, size: 28),
+                const SizedBox(width: 10),
+                Text(
+                  'Ishchilar KPI (Samaradorlik)',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _workerKPIs.length > 5 ? 5 : _workerKPIs.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final kpi = _workerKPIs[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _getWorkerColor(index),
+                  child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+                title: Text(kpi['workerName'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('${kpi['position'] ?? kpi['role']}'),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${kpi['completedQuantity']} dona',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16),
+                    ),
+                    Text(
+                      'Avg: ${kpi['avgHoursPerOrder'].toStringAsFixed(1)}s/order',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          if (_workerKPIs.length > 5)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Center(
+                child: TextButton(
+                  onPressed: () {
+                    // Show full list dialog?
+                  },
+                  child: const Text('Barchasini ko\'rish'),
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Color _getWorkerColor(int index) {
+    if (index == 0) return Colors.amber; // Gold
+    if (index == 1) return Colors.grey[400]!; // Silver
+    if (index == 2) return Colors.brown[300]!; // Bronze
+    return Colors.blue[300]!;
+  }
+
+  Future<void> _onProductChanged(String? productId) async {
+    if (productId == null) return;
+    
+    setState(() {
+      _selectedProductId = productId;
+      _selectedProductProgress = null;
+    });
+
+    final progressResult = await _analyticsService.getProductProgress(productId);
+    final growthResult = await _analyticsService.getProductGrowth(productId);
+
+    if (mounted) {
+      setState(() {
+        progressResult.fold((_) => null, (stats) => _selectedProductProgress = stats);
+        growthResult.fold((_) => null, (growth) => _selectedProductGrowth = growth);
+      });
+    }
+  }
 }
+
 

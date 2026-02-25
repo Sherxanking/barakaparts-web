@@ -349,6 +349,129 @@ class AnalyticsService {
     );
   }
   
+  /// Get product production growth (weekly/monthly)
+  Future<Either<Failure, Map<String, int>>> getProductGrowth(String productId, {int months = 6}) async {
+    final ordersResult = await _orderRepository.getAllOrders();
+    
+    return ordersResult.fold(
+      (failure) => Left(failure),
+      (orders) {
+        final result = <String, int>{};
+        final now = DateTime.now();
+        
+        for (int i = months - 1; i >= 0; i--) {
+          final date = DateTime(now.year, now.month - i, 1);
+          final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+          
+          final count = orders.where((order) {
+            if (order.productId != productId || order.status != 'completed') return false;
+            final timestamp = order.updatedAt ?? order.createdAt;
+            return timestamp.year == date.year && timestamp.month == date.month;
+          }).fold(0, (sum, order) => sum + order.quantity);
+          
+          result[monthKey] = count;
+        }
+        
+        return Right(result);
+      },
+    );
+  }
+
+  /// Get progress stats for a specific product (Plan vs Actual, Status Distribution)
+  Future<Either<Failure, Map<String, dynamic>>> getProductProgress(String productId) async {
+    final ordersResult = await _orderRepository.getAllOrders();
+    
+    return ordersResult.fold(
+      (failure) => Left(failure),
+      (orders) {
+        final productOrders = orders.where((o) => o.productId == productId).toList();
+        
+        int totalPlan = 0;
+        int inProduction = 0; // Hali bitmagan, jarayondagi qismi
+        int ready = 0;       // Bitgan lekin hali olib ketilmagan (Tayyor)
+        int taken = 0;       // Olib ketilgan (Completed + FullyCompletedAt)
+        
+        for (final order in productOrders) {
+          totalPlan += order.quantity;
+          
+          if (order.status == 'completed') {
+            if (order.fullyCompletedAt != null) {
+              taken += order.quantity;
+            } else {
+              ready += order.quantity;
+            }
+          } else if (order.status == 'in_progress' || order.status == 'pending') {
+            // Jarayondagi buyurtmaning bitgan qismi (Tayyor)
+            ready += order.completedQuantity;
+            // Haqiqatda jarayonda turgan qismi
+            inProduction += (order.quantity - order.completedQuantity);
+          }
+        }
+        
+        return Right({
+          'totalPlan': totalPlan,
+          'inProgress': inProduction,
+          'ready': ready,
+          'taken': taken,
+          'actual': ready + taken,
+          'percent': totalPlan > 0 ? ((ready + taken) / totalPlan * 100).round() : 0,
+        });
+      },
+    );
+  }
+
+  /// Get Worker KPI (Production count, avg time)
+  Future<Either<Failure, List<Map<String, dynamic>>>> getWorkerKPIs() async {
+    final ordersResult = await _orderRepository.getAllOrders();
+    final workersResult = await ServiceLocator.instance.userRepository.getAllUsers();
+    
+    return ordersResult.fold(
+      (failure) => Left(failure),
+      (orders) {
+        return workersResult.fold(
+          (failure) => Left(failure),
+          (users) {
+            final workers = users.where((u) => u.role == 'worker').toList();
+            final stats = <Map<String, dynamic>>[];
+            
+            for (final worker in workers) {
+              final workerOrders = orders.where((o) => o.workerId == worker.id || o.completedBy == worker.id).toList();
+              final completedOrders = workerOrders.where((o) => o.status == 'completed').toList();
+              
+              int totalQuantity = completedOrders.fold(0, (sum, o) => sum + o.quantity);
+              int inProgressCount = workerOrders.where((o) => o.status == 'in_progress').length;
+              
+              // Calculate avg completion time
+              double totalHours = 0;
+              int ordersWithTime = 0;
+              for (final o in completedOrders) {
+                if (o.durationHours != null) {
+                  totalHours += o.durationHours!;
+                  ordersWithTime++;
+                }
+              }
+              
+              stats.add({
+                'workerId': worker.id,
+                'workerName': worker.name,
+                'role': worker.role,
+                'position': worker.position,
+                'completedQuantity': totalQuantity,
+                'inProgressOrders': inProgressCount,
+                'avgHoursPerOrder': ordersWithTime > 0 ? (totalHours / ordersWithTime) : 0.0,
+              });
+            }
+            
+            // Sort by completed quantity descending
+            stats.sort((a, b) => (b['completedQuantity'] as int).compareTo(a['completedQuantity'] as int));
+            
+            return Right(stats);
+          },
+        );
+      },
+    );
+  }
+
   /// Get total parts used for a month
   Future<Either<Failure, int>> getTotalPartsUsedForMonth(DateTime month) async {
     final usageResult = await getPartsUsageByIdForMonth(month);
