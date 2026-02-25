@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../data/services/analytics_service.dart';
 import '../../data/services/order_service.dart'; // OrderService import qo'shildi
+import '../../domain/entities/product.dart';
 import '../../domain/entities/part.dart';
 import '../../core/errors/failures.dart';
 import '../../core/utils/either.dart';
@@ -58,129 +59,101 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Future<void> _loadAnalytics() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
-    // Load all statistics in parallel
-    final thisMonthResult = await _analyticsService.getThisMonthProductionCount();
-    final ordersByStatusResult = await _analyticsService.getOrdersCountByStatus();
-    final ordersByDeptResult = await _analyticsService.getOrdersQuantityByDepartmentForMonth(DateTime.now());
-    final productionByProductResult = await _analyticsService.getProductionCountByProductNameThisMonth();
-    final lowStockResult = await _analyticsService.getLowStockPartsCount();
-    final lowStockListResult = await _analyticsService.getLowStockPartsList();
-    final totalPartsResult = await _analyticsService.getTotalPartsCount();
-    final totalProductsResult = await _analyticsService.getTotalProductsCount();
-    final totalDeptsResult = await _analyticsService.getTotalDepartmentsCount();
-    final monthlyResult = await _analyticsService.getProductionCountForLastMonths(6);
-    final partsUsageResult = await _analyticsService.getPartsUsageByNameForMonth(DateTime.now(), limit: 10);
-    final totalPartsUsedResult = await _analyticsService.getTotalPartsUsedForMonth(DateTime.now());
+    try {
+      // PERFORMANCE: Load all statistics in parallel using Future.wait
+      // This is much faster than awaiting each one sequentially
+      final results = await Future.wait([
+        _analyticsService.getThisMonthProductionCount(),
+        _analyticsService.getOrdersCountByStatus(),
+        _analyticsService.getOrdersQuantityByDepartmentForMonth(DateTime.now()),
+        _analyticsService.getProductionCountByProductNameThisMonth(),
+        _analyticsService.getLowStockPartsCount(),
+        _analyticsService.getLowStockPartsList(),
+        _analyticsService.getTotalPartsCount(),
+        _analyticsService.getTotalProductsCount(),
+        _analyticsService.getTotalDepartmentsCount(),
+        _analyticsService.getProductionCountForLastMonths(6),
+        _analyticsService.getPartsUsageByNameForMonth(DateTime.now(), limit: 10),
+        _analyticsService.getTotalPartsUsedForMonth(DateTime.now()),
+        _analyticsService.getWorkerKPIs(),
+        ServiceLocator.instance.productRepository.getAllProducts(),
+      ]);
 
-    // Load time tracking statistics
-    final orderService = OrderService();
-    _averageCompletionTime = orderService.getAverageCompletionTime();
-    _avgCompletionTimeByProduct = _calculateAvgCompletionTimeByProduct();
-    _avgCompletionTimeByDepartment = _calculateAvgCompletionTimeByDepartment();
+      if (!mounted) return;
 
-    if (!mounted) return;
+      // Type safe extraction of results
+      final thisMonthResult = results[0] as Either<Failure, int>;
+      final ordersByStatusResult = results[1] as Either<Failure, Map<String, int>>;
+      final ordersByDeptResult = results[2] as Either<Failure, Map<String, int>>;
+      final productionByProductResult = results[3] as Either<Failure, Map<String, int>>;
+      final lowStockResult = results[4] as Either<Failure, int>;
+      final lowStockListResult = results[5] as Either<Failure, List<Part>>;
+      final totalPartsResult = results[6] as Either<Failure, int>;
+      final totalProductsResult = results[7] as Either<Failure, int>;
+      final totalDeptsResult = results[8] as Either<Failure, int>;
+      final monthlyResult = results[9] as Either<Failure, Map<String, int>>;
+      final partsUsageResult = results[10] as Either<Failure, Map<String, int>>;
+      final totalPartsUsedResult = results[11] as Either<Failure, int>;
+      final workerKPIsResult = results[12] as Either<Failure, List<Map<String, dynamic>>>;
+      final productsResult = results[13] as Either<Failure, List<Product>>;
 
-    // Process results
-    thisMonthResult.fold(
-      (failure) {},
-      (count) => _thisMonthProduction = count,
-    );
-    
-    ordersByStatusResult.fold(
-      (failure) {},
-      (counts) => _ordersByStatus = counts,
-    );
-    
-    ordersByDeptResult.fold(
-      (failure) {},
-      (counts) => _ordersByDepartment = counts,
-    );
-    
-    productionByProductResult.fold(
-      (failure) {},
-      (counts) => _productionByProduct = counts,
-    );
-    
-    lowStockResult.fold(
-      (failure) {},
-      (count) => _lowStockParts = count,
-    );
-    
-    lowStockListResult.fold(
-      (failure) {},
-      (parts) => _lowStockPartsList = parts,
-    );
-    
-    totalPartsResult.fold(
-      (failure) {},
-      (count) => _totalParts = count,
-    );
-    
-    totalProductsResult.fold(
-      (failure) {},
-      (count) => _totalProducts = count,
-    );
-    
-    totalDeptsResult.fold(
-      (failure) {},
-      (count) => _totalDepartments = count,
-    );
-    
-    monthlyResult.fold(
-      (failure) {},
-      (counts) => _monthlyProduction = counts,
-    );
-    
-    partsUsageResult.fold(
-      (failure) {},
-      (usage) => _topUsedParts = usage,
-    );
-    
-    totalPartsUsedResult.fold(
-      (failure) {},
-      (total) => _thisMonthPartsUsed = total,
-    );
+      // Load time tracking statistics (these are local sync calculations)
+      final orderService = OrderService();
+      _averageCompletionTime = orderService.getAverageCompletionTime();
+      _avgCompletionTimeByProduct = _calculateAvgCompletionTimeByProduct();
+      _avgCompletionTimeByDepartment = _calculateAvgCompletionTimeByDepartment();
 
-    // Load new KPI and Product analytics
-    final workerKPIsResult = await _analyticsService.getWorkerKPIs();
-    workerKPIsResult.fold(
-      (failure) {},
-      (stats) => _workerKPIs = stats,
-    );
+      // Process results
+      thisMonthResult.fold((_) {}, (val) => _thisMonthProduction = val);
+      ordersByStatusResult.fold((_) {}, (val) => _ordersByStatus = val);
+      ordersByDeptResult.fold((_) {}, (val) => _ordersByDepartment = val);
+      productionByProductResult.fold((_) {}, (val) => _productionByProduct = val);
+      lowStockResult.fold((_) {}, (val) => _lowStockParts = val);
+      lowStockListResult.fold((_) {}, (val) => _lowStockPartsList = val);
+      totalPartsResult.fold((_) {}, (val) => _totalParts = val);
+      totalProductsResult.fold((_) {}, (val) => _totalProducts = val);
+      totalDeptsResult.fold((_) {}, (val) => _totalDepartments = val);
+      monthlyResult.fold((_) {}, (val) => _monthlyProduction = val);
+      partsUsageResult.fold((_) {}, (val) => _topUsedParts = val);
+      totalPartsUsedResult.fold((_) {}, (val) => _thisMonthPartsUsed = val);
+      workerKPIsResult.fold((_) {}, (val) => _workerKPIs = val);
+      
+      productsResult.fold(
+        (_) {},
+        (products) {
+          _allProducts = products;
+          if (_selectedProductId == null && products.isNotEmpty) {
+            _selectedProductId = products.first.id;
+          }
+        },
+      );
 
-    // Set first product as default if none selected
-    final productsResult = await ServiceLocator.instance.productRepository.getAllProducts();
-    productsResult.fold(
-      (failure) {},
-      (products) {
-        _allProducts = products;
-        if (_selectedProductId == null && products.isNotEmpty) {
-          _selectedProductId = products.first.id;
+      // Load specific product stats if needed
+      if (_selectedProductId != null) {
+        final productStats = await Future.wait([
+          _analyticsService.getProductProgress(_selectedProductId!),
+          _analyticsService.getProductGrowth(_selectedProductId!),
+        ]);
+        
+        if (mounted) {
+          (productStats[0] as Either<Failure, Map<String, dynamic>>).fold((_) {}, (val) => _selectedProductProgress = val);
+          (productStats[1] as Either<Failure, Map<String, int>>).fold((_) {}, (val) => _selectedProductGrowth = val);
         }
-      },
-    );
-
-    if (_selectedProductId != null) {
-      final progressResult = await _analyticsService.getProductProgress(_selectedProductId!);
-      progressResult.fold(
-        (failure) {},
-        (stats) => _selectedProductProgress = stats,
-      );
-
-      final growthResult = await _analyticsService.getProductGrowth(_selectedProductId!);
-      growthResult.fold(
-        (failure) {},
-        (growth) => _selectedProductGrowth = growth,
-      );
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading analytics: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-
-    setState(() {
-      _isLoading = false;
-    });
   }
 
   /// Calculate average completion time by product

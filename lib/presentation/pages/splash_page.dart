@@ -38,135 +38,84 @@ class _SplashPageState extends State<SplashPage> {
   /// PERFORMANCE: Optimized with timeout and non-blocking operations
   Future<void> _initializeApp() async {
     try {
-      // PERFORMANCE: Show UI immediately, don't wait
-      // Minimum splash time for smooth UX (reduced from 300ms to 100ms)
-      await Future.delayed(const Duration(milliseconds: 100));
+      // PERFORMANCE: Start with a very short delay for smooth fade-in
+      await Future.delayed(const Duration(milliseconds: 50));
 
-      // PERFORMANCE: Wait for Supabase initialization with timeout
-      // WHY: Prevents infinite waiting if Supabase is slow
-      // FIX: Maximum 2 soniya kutadi, keyin auth page ga o'tadi
-      try {
+      // PERFORMANCE: Fast check for Supabase initialization
+      if (!AppSupabaseClient.isInitialized) {
         int retryCount = 0;
-        const maxRetries = 10; // 10 * 200ms = 2 soniya
+        const maxRetries = 5; // Reduced from 10 to 5 for faster fallback
         const retryDelay = Duration(milliseconds: 200);
 
         while (!AppSupabaseClient.isInitialized && retryCount < maxRetries) {
           await Future.delayed(retryDelay);
           retryCount++;
         }
-      } catch (e) {
-        debugPrint('⚠️ Supabase wait error: $e');
       }
 
-      // Check if Supabase is initialized after retries
+      // If Supabase still not ready, proceed in offline mode immediately
       if (!AppSupabaseClient.isInitialized) {
-        debugPrint('⚠️ Supabase initialization timeout - navigating to home (offline mode)');
-        if (!mounted) return;
-        setState(() {
-          _isInitializing = false;
-        });
-        // Go to home even if Supabase not ready (offline mode)
-        _navigateToHome();
+        debugPrint('⚠️ Supabase timeout - offline mode');
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          _navigateToHome();
+        }
         return;
       }
 
-      // FIX: Use global auth state service for consistent auth checking
-      // WHY: Global service handles OAuth users and session persistence correctly
-      // FIX: AuthStateService'ni initialize qilish (agar hali initialize bo'lmagan bo'lsa)
       final authService = AuthStateService();
+      // Fast initialize if needed
       if (!authService.isInitialized) {
-        await authService.initialize();
+        await authService.initialize().timeout(const Duration(seconds: 2), 
+          onTimeout: () => debugPrint('⚠️ Auth init timeout'));
       }
       
-      // Session va user profile'ni tekshirish
       final client = AppSupabaseClient.instance;
-      Session? session;
+      final session = client.client.auth.currentSession;
+      final currentUser = authService.currentUser;
       
-      try {
-        session = client.client.auth.currentSession;
-        debugPrint('🔍 Session check: ${session != null ? "exists" : "null"}');
-      } catch (e) {
-        debugPrint('⚠️ Error checking session: $e');
-        session = null;
+      if (currentUser != null) {
+        // We have a user! Go home immediately
+        if (mounted) {
+          setState(() {
+            _isInitializing = false;
+            _currentUser = currentUser;
+          });
+          _navigateToHome();
+        }
+        return;
       }
       
-      // Avval currentUser'ni tekshirish
-      var currentUser = authService.currentUser;
-      
-      // Agar currentUser null bo'lsa va session mavjud bo'lsa, profile yuklashga urinish
-      if (currentUser == null && session != null && session.user != null) {
-        debugPrint('⚠️ Session exists but user profile not loaded, waiting...');
-        
-        // Auth state change'ni kutish (profile yuklanishini kutish)
-        bool profileLoaded = false;
-        authService.onAuthStateChange((user) {
-          if (!mounted || profileLoaded) return;
-          
-          if (user != null) {
-            profileLoaded = true;
-            if (!mounted) return;
-            setState(() {
-              _isInitializing = false;
-              _currentUser = user;
-            });
-            _navigateToHome();
-          }
-        });
-        
-        // Profile yuklanishini kutish (maximum 1.5 soniya)
-        for (int i = 0; i < 3; i++) {
-          await Future.delayed(const Duration(milliseconds: 500));
-          
+      // If we have a session but no profile yet, wait briefly
+      if (session != null) {
+        debugPrint('🔍 Session exists, waiting for profile...');
+        // Wait maximum 1 second for the profile to appear in the service
+        for (int i = 0; i < 5; i++) {
+          await Future.delayed(const Duration(milliseconds: 200));
           if (!mounted) return;
           
-          currentUser = authService.currentUser;
-          if (currentUser != null && !profileLoaded) {
-            profileLoaded = true;
-            if (!mounted) return;
+          if (authService.currentUser != null) {
             setState(() {
               _isInitializing = false;
-              _currentUser = currentUser;
+              _currentUser = authService.currentUser;
             });
             _navigateToHome();
             return;
           }
         }
-        
-        // Agar hali ham profile yuklanmagan bo'lsa
-        if (!mounted) return;
-        if (currentUser == null) {
-          debugPrint('⚠️ Profile still not loaded after waiting, navigating to home');
-          setState(() {
-            _isInitializing = false;
-          });
-          _navigateToHome(); // Navigate to home even if profile not loaded
-          return;
-        }
       }
       
-      // Agar currentUser mavjud bo'lsa, home'ga o'tish
-      if (currentUser != null) {
-        if (!mounted) return;
-        setState(() {
-          _isInitializing = false;
-          _currentUser = currentUser;
-        });
-        _navigateToHome();
-      } else {
-        // User yo'q - go to home anyway (guest mode)
-        if (!mounted) return;
-        setState(() {
-          _isInitializing = false;
-        });
+      // No user or failed to load profile - go to home as guest
+      if (mounted) {
+        setState(() => _isInitializing = false);
         _navigateToHome();
       }
     } catch (e) {
       debugPrint('❌ Initialization error: $e');
-      if (!mounted) return;
-      setState(() {
-        _isInitializing = false;
-      });
-      _navigateToHome(); // Always navigate to home to prevent black screen
+      if (mounted) {
+        setState(() => _isInitializing = false);
+        _navigateToHome();
+      }
     }
   }
 

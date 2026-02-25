@@ -22,10 +22,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'core/services/error_handler_service.dart';
 
-import 'data/models/department_model.dart';
-import 'data/models/product_model.dart';
-import 'data/models/part_model.dart';
-import 'data/models/order_model.dart';
+import 'data/models/department_model.dart' as model;
+import 'data/models/product_model.dart' as model;
+import 'data/models/part_model.dart'; // PartModel has no conflict
+import 'data/models/order_model.dart' as model;
+import 'domain/entities/product.dart';
+import 'domain/entities/order.dart';
+import 'domain/entities/department.dart';
+import 'domain/entities/part.dart';
 import 'data/services/language_service.dart';
 import 'core/config/env_config.dart';
 import 'infrastructure/datasources/supabase_client.dart';
@@ -57,47 +61,39 @@ void main() async {
   // - Product: 2
   // - Order: 3
   if (!Hive.isAdapterRegistered(0)) {
-    Hive.registerAdapter(DepartmentAdapter());
+    Hive.registerAdapter(model.DepartmentAdapter());
   }
   if (!Hive.isAdapterRegistered(1)) {
     Hive.registerAdapter(PartModelAdapter());
   }
   if (!Hive.isAdapterRegistered(2)) {
-    Hive.registerAdapter(ProductAdapter());
+    Hive.registerAdapter(model.ProductAdapter());
   }
   if (!Hive.isAdapterRegistered(3)) {
-    Hive.registerAdapter(OrderAdapter());
+    Hive.registerAdapter(model.OrderAdapter());
   }
 
-  // Barcha boxlarni ochish (ma'lumotlar bazasi fayllari)
-  // Boxlar ochilgunga qadar ularga kirish mumkin emas
-  // PERFORMANCE: Open boxes in background to prevent UI blocking
-  final boxesFuture = Future.wait([
-    Hive.openBox<Department>('departmentsBox'),
+  // PERFORMANCE: Open boxes and init services in parallel
+  // This significantly reduces white screen time
+  final initializationFuture = Future.wait([
+    Hive.openBox<model.Department>('departmentsBox'),
     Hive.openBox<PartModel>('partsBox'),
-    Hive.openBox<Product>('productsBox'),
-    Hive.openBox<Order>('ordersBox'),
-    // Cache boxes for repositories
+    Hive.openBox<model.Product>('productsBox'),
+    Hive.openBox<model.Order>('ordersBox'),
     Hive.openBox<Map>('partsCache'),
     Hive.openBox<Map>('productsCache'),
+    ServiceLocator.instance.init(),
   ]);
 
-  // Initialize services (cache initialization)
-  await ServiceLocator.instance.init();
-
-  // Initialize Supabase and services in background
+  // Start background services immediately without awaiting
   _initializeServicesInBackground();
+  _initializeDefaultData(); 
 
-  // Default ma'lumotlarni yuklash (agar boxlar bo'sh bo'lsa)
-  // Bu MVP uchun test ma'lumotlari
-  _initializeDefaultData(); // Don't await - let it run in background
-
-  // Wait for boxes to open but with timeout to prevent hanging
+  // Wait for critical initialization with a shorter timeout
   try {
-    await boxesFuture.timeout(const Duration(seconds: 10));
+    await initializationFuture.timeout(const Duration(seconds: 5));
   } catch (e) {
-    debugPrint('⚠️ Boxes opening timeout: $e');
-    // Continue anyway to prevent app from freezing
+    debugPrint('⚠️ Initialization timeout or error: $e');
   }
 
   // Global error handling
@@ -201,9 +197,9 @@ Future<void> _syncInitialDataFromSupabase() async {
     }
     
     final partsBox = Hive.box<PartModel>('partsBox');
-    final productsBox = Hive.box<Product>('productsBox');
-    final ordersBox = Hive.box<Order>('ordersBox');
-    final departmentsBox = Hive.box<Department>('departmentsBox');
+    final productsBox = Hive.box<model.Product>('productsBox');
+    final ordersBox = Hive.box<model.Order>('ordersBox');
+    final departmentsBox = Hive.box<model.Department>('departmentsBox');
     
     // Agar barcha box'lar bo'sh bo'lsa, Supabase'dan yuklash
     final isEmpty = partsBox.isEmpty && productsBox.isEmpty && 
@@ -264,7 +260,7 @@ Future<void> _syncInitialDataFromSupabase() async {
           } else {
             // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
             for (var product in products) {
-              final productModel = Product(
+              final productModel = model.Product(
                 id: product.id,
                 name: product.name,
                 departmentId: product.departmentId,
@@ -292,7 +288,7 @@ Future<void> _syncInitialDataFromSupabase() async {
           } else {
             // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
             for (var order in orders) {
-              final orderModel = Order(
+              final orderModel = model.Order(
                 id: order.id,
                 departmentId: order.departmentId,
                 productName: order.productName,
@@ -315,7 +311,7 @@ Future<void> _syncInitialDataFromSupabase() async {
             .order('name');
         
         final departments = (response as List).map((json) {
-          return Department(
+          return model.Department(
             id: json['id'] as String,
             name: json['name'] as String,
             productIds: [], // Hive'dan keyin to'ldiriladi
@@ -357,9 +353,14 @@ Future<void> _syncInitialDataFromSupabase() async {
   }
 }
 
+bool _realtimeInitialized = false;
+
 /// Initialize realtime streams for products and orders
 /// WHY: Keep Hive cache synced with Supabase in real-time across all devices
 void _initializeRealtimeStreams() {
+  if (_realtimeInitialized) return;
+  _realtimeInitialized = true;
+  
   try {
     final productRepository = ServiceLocator.instance.productRepository;
     final partRepository = ServiceLocator.instance.partRepository;
@@ -437,7 +438,7 @@ void _initializeRealtimeStreams() {
           (data) {
             try {
               final departments = (data as List).map((json) {
-                return Department(
+                return model.Department(
                   id: json['id'] as String,
                   name: json['name'] as String,
                   productIds: [], // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
@@ -469,15 +470,15 @@ void _initializeRealtimeStreams() {
 }
 
 /// Update departmentsBox with departments from Supabase
-Future<void> _updateDepartmentsBox(List<Department> departments) async {
+Future<void> _updateDepartmentsBox(List<model.Department> departments) async {
   try {
     if (!Hive.isBoxOpen('departmentsBox')) {
-      await Hive.openBox<Department>('departmentsBox');
+      await Hive.openBox<model.Department>('departmentsBox');
     }
-    final box = Hive.box<Department>('departmentsBox');
+    final box = Hive.box<model.Department>('departmentsBox');
     
     // FIX: Mavjud department'larni saqlab qolish (productIds ni yo'qotmaslik uchun)
-    final existingDepartments = <String, Department>{};
+    final existingDepartments = <String, model.Department>{};
     for (var dept in box.values) {
       existingDepartments[dept.id] = dept;
     }
@@ -509,9 +510,9 @@ Future<void> _updateDepartmentsBox(List<Department> departments) async {
 /// Bu ma'lumotlar faqat birinchi marta yuklanadi.
 /// Keyingi ishga tushirishlarda mavjud ma'lumotlar saqlanadi.
 Future<void> _initializeDefaultData() async {
-  final departmentsBox = Hive.box<Department>('departmentsBox');
+  final departmentsBox = Hive.box<model.Department>('departmentsBox');
   final partsBox = Hive.box<PartModel>('partsBox');
-  final productsBox = Hive.box<Product>('productsBox');
+  final productsBox = Hive.box<model.Product>('productsBox');
 
   // Only initialize if boxes are empty
   if (departmentsBox.isEmpty || partsBox.isEmpty || productsBox.isEmpty) {
@@ -557,19 +558,19 @@ Future<void> _initializeDefaultData() async {
 
     // Create default departments
     if (departmentsBox.isEmpty) {
-      final dept1 = Department(
+      final dept1 = model.Department(
         id: uuid.v4(),
         name: 'Assembly',
         productIds: [],
         productParts: {},
       );
-      final dept2 = Department(
+      final dept2 = model.Department(
         id: uuid.v4(),
         name: 'Packaging',
         productIds: [],
         productParts: {},
       );
-      final dept3 = Department(
+      final dept3 = model.Department(
         id: uuid.v4(),
         name: 'Quality Control',
         productIds: [],
@@ -589,7 +590,7 @@ Future<void> _initializeDefaultData() async {
       if (parts.length >= 4 && departmentsBox.isNotEmpty) {
         final dept1 = departmentsBox.values.first;
         
-        final product1 = Product(
+        final product1 = model.Product(
           id: uuid.v4(),
           name: 'Widget A',
           departmentId: dept1.id,
@@ -598,7 +599,7 @@ Future<void> _initializeDefaultData() async {
             parts[1].id: 1, // 1 bolt per widget
           },
         );
-        final product2 = Product(
+        final product2 = model.Product(
           id: uuid.v4(),
           name: 'Widget B',
           departmentId: dept1.id,
@@ -608,7 +609,7 @@ Future<void> _initializeDefaultData() async {
             parts[3].id: 2, // 2 nuts per widget
           },
         );
-        final product3 = Product(
+        final product3 = model.Product(
           id: uuid.v4(),
           name: 'Widget C',
           departmentId: dept1.id,
