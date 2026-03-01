@@ -72,7 +72,7 @@ class _CourierAssignmentDialogState extends State<CourierAssignmentDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Assign Courier',
+              l10n?.translate('assignCourier') ?? 'Kuryer tayinlash',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -82,19 +82,19 @@ class _CourierAssignmentDialogState extends State<CourierAssignmentDialog> {
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
             else if (_couriers.isEmpty)
-              const Text('No couriers available')
+              Text(l10n?.translate('noCouriersAvailable') ?? 'Kuryerlar topilmadi')
             else ...[
               // Courier selection dropdown
               Text(
-                'Select Courier:',
+                l10n?.translate('selectCourier') ?? 'Kuryerni tanlang:',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: _selectedCourier,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Courier',
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: l10n?.translate('courier') ?? 'Kuryer',
                 ),
                 items: _couriers.map((courier) {
                   return DropdownMenuItem(
@@ -112,7 +112,7 @@ class _CourierAssignmentDialogState extends State<CourierAssignmentDialog> {
               
               // Quantity selection
               Text(
-                'Quantity to take:',
+                l10n?.translate('quantityToTake') ?? 'Olinadigan miqdor:',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
@@ -160,7 +160,7 @@ class _CourierAssignmentDialogState extends State<CourierAssignmentDialog> {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text(l10n?.cancel ?? 'Cancel'),
+                  child: Text(l10n?.translate('cancel') ?? 'Bekor qilish'),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
@@ -170,7 +170,7 @@ class _CourierAssignmentDialogState extends State<CourierAssignmentDialog> {
                           Navigator.pop(context);
                         }
                       : null,
-                  child: Text('Assign'),
+                  child: Text(l10n?.translate('assign') ?? 'Tayinlash'),
                 ),
               ],
             ),

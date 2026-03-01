@@ -42,6 +42,18 @@ class ProductService {
     }
   }
 
+  /// Nomi bo'yicha product topish
+  data.Product? getProductByName(String name) {
+    try {
+      final normalizedName = name.trim().toLowerCase();
+      return _boxService.productsBox.values.firstWhere(
+        (product) => product.name.trim().toLowerCase() == normalizedName,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Check if product name already exists (case-insensitive, trimmed)
   /// Returns true if duplicate found, false otherwise
   bool _hasDuplicateName(String name, {String? excludeId}) {

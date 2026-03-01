@@ -987,8 +987,8 @@ class OrderService {
           return <user_domain.User>[];
         },
         (users) {
-          // Faqat worker va manager larni qaytarish
-          return users.where((user) => user.isWorker || user.isManager).toList();
+          // Worker, Manager va Kuryerlarni qaytarish
+          return users.where((user) => user.isWorker || user.isManager || user.isCourier).toList();
         },
       );
     } catch (e) {

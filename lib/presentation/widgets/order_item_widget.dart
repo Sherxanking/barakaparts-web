@@ -465,18 +465,31 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
   /// Check if current user has start permission (assign worker)
   bool _hasStartPermission() {
     final currentUser = AuthStateService().currentUser;
-    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
+    // Boss, Manager yoki har qanday ruxsati bor xodim boshlashi mumkin
+    return currentUser != null && (currentUser.canManageOrders || currentUser.isManager || currentUser.isBoss);
   }
 
   /// Check if current user has complete permission
   bool _hasCompletePermission() {
     final currentUser = AuthStateService().currentUser;
-    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
+    if (currentUser == null) return false;
+
+    // Boss va Manager hamma narsani tugata oladi
+    if (currentUser.isBoss || currentUser.isManager) return true;
+
+    // Ishchi faqat o'ziga biriktirilgan orderni tugata oladi
+    if (widget.order.workerId != null && widget.order.workerId == currentUser.id) {
+      return true;
+    }
+
+    // Worker role ruxsati bo'lsa ham
+    return currentUser.canCompleteOrders;
   }
 
 
   /// Show start order dialog (assign worker)
   Future<void> _showStartOrderDialog(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final orderService = OrderService();
     final workers = await orderService.getWorkers();
     
@@ -485,11 +498,11 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     final selectedWorkerId = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Ishchini tanlang'),
+        title: Text(l10n?.translate('selectWorker') ?? 'Ishchini tanlang'),
         content: SizedBox(
           width: double.maxFinite,
           child: workers.isEmpty 
-            ? const Text('Ishchilar topilmadi')
+            ? Text(l10n?.translate('noWorkersFound') ?? 'Ishchilar topilmadi')
             : ListView.builder(
                 shrinkWrap: true,
                 itemCount: workers.length,
@@ -498,6 +511,7 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                   return ListTile(
                     leading: const Icon(Icons.person),
                     title: Text(worker.name),
+                    subtitle: Text(worker.role),
                     onTap: () => Navigator.pop(context, worker.id),
                   );
                 },
@@ -506,7 +520,7 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Bekor qilish'),
+            child: Text(l10n?.translate('cancel') ?? 'Bekor qilish'),
           ),
         ],
       ),
@@ -517,11 +531,17 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
       if (context.mounted) {
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Buyurtma boshlandi'), backgroundColor: Colors.green),
+            SnackBar(
+              content: Text(l10n?.translate('orderStarted') ?? 'Buyurtma boshlandi'), 
+              backgroundColor: Colors.green
+            ),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Xatolik yuz berdi'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text(l10n?.translate('errorOccurred') ?? 'Xatolik yuz berdi'), 
+              backgroundColor: Colors.red
+            ),
           );
         }
       }
@@ -549,30 +569,31 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     });
 
     if (hasShortage) {
+      final l10n = AppLocalizations.of(context);
       final bool? force = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Qismlar yetishmayapti!'),
+          title: Text(l10n?.translate('partsShortageTitle') ?? 'Qismlar yetishmayapti!'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Quyidagi qismlar omborda yetarli emas:'),
+              Text(l10n?.translate('partsShortageContent') ?? 'Quyidagi qismlar omborda yetarli emas:'),
               const SizedBox(height: 8),
               ...shortageList.map((p) => Text('• $p', style: const TextStyle(color: Colors.red))),
               const SizedBox(height: 16),
-              const Text('Shunday bo\'lsa ham tugatilsinmi? (Qismlar ombordan ayirilmaydi)'),
+              Text(l10n?.translate('forceFinishConfirm') ?? 'Shunday bo\'lsa ham tugatilsinmi? (Qismlar ombordan ayirilmaydi)'),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Bekor qilish'),
+              child: Text(l10n?.translate('cancel') ?? 'Bekor qilish'),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              child: const Text('Majburiy tugatish'),
+              child: Text(l10n?.translate('forceFinish') ?? 'Majburiy tugatish'),
             ),
           ],
         ),
@@ -584,7 +605,10 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
           final success = await orderService.completeOrder(dataOrder, isForce: true);
           if (context.mounted && success) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Buyurtma majburiy tugatildi'), backgroundColor: Colors.orange),
+              SnackBar(
+                content: Text(l10n?.translate('orderForceFinished') ?? 'Buyurtma majburiy tugatildi'), 
+                backgroundColor: Colors.orange
+              ),
             );
           }
         }
