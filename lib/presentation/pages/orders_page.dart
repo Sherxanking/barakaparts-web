@@ -37,6 +37,8 @@ import '../widgets/error_widget.dart';
 import '../widgets/order_item_widget.dart';
 import 'order_history_page.dart';
 import 'analytics_page.dart';
+import '../widgets/skeletons.dart';
+import '../../core/utils/toast_service.dart'; // Yangi import
 import '../../l10n/app_localizations.dart';
 import '../widgets/courier_assignment_dialog.dart';
 import '../../core/services/telegram_notification_service.dart';
@@ -277,44 +279,40 @@ class _OrdersPageState extends State<OrdersPage> {
 
   /// Calculate parts shortage for order and notify manager
   void _calculateAndNotifyPartsShortage(String productName, int quantity) {
-    final product = _productService.getAllProducts().firstWhere(
-      (p) => p.name == productName,
-      orElse: () => Product(id: '', name: productName, parts: {}, departmentId: ''),
-    );
+    _productService.getAllProducts().forEach((product) {
+      if (product.name == productName) {
+        final shortages = <PartShortage>[];
+        
+        for (var entry in product.parts.entries) {
+          final partId = entry.key;
+          final qtyPerProduct = entry.value;
+          final requiredQty = qtyPerProduct * quantity;
+          
+          final part = _partService.getPartById(partId);
+          if (part == null) continue;
 
-    if (product.id.isEmpty) {
-      _showSnackBar('Product not found: $productName', Colors.red);
-      return;
-    }
+          // 1. Dashboard-like Stock Alert (if below threshold)
+          if (part.quantity <= part.minQuantity) {
+            ToastService().showStockAlert(context, part.name, part.quantity);
+          }
 
-    final shortages = <PartShortage>[];
-    
-    for (var entry in product.parts.entries) {
-      final partId = entry.key;
-      final qtyPerProduct = entry.value;
-      final requiredQty = qtyPerProduct * quantity;
-      
-      final part = _partService.getPartById(partId);
-      if (part == null) {
-        _showSnackBar('Part not found: $partId', Colors.red);
-        return;
+          // 2. Immediate Shortage for current order
+          if (part.quantity < requiredQty) {
+            shortages.add(PartShortage(
+              partId: partId,
+              partName: part.name,
+              required: requiredQty,
+              available: part.quantity,
+            ));
+          }
+        }
+
+        // If there are shortages, notify manager
+        if (shortages.isNotEmpty) {
+          _notifyManagerAboutShortage(shortages);
+        }
       }
-
-      if (part.quantity < requiredQty) {
-        final shortage = PartShortage(
-          partId: partId,
-          partName: part.name,
-          required: requiredQty,
-          available: part.quantity,
-        );
-        shortages.add(shortage);
-      }
-    }
-
-    // If there are shortages, notify manager (simulated)
-    if (shortages.isNotEmpty) {
-      _notifyManagerAboutShortage(shortages);
-    }
+    });
   }
 
   /// Notify manager about parts shortage via Telegram (simulated)
@@ -547,11 +545,6 @@ class _OrdersPageState extends State<OrdersPage> {
             _soldToController.clear();
             _showSoldToError = false;
           });
-          
-          // Yetishmovchilik bo'lmagan bo'lsa muvaffaqiyat xabari
-          if (!calculationResult.hasShortage) {
-            _showSnackBar(AppLocalizations.of(context)?.translate('orderCreated') ?? 'Order created successfully', Colors.green);
-          }
           
           // Hisoblash va xabarnoma yuborish
           _calculateAndNotifyPartsShortage(product.name, quantity);
@@ -1283,8 +1276,19 @@ class _OrdersPageState extends State<OrdersPage> {
       builder: (context, snapshot) {
         // Handle loading state
         if (_isInitialLoading && !snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return Scaffold(
+            body: Column(
+              children: [
+                // UX: Filterlar joyini saqlab qolamizki, ekran sakramasin
+                const SizedBox(height: 100), 
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: 5,
+                    itemBuilder: (_, __) => const OrderItemSkeleton(),
+                  ),
+                ),
+              ],
+            ),
           );
         }
         
@@ -1719,11 +1723,24 @@ class _OrdersPageState extends State<OrdersPage> {
                               child: EmptyStateWidget(
                                 icon: Icons.shopping_cart_outlined,
                                 title: orders.isEmpty 
-                                    ? 'No orders yet' 
-                                    : 'No orders match your filters',
+                                    ? 'Hali buyurtmalar yo\'q' 
+                                    : 'Filtrga mos buyurtma topilmadi',
                                 subtitle: orders.isEmpty
-                                    ? 'Create your first order using the form above'
-                                    : 'Try adjusting your search or filters',
+                                    ? 'Yuqoridagi tugma orqali birinchi buyurtmani yarating'
+                                    : 'Qidiruv shartlarini o\'zgartirib ko\'ring',
+                                actionButton: orders.isEmpty ? ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _showCreateOrderForm = true;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Birinchi buyurtmani qo\'shish'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ) : null,
                               ),
                             )
                           else

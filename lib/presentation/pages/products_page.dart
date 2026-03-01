@@ -22,8 +22,11 @@ import '../widgets/search_bar_widget.dart';
 import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/filter_chip_widget.dart';
-import '../widgets/animated_list_item.dart';
 import 'product_edit_page.dart';
+import '../../l10n/app_localizations.dart';
+import '../widgets/skeletons.dart';
+import '../../core/utils/reporting_utils.dart';
+import 'package:flutter/services.dart';
 
 class ProductsPage extends StatefulWidget {
   const ProductsPage({super.key});
@@ -421,358 +424,394 @@ class _ProductsPageState extends State<ProductsPage> {
     final canEditProducts = currentUser != null && (currentUser.isManager || currentUser.isBoss);
     final canDeleteProducts = currentUser != null && currentUser.isBoss;
 
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Products'),
-        elevation: 2,
-        actions: [
-          _isRefreshing
-              ? const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  ),
-                )
-              : IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Refresh',
-                  onPressed: _refreshFromSupabase,
-                ),
-          PopupMenuButton<SortOption>(
-            icon: const Icon(Icons.sort),
-            tooltip: 'Sort',
-            initialValue: _selectedSortOption,
-            onSelected: (option) {
-              setState(() {
-                _selectedSortOption = option;
-              });
+      backgroundColor: Colors.grey[50],
+      body: ValueListenableBuilder(
+        valueListenable: _boxService.productsListenable,
+        builder: (context, Box<Product> box, _) {
+          final products = _getFilteredProducts();
+          final totalProducts = box.length;
+          final filteredCount = products.length;
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              await _refreshFromSupabase();
             },
-            itemBuilder: (context) => const [
-              SortOption.nameAsc,
-              SortOption.nameDesc,
-            ].map((option) {
-              return PopupMenuItem(
-                value: option,
-                child: Text(option.getLabel(context)),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search, Filter va Sort section
-          Container(
-            padding: const EdgeInsets.all(20),
-            color: Theme.of(context).colorScheme.surface,
-            child: Column(
-              children: [
-                SearchBarWidget(
-                  controller: _searchController,
-                  hintText: 'Search products...',
-                  onChanged: (_) => setState(() {}),
-                  onClear: () => setState(() {}),
-                ),
-                const SizedBox(height: 20),
-                // Department filter
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Filters',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[700],
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: 120,
+                  floating: true,
+                  pinned: true,
+                  stretch: true,
+                  backgroundColor: Colors.white,
+                  surfaceTintColor: Colors.white,
+                  elevation: 0,
+                  flexibleSpace: FlexibleSpaceBar(
+                    title: Text(
+                      l10n?.translate('products') ?? 'Products',
+                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
                     ),
+                    centerTitle: false,
+                    titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
                   ),
-                ),
-                const SizedBox(height: 8),
-                ValueListenableBuilder(
-                  valueListenable: _boxService.departmentsListenable,
-                  builder: (context, Box<Department> box, _) {
-                    final departments = box.values.toList();
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          FilterChipWidget(
-                            label: 'All Departments',
-                            selected: _selectedDepartmentFilter == null,
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedDepartmentFilter = selected ? null : _selectedDepartmentFilter;
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 12),
-                          ...departments.map((dept) {
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: FilterChipWidget(
-                                label: dept.name,
-                                selected: _selectedDepartmentFilter == dept.id,
-                                onSelected: (selected) {
-                                  setState(() {
-                                    _selectedDepartmentFilter = selected ? dept.id : null;
-                                  });
-                                },
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-            child: Text(
-              'Products List',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-
-          // Products list
-          Expanded(
-            child: ValueListenableBuilder(
-              valueListenable: _boxService.productsListenable,
-              builder: (context, Box<Product> box, _) {
-                final products = _getFilteredProducts();
-
-                if (products.isEmpty) {
-                  return RefreshIndicator(
-                    onRefresh: () async {
-                      setState(() {});
-                      await Future.delayed(const Duration(milliseconds: 500));
-                    },
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.6,
-                        child: EmptyStateWidget(
-                          icon: Icons.inventory,
-                          title: box.isEmpty 
-                              ? 'No products yet' 
-                              : 'No products match your filters',
-                          subtitle: box.isEmpty
-                              ? 'Tap the + button to add a product'
-                              : 'Try adjusting your search or filters',
+                  actions: [
+                    if (_isRefreshing)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _refreshFromSupabase,
                       ),
+                    PopupMenuButton<SortOption>(
+                      icon: const Icon(Icons.sort),
+                      onSelected: (option) => setState(() => _selectedSortOption = option),
+                      itemBuilder: (context) => [
+                        SortOption.nameAsc,
+                        SortOption.nameDesc,
+                      ].map((option) => PopupMenuItem(
+                        value: option,
+                        child: Text(option.getLabel(context)),
+                      )).toList(),
                     ),
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    setState(() {});
-                    await Future.delayed(const Duration(milliseconds: 500));
-                  },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: products.length,
-                    itemBuilder: (context, index) {
-                    final product = products[index];
-                    final department = _departmentService.getDepartmentById(product.departmentId);
-
-                      return AnimatedListItem(
-                        delay: index * 50,
-                        child: Card(
-                        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                        elevation: 3,
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            child: Icon(Icons.inventory),
-                          ),
-                          title: Text(
-                            product.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Department: ${department?.name ?? 'Unknown'}'),
-                              Text('Parts: ${product.parts.length}'),
-                              if (product.parts.isNotEmpty)
-                                Text(
-                                  product.parts.entries
-                                      .map((e) {
-                                        final part = _partService.getPartById(e.key);
-                                        return '${part?.name ?? e.key}: ${e.value}';
-                                      })
-                                      .join(', '),
-                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                          onTap: canEditProducts
-                              ? () async {
-                            // Navigate to edit page
-                            final result = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ProductEditPage(product: product),
-                              ),
-                            );
-                            // Refresh if product was updated
-                            if (result == true) {
-                              setState(() {});
-                            }
-                          }
-                              : null,
-                          trailing: canDeleteProducts
-                              ? IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        title: const Text('Delete Product'),
-                                        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                                        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        content: const Text(
-                                          'Are you sure you want to delete this product?',
-                                        ),
-                                        actions: [
-                                          const SizedBox(height: 4),
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(context),
-                                            child: const Text('Cancel'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                              _deleteProduct(product);
-                                            },
-                                            child: const Text(
-                                              'Delete',
-                                              style: TextStyle(color: Colors.red),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                  tooltip: 'Delete',
-                                )
-                              : null,
-                        ),
-                      ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: canCreateProducts
-          ? FloatingActionButton(
-        onPressed: () {
-          _nameController.clear();
-          selectedDepartmentId = null;
-          selectedParts.clear();
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Add New Product'),
-              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Product Name',
-                        border: OutlineInputBorder(),
-                        hintText: 'Enter product name',
-                      ),
-                      autofocus: true,
-                    ),
-                    const SizedBox(height: 20),
-                    ValueListenableBuilder(
-                      valueListenable: _boxService.departmentsListenable,
-                      builder: (context, Box<Department> deptBox, _) {
-                        final departments = deptBox.values.toList();
-                        return DropdownButtonFormField<String>(
-                          value: selectedDepartmentId,
-                          decoration: const InputDecoration(
-                            labelText: 'Department',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: departments.map((dept) {
-                            return DropdownMenuItem(
-                              value: dept.id,
-                              child: Text(dept.name),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              selectedDepartmentId = value;
-                            });
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: _showPartsDialog,
-                      icon: const Icon(Icons.add),
-                      label: Text(
-                        selectedParts.isEmpty
-                            ? 'Select Parts'
-                            : 'Parts (${selectedParts.length})',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
                   ],
                 ),
-              ),
-                actions: [
-                  const SizedBox(height: 4),
-                TextButton(
-                  onPressed: () {
-                    _nameController.clear();
-                    selectedDepartmentId = null;
-                    selectedParts.clear();
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Cancel'),
+
+                // Search and Filters
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SearchBarWidget(
+                          controller: _searchController,
+                          hintText: l10n?.translate('searchProducts') ?? 'Search products...',
+                          onChanged: (_) => setState(() {}),
+                          onClear: () => setState(() {}),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildDepartmentFilter(),
+                      ],
+                    ),
+                  ),
                 ),
-                TextButton(
-                  onPressed: _isSavingProduct
-                      ? null
-                      : () {
-                          _addProduct();
+
+                // Stats Dashboard
+                SliverToBoxAdapter(
+                  child: _buildProductDashboard(totalProducts, filteredCount),
+                ),
+
+                // Loading State
+                if (_isRefreshing && products.isEmpty)
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => const ProductSkeleton(),
+                      childCount: 5,
+                    ),
+                  )
+                else if (products.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: EmptyStateWidget(
+                      icon: Icons.inventory_2_outlined,
+                      title: box.isEmpty 
+                          ? (l10n?.translate('noProducts') ?? 'No products yet')
+                          : (l10n?.translate('noResults') ?? 'No results found'),
+                      subtitle: (l10n?.translate('tryAdjustingFilters') ?? 'Try adjusting search or filters'),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final product = products[index];
+                          return _buildModernProductCard(product, canEditProducts, canDeleteProducts);
                         },
-                  child: _isSavingProduct
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Add'),
-                ),
+                        childCount: products.length,
+                      ),
+                    ),
+                  ),
+                
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             ),
           );
         },
-        child: const Icon(Icons.add),
-      )
+      ),
+      floatingActionButton: canCreateProducts
+          ? FloatingActionButton.extended(
+              onPressed: _showAddProductDialog,
+              icon: const Icon(Icons.add),
+              label: Text(l10n?.translate('add') ?? 'Add'),
+              backgroundColor: Colors.blue[700],
+              foregroundColor: Colors.white,
+            )
           : null,
+    );
+  }
+
+  Widget _buildDepartmentFilter() {
+    return ValueListenableBuilder(
+      valueListenable: _boxService.departmentsListenable,
+      builder: (context, Box<Department> box, _) {
+        final departments = box.values.toList();
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              _buildFilterChip(
+                label: 'All',
+                selected: _selectedDepartmentFilter == null,
+                onTap: () => setState(() => _selectedDepartmentFilter = null),
+              ),
+              ...departments.map((dept) => _buildFilterChip(
+                label: dept.name,
+                selected: _selectedDepartmentFilter == dept.id,
+                onTap: () => setState(() => _selectedDepartmentFilter = dept.id),
+              )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip({required String label, required bool selected, required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: Colors.blue[100],
+        labelStyle: TextStyle(
+          color: selected ? Colors.blue[800] : Colors.grey[700],
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+        ),
+        backgroundColor: Colors.white,
+        side: BorderSide(color: selected ? Colors.blue[300]! : Colors.grey[300]!),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildProductDashboard(int total, int filtered) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          _buildSmallStatCard('Total', total.toString(), Icons.inventory_2_outlined, Colors.blue),
+          const SizedBox(width: 12),
+          _buildSmallStatCard('Shown', filtered.toString(), Icons.filter_list, Colors.teal),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmallStatCard(String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+          border: Border.all(color: color.withOpacity(0.1)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+                Text(label, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernProductCard(Product product, bool canEdit, bool canDelete) {
+    final department = _departmentService.getDepartmentById(product.departmentId);
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: canEdit ? () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => ProductEditPage(product: product)),
+            );
+            if (result == true) setState(() {});
+          } : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.inventory_2, color: Colors.blue[700]),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        department?.name ?? 'Unknown Department',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.settings_input_component, size: 12, color: Colors.grey[400]),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${product.parts.length} parts',
+                            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (canDelete)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    onPressed: () => _confirmDeleteProduct(product),
+                  ),
+                Icon(Icons.chevron_right, color: Colors.grey[300]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteProduct(Product product) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Product'),
+        content: Text('Are you sure you want to delete "${product.name}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteProduct(product);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddProductDialog() {
+    _nameController.clear();
+    selectedDepartmentId = null;
+    selectedParts.clear();
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('New Product'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Product Name',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.label),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ValueListenableBuilder(
+                    valueListenable: _boxService.departmentsListenable,
+                    builder: (context, Box<Department> deptBox, _) {
+                      final departments = deptBox.values.toList();
+                      return DropdownButtonFormField<String>(
+                        value: selectedDepartmentId,
+                        decoration: const InputDecoration(
+                          labelText: 'Department',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.business),
+                        ),
+                        items: departments.map((dept) => DropdownMenuItem(value: dept.id, child: Text(dept.name))).toList(),
+                        onChanged: (val) => setDialogState(() => selectedDepartmentId = val),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[300]!)),
+                    leading: const Icon(Icons.add_circle_outline),
+                    title: Text(selectedParts.isEmpty ? 'Select Parts' : 'Parts (${selectedParts.length})'),
+                    onTap: () async {
+                      _showPartsDialog();
+                      // Simple delay to update dialog state after parts selection
+                      await Future.delayed(const Duration(milliseconds: 500));
+                      setDialogState(() {});
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: _isSavingProduct ? null : _addProduct,
+                child: _isSavingProduct ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Add'),
+              ),
+            ],
+          );
+        }
+      ),
     );
   }
 }

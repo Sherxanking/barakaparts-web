@@ -294,245 +294,269 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     return Scaffold(
+      backgroundColor: Colors.grey[50], // Professional light background
       appBar: AppBar(
-        title: Text(l10n.settings),
+        title: Text(l10n.translate('settings') ?? 'Sozlamalar'),
         elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.black87,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Current User Info Section
-                if (_currentUser != null)
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    _currentUser!.name.isNotEmpty
-                                        ? _currentUser!.name[0].toUpperCase()
-                                        : 'U',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.onPrimary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _currentUser!.name,
-                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                    if (_currentUser!.email != null) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _currentUser!.email!,
-                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                              color: Colors.grey[600],
-                                            ),
-                                      ),
-                                    ],
-                                    const SizedBox(height: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: _getRoleColor(_currentUser!.role).withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: _getRoleColor(_currentUser!.role),
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            _getRoleIcon(_currentUser!.role),
-                                            size: 16,
-                                            color: _getRoleColor(_currentUser!.role),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            _getRoleLabel(_currentUser!.role),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: _getRoleColor(_currentUser!.role),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_currentUser!.phone != null && _currentUser!.phone!.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            const Divider(),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.phone,
-                                  size: 20,
-                                  color: Colors.grey[600],
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _currentUser!.phone!,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                if (_currentUser != null) const SizedBox(height: 16),
-                // Admin Panel Section (only for managers and boss)
-                if (_currentUser != null && (_currentUser!.isManager || _currentUser!.isBoss)) ...[
-                  Card(
-                    elevation: 2,
-                    child: ListTile(
-                      leading: const Icon(Icons.admin_panel_settings, color: Colors.blue),
-                      title: const Text('Admin Panel'),
-                      subtitle: const Text('Manage users and roles'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        Navigator.push(
+          : SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Profile Section
+                  if (_currentUser != null) _buildProfileHeader(),
+                  const SizedBox(height: 24),
+
+                  // 2. Admin/Management Section
+                  if (_currentUser != null && (_currentUser!.isManager || _currentUser!.isBoss)) ...[
+                    _buildSectionHeader('Boshqaruv'),
+                    _buildSettingSection([
+                      _buildSettingTile(
+                        icon: Icons.admin_panel_settings,
+                        iconColor: Colors.blue,
+                        title: 'Admin Panel',
+                        subtitle: 'Foydalanuvchilarni boshqarish',
+                        onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (context) => const AdminPanelPage(),
-                          ),
-                        );
-                      },
+                          MaterialPageRoute(builder: (_) => const AdminPanelPage()),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // 3. App Settings Section
+                  _buildSectionHeader(l10n.translate('appSettings') ?? 'Ilova sozlamalari'),
+                  _buildSettingSection([
+                    _buildSettingTile(
+                      icon: Icons.language,
+                      iconColor: Colors.purple,
+                      title: l10n.translate('language') ?? 'Til',
+                      trailing: Text(
+                        AppLocalizations.supportedLanguages[_selectedLanguage] ?? 'English',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                      onTap: _showLanguageDialog,
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    _buildSettingTile(
+                      icon: Icons.lock_outline,
+                      iconColor: Colors.orange,
+                      title: l10n.translate('changePassword') ?? 'Parolni o\'zgartirish',
+                      onTap: _showChangePasswordDialog,
+                    ),
+                  ]),
+                  const SizedBox(height: 24),
+
+                  // 4. About Section
+                  _buildSectionHeader('Ma\'lumotlar'),
+                  _buildSettingSection([
+                    _buildSettingTile(
+                      icon: Icons.info_outline,
+                      iconColor: Colors.teal,
+                      title: 'Ilova haqida',
+                      subtitle: 'Baraka Parts',
+                      trailing: Text(_appVersionLabel, style: const TextStyle(fontSize: 12)),
+                    ),
+                  ]),
+                  const SizedBox(height: 24),
+
+                  // 5. Logout Section
+                  _buildSettingSection([
+                    _buildSettingTile(
+                      icon: Icons.logout,
+                      iconColor: Colors.red,
+                      title: 'Tizimdan chiqish',
+                      titleColor: Colors.red,
+                      showChevron: false,
+                      onTap: _handleLogout,
+                    ),
+                  ]),
+                  const SizedBox(height: 40),
                 ],
-                // Language Section
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          l10n.translate('language'),
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Uzbek
-                        _LanguageOption(
-                          languageCode: 'uz',
-                          languageName: AppLocalizations.supportedLanguages['uz']!,
-                          isSelected: _selectedLanguage == 'uz',
-                          onTap: () => _changeLanguage('uz'),
-                        ),
-                        const Divider(),
-                        // Russian
-                        _LanguageOption(
-                          languageCode: 'ru',
-                          languageName: AppLocalizations.supportedLanguages['ru']!,
-                          isSelected: _selectedLanguage == 'ru',
-                          onTap: () => _changeLanguage('ru'),
-                        ),
-                        const Divider(),
-                        // English
-                        _LanguageOption(
-                          languageCode: 'en',
-                          languageName: AppLocalizations.supportedLanguages['en']!,
-                          isSelected: _selectedLanguage == 'en',
-                          onTap: () => _changeLanguage('en'),
-                        ),
-                      ],
-                    ),
-                  ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey[500],
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingSection(List<Widget> tiles) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: List.generate(tiles.length, (index) {
+          return Column(
+            children: [
+              tiles[index],
+              if (index < tiles.length - 1)
+                const Divider(height: 1, indent: 56, endIndent: 16),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildSettingTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    bool showChevron = true,
+    Color titleColor = Colors.black87,
+    VoidCallback? onTap,
+  }) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: iconColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: iconColor, size: 20),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(color: titleColor, fontWeight: FontWeight.w500),
+      ),
+      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12)) : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (trailing != null) trailing,
+          if (showChevron) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+          ],
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Theme.of(context).primaryColor, Theme.of(context).primaryColor.withOpacity(0.7)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                _currentUser!.name.isNotEmpty ? _currentUser!.name[0].toUpperCase() : 'U',
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _currentUser!.name,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 24),
-                // Password change section
-                Card(
-                  elevation: 2,
-                  child: ListTile(
-                    leading: const Icon(Icons.lock_outline),
-                    title: Text(l10n.translate('changePassword')),
-                    subtitle: Text(
-                      l10n.translate('changePasswordHint'),
-                    ),
-                    onTap: _showChangePasswordDialog,
-                  ),
+                Text(
+                  _getRoleLabel(_currentUser!.role),
+                  style: TextStyle(color: _getRoleColor(_currentUser!.role), fontWeight: FontWeight.w600, fontSize: 13),
                 ),
-                const SizedBox(height: 24),
-                // App Info Section
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          l10n.translate('appSettings'),
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                        ),
-                        const SizedBox(height: 16),
-                        ListTile(
-                          leading: const Icon(Icons.info_outline),
-                          title: const Text('Baraka Parts'),
-                          subtitle: Text(_appVersionLabel),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Logout Section
-                Card(
-                  elevation: 2,
-                  child: ListTile(
-                    leading: const Icon(Icons.logout, color: Colors.red),
-                    title: const Text(
-                      'Chiqish',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    onTap: _handleLogout,
-                  ),
-                ),
+                if (_currentUser!.email != null) ...[
+                  const SizedBox(height: 4),
+                  Text(_currentUser!.email!, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                ],
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLanguageDialog() {
+    final l10n = AppLocalizations.of(context);
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Tilni tanlang', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            _LanguageOption(
+              languageCode: 'uz',
+              languageName: AppLocalizations.supportedLanguages['uz']!,
+              isSelected: _selectedLanguage == 'uz',
+              onTap: () { Navigator.pop(context); _changeLanguage('uz'); },
+            ),
+            _LanguageOption(
+              languageCode: 'ru',
+              languageName: AppLocalizations.supportedLanguages['ru']!,
+              isSelected: _selectedLanguage == 'ru',
+              onTap: () { Navigator.pop(context); _changeLanguage('ru'); },
+            ),
+            _LanguageOption(
+              languageCode: 'en',
+              languageName: AppLocalizations.supportedLanguages['en']!,
+              isSelected: _selectedLanguage == 'en',
+              onTap: () { Navigator.pop(context); _changeLanguage('en'); },
+            ),
+          ],
+        ),
+      ),
     );
   }
 

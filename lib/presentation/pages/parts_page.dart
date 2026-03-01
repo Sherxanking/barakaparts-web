@@ -32,8 +32,9 @@ import '../../core/services/auth_state_service.dart';
 import '../../core/services/error_handler_service.dart';
 import 'package:flutter/services.dart';
 import '../../core/utils/reporting_utils.dart';
-import 'part_history_page.dart';
 import 'analytics_page.dart';
+import '../widgets/skeletons.dart';
+import 'part_history_page.dart';
 
 class PartsPage extends StatefulWidget {
   const PartsPage({super.key});
@@ -277,6 +278,99 @@ class _PartsPageState extends State<PartsPage> {
         _showSnackBar('Unexpected error: ${e.toString()}', Colors.red);
       }
     }
+  }
+
+  /// Yangi qism qo'shish dialogi
+  void _showAddSinglePartDialog() {
+    // Clear controllers for fresh start
+    _nameController.clear();
+    _quantityController.clear();
+    _minQuantityController.clear();
+    _broughtByController.clear();
+    _contactNameController.clear();
+    _contactPhoneController.clear();
+    _selectedImage = null;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        final l10n = AppLocalizations.of(context);
+        return AlertDialog(
+          title: Text(l10n?.translate('addSinglePart') ?? 'Add Single Part'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                StatefulBuilder(
+                  builder: (context, setInnerState) => ImagePickerWidget(
+                    currentImagePath: null,
+                    onImagePicked: (imageFile) {
+                      setInnerState(() => _selectedImage = imageFile);
+                    },
+                    onImageDeleted: () {
+                      setInnerState(() => _selectedImage = null);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    labelText: l10n?.translate('partName') ?? 'Part Name',
+                    border: const OutlineInputBorder(),
+                  ),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _quantityController,
+                  decoration: InputDecoration(
+                    labelText: l10n?.translate('quantity') ?? 'Quantity',
+                    border: const OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _minQuantityController,
+                  decoration: InputDecoration(
+                    labelText: l10n?.translate('minQuantityLabel') ?? 'Min Quantity',
+                    border: const OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _broughtByController,
+                  decoration: InputDecoration(
+                    labelText: l10n?.translate('broughtByLabel') ?? 'Olib kelgan shaxs',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.person_add),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n?.translate('cancel') ?? 'Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _addPart,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[700],
+                foregroundColor: Colors.white,
+              ),
+              child: Text(l10n?.translate('add') ?? 'Add'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Qismni o'chirish
@@ -1676,950 +1770,339 @@ class _PartsPageState extends State<PartsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Either<Failure, List<Part>>>(
-      stream: _partRepository.watchParts(),
-      builder: (context, snapshot) {
-        // Handle loading state
-        if (_isInitialLoading && !snapshot.hasData) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Parts'), elevation: 0),
-            body: const Center(child: CircularProgressIndicator()),
-          );
-        }
-        
-        // Handle error state
-        if (snapshot.hasError) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Parts'), elevation: 0),
-            body: ErrorDisplayWidget(
+    final l10n = AppLocalizations.of(context);
+    final currentUser = AuthStateService().currentUser;
+    final canCreateParts = currentUser?.canCreateParts() ?? false;
+    final canEditParts = currentUser?.canEditParts() ?? false;
+    final canDeleteParts = currentUser?.canDeleteParts() ?? false;
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: StreamBuilder<Either<Failure, List<Part>>>(
+        stream: _partRepository.watchParts(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting && _isInitialLoading) {
+            return _buildLoadingState(l10n);
+          }
+
+          if (snapshot.hasError) {
+            return ErrorDisplayWidget(
               error: snapshot.error,
-              onRetry: () => setState(() => _isInitialLoading = true),
-            ),
-          );
-        }
-        
-        // Handle data
-        final parts = snapshot.data?.fold(
-          (failure) {
-            // Show user-friendly error message
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                final message = ErrorHandlerService.instance.getErrorMessage(failure);
-                ErrorHandlerService.instance.showErrorSnackBar(context, message);
-              }
-            });
-            return <Part>[];
-          },
-          (parts) => parts,
-        ) ?? <Part>[];
-        
-        try {
-          final l10n = AppLocalizations.of(context);
-          final lowStockParts = _getLowStockParts(parts);
-          // Use live parts list to match filtered view
-          final lowStockCount = lowStockParts.length;
-          final filteredParts = _getFilteredParts(parts);
-          final showFilterBanner = _showLowStockOnly || _searchController.text.isNotEmpty;
-          final totalParts = parts.length;
-          final filteredCount = filteredParts.length;
-          final totalQuantity = parts.fold<int>(0, (sum, part) => sum + part.quantity);
-          final filteredQuantity = filteredParts.fold<int>(0, (sum, part) => sum + part.quantity);
-          // Header height no longer fixed; using normal sliver content to avoid clipping.
-          
-          final currentUser = AuthStateService().currentUser;
-          final canCreateParts = currentUser?.canCreateParts() ?? false;
-          final canEditParts = currentUser?.canEditParts() ?? false;
-          final canDeleteParts = currentUser?.canDeleteParts() ?? false;
-          final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
+              customMessage: 'Xatolik yuz berdi',
+              onRetry: () => setState(() {}),
+            );
+          }
 
-          return Scaffold(
-          appBar: AppBar(
-            title: Row(
-              children: [
-                Text(l10n?.translate('parts') ?? 'Parts'),
-                if (lowStockCount > 0) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '$lowStockCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+          final result = snapshot.data;
+          if (result == null) {
+            return _buildLoadingState(l10n);
+          }
+
+          return result.fold(
+            (failure) => ErrorDisplayWidget(
+              error: failure.message,
+              onRetry: () => setState(() {}),
             ),
-            elevation: 0,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.arrow_upward),
-                tooltip: l10n?.translate('scrollToTop') ?? 'Scroll to top',
-                onPressed: () {
-                  if (_scrollController.hasClients) {
-                    _scrollController.animateTo(
-                      0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                    );
-                  }
+            (parts) {
+              final filteredParts = _getFilteredParts(parts);
+              final lowStockCount = _getLowStockParts(parts).length;
+              final totalParts = parts.length;
+              final totalQuantity = parts.fold<int>(0, (sum, p) => sum + p.quantity);
+
+              return RefreshIndicator(
+                onRefresh: () async {
+                  await Future.delayed(const Duration(milliseconds: 500));
+                  setState(() {});
                 },
-              ),
-              PopupMenuButton<SortOption>(
-                icon: const Icon(Icons.sort),
-                tooltip: l10n?.translate('sort') ?? 'Sort',
-                initialValue: _selectedSortOption,
-                onSelected: (option) {
-                  setState(() {
-                    _selectedSortOption = option;
-                  });
-                },
-                itemBuilder: (context) => const [
-                  SortOption.nameAsc,
-                  SortOption.nameDesc,
-                  SortOption.quantityAsc,
-                  SortOption.quantityDesc,
-                ].map((option) {
-                  return PopupMenuItem(
-                    value: option,
-                    child: Text(option.getLabel(context)),
-                  );
-                }).toList(),
-              ),
-              // Low Stock Filter Toggle (har doim ko'rsatiladi)
-              IconButton(
-                icon: Icon(
-                  _showLowStockOnly ? Icons.filter_alt : Icons.filter_alt_outlined,
-                  color: _showLowStockOnly ? Colors.red : (lowStockCount > 0 ? Colors.orange : Colors.grey),
-                ),
-                onPressed: () {
-                  setState(() {
-                    _showLowStockOnly = !_showLowStockOnly;
-                  });
-                },
-                tooltip: _showLowStockOnly 
-                    ? (l10n?.translate('all') ?? 'All')
-                    : (lowStockCount > 0
-                        ? '${l10n?.translate('lowStock') ?? 'Low Stock'} ($lowStockCount)'
-                        : (l10n?.translate('lowStockFilter') ?? 'Low Stock filter')),
-              ),
-              // Excel Import button (only for managers and boss)
-              if (canCreateParts)
-                IconButton(
-                  icon: _isImporting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.upload_file),
-                  tooltip: l10n?.translate('importFromExcel') ?? 'Import from Excel',
-                  onPressed: _isImporting ? null : _importFromExcel,
-                ),
-            ],
-          ),
-          body: RefreshIndicator(
-            onRefresh: () async {
-              setState(() => _isInitialLoading = true);
-              await Future.delayed(const Duration(milliseconds: 500));
-              setState(() => _isInitialLoading = false);
-            },
-            child: Scrollbar(
-              controller: _scrollController,
-              thumbVisibility: true,
-              interactive: true,
-              child: CustomScrollView(
-                controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                  slivers: [
+                    SliverAppBar(
+                      expandedHeight: 120,
+                      floating: true,
+                      pinned: true,
+                      stretch: true,
+                      backgroundColor: Colors.white,
+                      surfaceTintColor: Colors.white,
+                      elevation: 0,
+                      flexibleSpace: FlexibleSpaceBar(
+                        title: Text(
+                          l10n?.translate('parts') ?? 'Parts',
+                          style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+                        ),
+                        centerTitle: false,
+                        titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+                      ),
+                      actions: [
+                        IconButton(
+                          icon: Icon(
+                            _showLowStockOnly ? Icons.filter_list_off : Icons.filter_list,
+                            color: _showLowStockOnly ? Colors.red : Colors.grey[700],
+                          ),
+                          onPressed: () => setState(() => _showLowStockOnly = !_showLowStockOnly),
+                        ),
+                        PopupMenuButton<SortOption>(
+                          icon: const Icon(Icons.sort),
+                          onSelected: (opt) => setState(() => _selectedSortOption = opt),
+                          itemBuilder: (context) => SortOption.values
+                              .map((opt) => PopupMenuItem(value: opt, child: Text(opt.getLabel(context))))
+                              .toList(),
+                        ),
+                        if (canCreateParts)
+                          IconButton(
+                            icon: const Icon(Icons.upload_file),
+                            onPressed: _importFromExcel,
+                          ),
+                      ],
+                    ),
                     SliverToBoxAdapter(
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: SearchBarWidget(
-                              controller: _searchController,
-                              hintText: l10n?.translate('searchParts') ?? 'Search parts...',
-                              onChanged: (_) => setState(() {}),
-                              onClear: () => setState(() {}),
-                            ),
-                          ),
-                          if (showFilterBanner) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 20),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade50,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.orange.shade200),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.filter_alt, size: 16, color: Colors.orange),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      l10n?.translate('filterEnabled') ?? 'Filter enabled',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {
-                                        _showLowStockOnly = false;
-                                      });
-                                    },
-                                    child: Text(l10n?.translate('clear') ?? 'Clear'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          // Qismlar statistikasi (Premium Dashboard)
-                          _buildInventoryDashboard(
-                            context,
-                            totalParts: totalParts,
-                            lowStockCount: lowStockCount,
-                            totalQuantity: totalQuantity,
-                            onShareReport: () => _shareLowStockReport(parts),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-
-                    // Low Stock chip (minimal signal)
-                    if (lowStockCount > 0 && !_showLowStockOnly)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                          child: Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 8,
-                            children: [
-                              InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () {
-                                  setState(() {
-                                    _showLowStockOnly = true;
-                                  });
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.shade50,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: Colors.red.shade200, width: 1),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.warning, color: Colors.red.shade700, size: 16),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        '${l10n?.translate('lowStockShort') ?? 'Low stock'}: $lowStockCount',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.red.shade700,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Icon(Icons.chevron_right, color: Colors.red.shade700, size: 16),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _showLowStockOnly = true;
-                                  });
-                                },
-                                child: Text(l10n?.translate('viewAll') ?? 'View All'),
-                              ),
-                            ],
-                          ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: SearchBarWidget(
+                          controller: _searchController,
+                          hintText: l10n?.translate('searchParts') ?? 'Search parts...',
+                          onChanged: (_) => setState(() {}),
+                          onClear: () => setState(() {}),
                         ),
                       ),
-
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildInventoryDashboard(
+                        context,
+                        totalParts: totalParts,
+                        lowStockCount: lowStockCount,
+                        totalQuantity: totalQuantity,
+                        onShareReport: () => _shareLowStockReport(parts),
+                      ),
+                    ),
                     if (filteredParts.isEmpty)
                       SliverFillRemaining(
                         hasScrollBody: false,
-                        child: Center(
-                          child: EmptyStateWidget(
-                            icon: Icons.build,
-                            title: parts.isEmpty
-                                ? (l10n?.translate('noParts') ?? 'No parts yet')
-                                : (l10n?.translate('noPartsMatch') ?? 'No parts match your filters'),
-                            subtitle: parts.isEmpty
-                                ? (l10n?.translate('addFirstPart') ?? 'Tap the + button to add a part')
-                                : (l10n?.translate('tryAdjustingFilters') ?? 'Try adjusting your search or filters'),
-                          ),
+                        child: EmptyStateWidget(
+                          icon: Icons.inventory_2_outlined,
+                          title: l10n?.translate('noParts') ?? 'No parts found',
+                          subtitle: l10n?.translate('tryAdjustingFilters') ?? 'Try adjusting filters',
                         ),
-                      ),
-
-                    if (filteredParts.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                l10n?.translate('partsList') ?? 'Parts List',
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.blue.shade200, width: 1),
-                                ),
-                                child: Text(
-                                  '${l10n?.translate('totalParts') ?? 'Total parts'}: $totalParts',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.blue.shade900,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (filteredParts.isNotEmpty)
+                      )
+                    else
                       SliverPadding(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.only(bottom: 100),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              if (index >= filteredParts.length) return const SizedBox.shrink();
-                              final part = filteredParts[index];
-                              final isLowStock = part.quantity < part.minQuantity;
-                              final statusColor = isLowStock ? Colors.red : Colors.green;
-                              final hasNetworkImage = (part.imagePath ?? '').startsWith('http');
-                              final imageFile = hasNetworkImage || kIsWeb
-                                  ? null
-                                  : ImageService.getImageFile(part.imagePath);
-                              final hasImage = hasNetworkImage || (imageFile != null && imageFile.existsSync());
-                              final animationDelay = kIsWeb ? 0 : (index * 50).clamp(0, 300);
-
-                              return AnimatedListItem(
-                                delay: animationDelay,
-                                child: Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                    side: BorderSide(
-                                      color: isLowStock 
-                                          ? Colors.red.withOpacity(0.2) 
-                                          : Colors.grey.withOpacity(0.1),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  color: isLowStock ? Colors.red.shade50.withOpacity(0.3) : Colors.white,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: canEditParts ? () => _editPart(part) : null,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(14),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          // Rasm - ixcham
-                                          GestureDetector(
-                                            onTap: () => _showImageDialog(part),
-                                            child: Container(
-                                              width: 76,
-                                              height: 76,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(16),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: statusColor.withOpacity(0.1),
-                                                    blurRadius: 8,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
-                                                border: Border.all(
-                                                  color: statusColor.withOpacity(0.2),
-                                                  width: 1,
-                                                ),
-                                              ),
-                                            child: hasImage
-                                                ? ClipRRect(
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    child: hasNetworkImage
-                                                        ? Image.network(
-                                                            part.imagePath!,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder: (context, error, stackTrace) {
-                                                              return _buildImagePlaceholder(statusColor);
-                                                            },
-                                                            loadingBuilder: (context, child, loadingProgress) {
-                                                              if (loadingProgress == null) return child;
-                                                              return Container(
-                                                                decoration: BoxDecoration(
-                                                                  color: statusColor.withOpacity(0.1),
-                                                                  borderRadius: BorderRadius.circular(10),
-                                                                ),
-                                                                child: const Center(
-                                                                  child: SizedBox(
-                                                                    width: 24,
-                                                                    height: 24,
-                                                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                                                  ),
-                                                                ),
-                                                              );
-                                                            },
-                                                          )
-                                                        : Image.file(
-                                                            imageFile!,
-                                                            fit: BoxFit.cover,
-                                                            errorBuilder: (context, error, stackTrace) {
-                                                              return _buildImagePlaceholder(statusColor);
-                                                            },
-                                                          ),
-                                                  )
-                                                : _buildImagePlaceholder(statusColor),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          // Ma'lumotlar
-                                          Expanded(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  part.name,
-                                                  style: TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: isLowStock ? Colors.red.shade700 : null,
-                                                  ),
-                                                  maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 6),
-                                                // Qoldi va Min (bitta qatorda)
-                                                Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    Icon(
-                                                      Icons.inventory_2,
-                                                      size: 14,
-                                                      color: isLowStock
-                                                          ? Colors.orange.shade700
-                                                          : Colors.blue.shade700,
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Text(
-                                                      '${l10n?.translate('stockLabel') ?? 'Stock'} '
-                                                      '${part.quantity} · '
-                                                      '${l10n?.translate('minLabel') ?? 'Min'} '
-                                                      '${part.minQuantity}',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: isLowStock
-                                                            ? Colors.red.shade700
-                                                            : Colors.grey.shade700,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Wrap(
-                                                  spacing: 8,
-                                                  runSpacing: 4,
-                                                  children: [
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        color: statusColor.withOpacity(0.2),
-                                                        borderRadius: BorderRadius.circular(8),
-                                                      ),
-                                                      child: Text(
-                                                        _getStatusLabel(part.status, l10n),
-                                                        style: TextStyle(
-                                                          fontSize: 10,
-                                                          color: statusColor,
-                                                          fontWeight: FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (isLowStock)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.red.withOpacity(0.2),
-                                                          borderRadius: BorderRadius.circular(8),
-                                                        ),
-                                                        child: Row(
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            const Icon(
-                                                              Icons.warning,
-                                                              size: 12,
-                                                              color: Colors.red,
-                                                            ),
-                                                            const SizedBox(width: 4),
-                                                            Text(
-                                                              l10n?.translate('lowStock') ?? 'Low Stock',
-                                                              style: const TextStyle(
-                                                                fontSize: 10,
-                                                                color: Colors.red,
-                                                                fontWeight: FontWeight.bold,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    if (part.broughtBy != null && part.broughtBy!.isNotEmpty)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.purple.withOpacity(0.2),
-                                                          borderRadius: BorderRadius.circular(8),
-                                                        ),
-                                                        child: Row(
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            const Icon(
-                                                              Icons.person,
-                                                              size: 12,
-                                                              color: Colors.purple,
-                                                            ),
-                                                            const SizedBox(width: 4),
-                                                            Text(
-                                                              '${part.broughtBy}',
-                                                              style: const TextStyle(
-                                                                fontSize: 10,
-                                                                color: Colors.purple,
-                                                                fontWeight: FontWeight.bold,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    // Contact Name
-                                                    if (part.contactName != null && part.contactName!.isNotEmpty)
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.blue.withOpacity(0.2),
-                                                          borderRadius: BorderRadius.circular(8),
-                                                        ),
-                                                        child: Row(
-                                                          mainAxisSize: MainAxisSize.min,
-                                                          children: [
-                                                            const Icon(
-                                                              Icons.contact_page,
-                                                              size: 12,
-                                                              color: Colors.blue,
-                                                            ),
-                                                            const SizedBox(width: 4),
-                                                            Text(
-                                                              part.contactName!,
-                                                              style: const TextStyle(
-                                                                fontSize: 10,
-                                                                color: Colors.blue,
-                                                                fontWeight: FontWeight.bold,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    // Contact Phone (clickable)
-                                                    if (part.contactPhone != null && part.contactPhone!.isNotEmpty)
-                                                      InkWell(
-                                                        onTap: () => _callContact(part.contactPhone!),
-                                                        child: Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.green.withOpacity(0.2),
-                                                            borderRadius: BorderRadius.circular(8),
-                                                            border: Border.all(
-                                                              color: Colors.green.withOpacity(0.5),
-                                                              width: 1,
-                                                            ),
-                                                          ),
-                                                          child: Row(
-                                                            mainAxisSize: MainAxisSize.min,
-                                                            children: [
-                                                              const Icon(
-                                                                Icons.phone,
-                                                                size: 12,
-                                                                color: Colors.green,
-                                                              ),
-                                                              const SizedBox(width: 4),
-                                                              Text(
-                                                                part.contactPhone!,
-                                                                style: const TextStyle(
-                                                                  fontSize: 10,
-                                                                  color: Colors.green,
-                                                                  fontWeight: FontWeight.bold,
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          // 3-dots menu for actions
-                                          PopupMenuButton<String>(
-                                            icon: const Icon(Icons.more_vert),
-                                            onSelected: (value) {
-                                              if (value == 'history') {
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (context) => PartHistoryPage(
-                                                      partId: part.id,
-                                                      partName: part.name,
-                                                    ),
-                                                  ),
-                                                );
-                                      } else if (value == 'outflow') {
-                                        _showPartOutflowDialog(part);
-                                              } else if (value == 'edit') {
-                                                _editPart(part);
-                                              } else if (value == 'delete') {
-                                                _deletePart(part);
-                                              }
-                                            },
-                                            itemBuilder: (context) {
-                                              final items = <PopupMenuEntry<String>>[
-                                                PopupMenuItem(
-                                                  value: 'history',
-                                                  child: Row(
-                                                    children: [
-                                                      const Icon(Icons.history, size: 20, color: Colors.purple),
-                                                      const SizedBox(width: 8),
-                                                      const Text('History'),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ];
-
-                                              if (canEditParts) {
-                                                items.add(
-                                                  PopupMenuItem(
-                                                    value: 'outflow',
-                                                    child: Row(
-                                                      children: [
-                                                        const Icon(Icons.remove_circle_outline, size: 20, color: Colors.orange),
-                                                        const SizedBox(width: 8),
-                                                        const Text('Issue / Scrap'),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-                                                items.add(
-                                                  PopupMenuItem(
-                                                    value: 'edit',
-                                                    child: Row(
-                                                      children: [
-                                                        const Icon(Icons.edit, size: 20, color: Colors.blue),
-                                                        const SizedBox(width: 8),
-                                                        Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-                                              }
-
-                                              if (canDeleteParts) {
-                                                items.add(
-                                                  PopupMenuItem(
-                                                    value: 'delete',
-                                                    child: Row(
-                                                      children: [
-                                                        const Icon(Icons.delete, size: 20, color: Colors.red),
-                                                        const SizedBox(width: 8),
-                                                        Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                );
-                                              }
-
-                                              return items;
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
+                            (context, index) => _buildEnhancedPartCard(filteredParts[index], l10n, canEditParts, canDeleteParts),
                             childCount: filteredParts.length,
                           ),
                         ),
                       ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: canCreateParts
+          ? FloatingActionButton.extended(
+              onPressed: () => _showAddOptions(context, l10n),
+              icon: const Icon(Icons.add),
+              label: Text(l10n?.translate('add') ?? 'Add'),
+              backgroundColor: Colors.blue[700],
+              foregroundColor: Colors.white,
+            )
+          : null,
+    );
+  }
+
+  Widget _buildLoadingState(AppLocalizations? l10n) {
+    return Scaffold(
+      appBar: AppBar(title: Text(l10n?.translate('parts') ?? 'Parts'), elevation: 0),
+      body: ListView.builder(
+        itemCount: 5,
+        itemBuilder: (context, index) => const PartSkeleton(),
+      ),
+    );
+  }
+
+  /// Add Options Bottom Sheet
+  void _showAddOptions(BuildContext context, AppLocalizations? l10n) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          _buildHandle(),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: const Icon(Icons.add_circle_outline),
+            title: Text(l10n?.translate('addSinglePart') ?? 'Add Single Part'),
+            onTap: () {
+              Navigator.pop(context);
+              _showAddSinglePartDialog();
+            },
           ),
-          floatingActionButton: canCreateParts
-              ? FloatingActionButton.extended(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+          ListTile(
+            leading: const Icon(Icons.playlist_add),
+            title: Text(l10n?.translate('batchAddParts') ?? 'Batch Stock In (Kirim)'),
+            onTap: () {
+              Navigator.pop(context);
+              _showBatchAddDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.playlist_remove),
+            title: Text(l10n?.translate('batchOutflowParts') ?? 'Batch Stock Out (Chiqim)'),
+            onTap: () {
+              Navigator.pop(context);
+              _showBatchOutflowDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.upload_file_outlined),
+            title: Text(l10n?.translate('importFromExcel') ?? 'Import from Excel'),
+            onTap: () {
+              Navigator.pop(context);
+              _importFromExcel();
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHandle() {
+    return Container(
+      width: 40,
+      height: 4,
+      decoration: BoxDecoration(
+        color: Colors.grey[300],
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+
+  /// Modern Part Card
+  Widget _buildEnhancedPartCard(Part part, AppLocalizations? l10n, bool canEdit, bool canDelete) {
+    final isLowStock = part.isLowStock;
+    final statusColor = isLowStock ? Colors.red : Colors.blue;
+    final hasNetworkImage = (part.imagePath ?? '').startsWith('http');
+    final imageFile = hasNetworkImage || kIsWeb ? null : ImageService.getImageFile(part.imagePath);
+    final hasImage = hasNetworkImage || (imageFile != null && imageFile.existsSync());
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: isLowStock ? Border.all(color: Colors.red.withOpacity(0.2), width: 1) : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: canEdit ? () => _editPart(part) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                // Image Placeholder / Image
+                GestureDetector(
+                  onTap: () => _showImageDialog(part),
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: hasImage
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: hasNetworkImage
+                                ? Image.network(part.imagePath!, fit: BoxFit.cover)
+                                : Image.file(imageFile!, fit: BoxFit.cover),
+                          )
+                        : Icon(Icons.build_circle_outlined, color: statusColor.withOpacity(0.5)),
                   ),
-                  builder: (context) => Column(
-                    mainAxisSize: MainAxisSize.min,
+                ),
+                const SizedBox(width: 16),
+                // Details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 12),
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+                      Text(
+                        part.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${l10n?.translate('stockLabel') ?? 'Stock'}: ${part.quantity} / Min: ${part.minQuantity}',
+                        style: TextStyle(
+                          color: isLowStock ? Colors.red : Colors.grey[600],
+                          fontSize: 13,
+                          fontWeight: isLowStock ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      ListTile(
-                        leading: const Icon(Icons.add),
-                        title: Text(l10n?.translate('addSinglePart') ?? 'Add Single Part'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _nameController.clear();
-                          _quantityController.clear();
-                          _minQuantityController.clear();
-                          _broughtByController.clear();
-                          _contactNameController.clear();
-                          _contactPhoneController.clear();
-                          _selectedImage = null;
-                          showDialog(
-                            context: context,
-                            builder: (context) {
-                              final l10n = AppLocalizations.of(context);
-                              return AlertDialog(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              title: Text(l10n?.translate('addPart') ?? 'Add New Part'),
-                              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              content: SingleChildScrollView(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // Rasm picker
-                                    ImagePickerWidget(
-                                      currentImagePath: null,
-                                      onImagePicked: (imageFile) {
-                                        setState(() {
-                                          _selectedImage = imageFile;
-                                        });
-                                      },
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _nameController,
-                                      decoration: InputDecoration(
-                                        labelText: l10n?.translate('partName') ?? 'Part Name',
-                                        border: const OutlineInputBorder(),
-                                        hintText: l10n?.translate('partNameHint') ??
-                                            'Enter part name',
-                                        prefixIcon: const Icon(Icons.label),
-                                      ),
-                                      autofocus: true,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _quantityController,
-                                      decoration: InputDecoration(
-                                        labelText: l10n?.translate('quantity') ?? 'Quantity',
-                                        border: const OutlineInputBorder(),
-                                        hintText: l10n?.translate('quantityHint') ??
-                                            'Enter quantity',
-                                        prefixIcon: const Icon(Icons.numbers),
-                                      ),
-                                      keyboardType: TextInputType.number,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _minQuantityController,
-                                      decoration: InputDecoration(
-                                        labelText: l10n?.translate('minQuantityLabel') ??
-                                            'Min Quantity',
-                                        border: const OutlineInputBorder(),
-                                        hintText: l10n?.translate('minQuantityHint') ??
-                                            'Enter minimum quantity',
-                                        prefixIcon: const Icon(Icons.warning),
-                                        helperText: l10n?.translate('minQuantityHelper') ??
-                                            'Alert when quantity falls below this',
-                                      ),
-                                      keyboardType: TextInputType.number,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                    TextField(
-                                      controller: _contactNameController,
-                                      decoration: InputDecoration(
-                                        labelText: l10n?.translate('contactNameLabel') ??
-                                            'Kontakt Ismi (Ixtiyoriy)',
-                                        border: const OutlineInputBorder(),
-                                        hintText: l10n?.translate('contactNameHint') ??
-                                            'Masalan: Ali, Supplier A',
-                                        prefixIcon: const Icon(Icons.contact_page),
-                                        helperText: l10n?.translate('contactNameHelper') ??
-                                            'Qismni olib keluvchi shaxs/kompaniya nomi',
-                                      ),
-                                      textCapitalization: TextCapitalization.words,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _contactPhoneController,
-                                      decoration: InputDecoration(
-                                        labelText: l10n?.translate('contactPhoneLabel') ??
-                                            'Kontakt Telefon (Ixtiyoriy)',
-                                        border: const OutlineInputBorder(),
-                                        hintText: l10n?.translate('contactPhoneHint') ??
-                                            'Masalan: +998901234567',
-                                        prefixIcon: const Icon(Icons.phone),
-                                        helperText: l10n?.translate('contactPhoneHelper') ??
-                                            'Qismni olib keluvchi shaxs/kompaniya telefon raqami',
-                                      ),
-                                      keyboardType: TextInputType.phone,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _broughtByController,
-                                      decoration: InputDecoration(
-                                        labelText: l10n?.translate('noteOptional') ??
-                                            'Izoh (ixtiyoriy)',
-                                        border: const OutlineInputBorder(),
-                                        hintText: l10n?.translate('noteHint') ??
-                                            'Masalan: kim olib keldi, qayerdan keldi',
-                                        prefixIcon: const Icon(Icons.note_alt),
-                                      ),
-                                      textCapitalization: TextCapitalization.sentences,
-                                      onSubmitted: (_) => _addPart(),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () {
-                                    _nameController.clear();
-                                    _broughtByController.clear();
-                                    _contactNameController.clear();
-                                    _contactPhoneController.clear();
-                                    _quantityController.clear();
-                                    _minQuantityController.clear();
-                                    _selectedImage = null;
-                                    Navigator.pop(context);
-                                  },
-                                  child: Text(l10n?.translate('cancel') ?? 'Cancel'),
-                                ),
-                                ElevatedButton(
-                                  onPressed: _addPart,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Theme.of(context).colorScheme.primary,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  child: Text(l10n?.translate('add') ?? 'Add'),
-                                ),
-                              ],
-                            );
-                            },
-                          );
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.playlist_add),
-                        title: Text(l10n?.translate('batchAddParts') ?? 'Batch Stock In (Kirim)'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showBatchAddDialog();
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.playlist_remove),
-                        title: Text(l10n?.translate('batchOutflowParts') ?? 'Batch Stock Out (Chiqim)'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showBatchOutflowDialog();
-                        },
-                      ),
+                      if (part.broughtBy != null && part.broughtBy!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.person_outline, size: 12, color: Colors.grey[500]),
+                            const SizedBox(width: 4),
+                            Text(
+                              part.broughtBy!,
+                              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
-                );
-              },
-              icon: const Icon(Icons.add),
-              label: Text(l10n?.translate('addPart') ?? 'Add Part'),
-              )
-              : null,
-          );
-        } catch (e, stackTrace) {
-          debugPrint('❌ PartsPage build crash: $e');
-          debugPrint('Stack: $stackTrace');
-          return Scaffold(
-            appBar: AppBar(title: const Text('Parts Error')),
-            body: ErrorDisplayWidget(
-              error: e,
-              customMessage: 'Sahifani yuklashda xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
-              onRetry: () => setState(() {}),
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                  padding: EdgeInsets.zero,
+                  onSelected: (val) {
+                    if (val == 'history') {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PartHistoryPage(partId: part.id, partName: part.name),
+                        ),
+                      );
+                    } else if (val == 'edit') {
+                      _editPart(part);
+                    } else if (val == 'outflow') {
+                      _showPartOutflowDialog(part);
+                    } else if (val == 'delete') {
+                      _deletePart(part);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'history', child: Text('History')),
+                    const PopupMenuItem(value: 'outflow', child: Text('Issue/Scrap')),
+                    if (canEdit) const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    if (canDelete) const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+              ],
             ),
-          );
-        }
-      },
+          ),
+        ),
+      ),
     );
   }
 

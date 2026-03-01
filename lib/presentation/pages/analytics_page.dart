@@ -14,6 +14,7 @@ import '../../core/utils/either.dart';
 import '../../core/di/service_locator.dart';
 import '../../l10n/app_localizations.dart';
 import '../pages/settings_page.dart';
+import '../../core/services/auth_state_service.dart'; // Missing import
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -209,10 +210,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final currentUser = AuthStateService().currentUser;
     
     return Scaffold(
-      backgroundColor: Colors.grey[50]!, // Modern background
+      backgroundColor: Colors.grey[50]!,
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)?.translate('analytics') ?? 'Analytics'),
-        elevation: 0, // Clean flat look
+        elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.black87,
         actions: [
@@ -259,7 +260,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Summary Cards (Horizontal Scroll for responsiveness)
+                    // Summary Cards
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.only(left: 16, right: 8),
@@ -269,25 +270,25 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                             'Shu oy',
                             '$_thisMonthProduction',
                             Icons.production_quantity_limits,
-                            const Color(0xFF2D9CDB), // Professional Blue
+                            const Color(0xFF2D9CDB),
                           ),
                           _buildStatCard(
                             'Kam qolgan',
                             '$_lowStockParts',
                             Icons.error_outline,
-                            const Color(0xFFEB5757), // Professional Danger
+                            const Color(0xFFEB5757),
                           ),
                           _buildStatCard(
                             'Barcha qismlar',
                             '$_totalParts',
                             Icons.settings_suggest,
-                            const Color(0xFF27AE60), // Professional Green
+                            const Color(0xFF27AE60),
                           ),
                           _buildStatCard(
                             'Mahsulotlar',
                             '$_totalProducts',
                             Icons.layers,
-                            const Color(0xFF9B51E0), // Professional Purple
+                            const Color(0xFF9B51E0),
                           ),
                         ],
                       ),
@@ -299,60 +300,36 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Product Focus Section
                           _buildProductFocusSection(),
                           const SizedBox(height: 24),
-                          
-                          // Charts section... (keeping existing but wrapped in padding)
                           _buildThisMonthProduction(),
-                    const SizedBox(height: 24),
-                    
-                    // This Month Parts Used
-                    _buildThisMonthPartsUsed(),
-                    const SizedBox(height: 24),
-                    
-                    // Monthly Production Chart
-                    _buildMonthlyProductionChart(),
-                    const SizedBox(height: 24),
-                    
-                    // Orders by Status Chart
-                    _buildOrdersByStatusChart(),
-                    const SizedBox(height: 24),
-
-                    // Worker KPI Section (New)
-                    _buildWorkerKPISection(),
-                    const SizedBox(height: 24),
-                    
-                    // Orders by Department Chart
-                    _buildOrdersByDepartmentChart(),
-                    const SizedBox(height: 24),
-                    
-                    // Production by Product Chart
-                    _buildProductionByProductChart(),
-                    const SizedBox(height: 24),
-                    
-                    // Time Tracking Analytics
-                    _buildTimeTrackingAnalytics(),
-                    const SizedBox(height: 24),
-                    
-                    // Courier Analytics
-                    _buildCourierAnalytics(),
-                    const SizedBox(height: 24),
-                    
-                    // Latest Ready Orders
-                    _buildLatestReadyOrders(),
-                    const SizedBox(height: 24),
-                    
-                    // In Progress Orders
-                    _buildInProgressOrders(),
-                    const SizedBox(height: 24),
-                    
-                    // Top Used Parts (This Month)
-                    _buildTopUsedPartsList(),
-                    const SizedBox(height: 24),
-                    
-                    // Low Stock Parts List
-                    _buildLowStockPartsList(),
+                          const SizedBox(height: 24),
+                          _buildThisMonthPartsUsed(),
+                          const SizedBox(height: 24),
+                          _buildMonthlyProductionChart(),
+                          const SizedBox(height: 24),
+                          _buildOrdersByStatusChart(),
+                          const SizedBox(height: 24),
+                          _buildWorkerKPISection(),
+                          const SizedBox(height: 24),
+                          _buildOrdersByDepartmentChart(),
+                          const SizedBox(height: 24),
+                          _buildProductionByProductChart(),
+                          const SizedBox(height: 24),
+                          _buildTimeTrackingAnalytics(),
+                          const SizedBox(height: 24),
+                          _buildCourierAnalytics(),
+                          const SizedBox(height: 24),
+                          _buildLatestReadyOrders(),
+                          const SizedBox(height: 24),
+                          _buildInProgressOrders(),
+                          const SizedBox(height: 24),
+                          _buildTopUsedPartsList(),
+                          const SizedBox(height: 24),
+                          _buildLowStockPartsList(),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
