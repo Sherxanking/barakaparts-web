@@ -1433,59 +1433,7 @@ class _OrdersPageState extends State<OrdersPage> {
                       onChanged: (_) => setState(() {}),
                       onClear: () => setState(() {}),
                     ),
-                    const SizedBox(height: 20),
-                    // Filter chips
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Filters',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          // Status filter
-                          FilterChipWidget(
-                            label: 'All',
-                            selected: _selectedStatusFilter == null,
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedStatusFilter = selected ? null : _selectedStatusFilter;
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 12),
-                          FilterChipWidget(
-                            label: AppLocalizations.of(context)?.translate('pending') ?? 'Pending',
-                            selected: _selectedStatusFilter == 'pending',
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedStatusFilter = selected ? 'pending' : null;
-                              });
-                            },
-                            icon: Icons.pending,
-                          ),
-                          const SizedBox(width: 12),
-                          FilterChipWidget(
-                            label: AppLocalizations.of(context)?.translate('completed') ?? 'Completed',
-                            selected: _selectedStatusFilter == 'completed',
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedStatusFilter = selected ? 'completed' : null;
-                              });
-                            },
-                            icon: Icons.check_circle,
-                          ),
-                        ],
-                      ),
-                    ),
+
                   ],
                 ),
               ),
