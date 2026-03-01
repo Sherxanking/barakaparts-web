@@ -656,14 +656,14 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                       const SizedBox(width: 8),
                     ],
                     
-                    // Delete button (permission based - managers can soft delete, boss can permanently delete)
-                    if (_hasDeletePermission()) ...[
+                    // Delete button (controlled by parent through widget.onDelete)
+                    if (widget.onDelete != null) ...[
                       IconButton(
                         icon: Icon(
                           _isBoss() ? Icons.delete_forever : Icons.delete,
                           color: _isBoss() ? Colors.red.shade800 : Colors.red.shade600,
                         ),
-                        onPressed: () => _showDeleteDialog(context),
+                        onPressed: widget.onDelete,
                         tooltip: _isBoss() 
                             ? AppLocalizations.of(context)?.translate('permanentDeleteOrder') ?? 'Permanently Delete Order'
                             : AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',

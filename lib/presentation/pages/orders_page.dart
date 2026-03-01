@@ -71,7 +71,7 @@ class _OrdersPageState extends State<OrdersPage> {
 
   // Search, Filter, Sort state
   final TextEditingController _searchController = TextEditingController();
-  String? _selectedStatusFilter;
+  String? _selectedStatusFilter = 'pending';
   String? _selectedDepartmentFilter;
   SortOption? _selectedSortOption;
   
@@ -99,10 +99,18 @@ class _OrdersPageState extends State<OrdersPage> {
     return user != null && (user.isManager || user.isBoss);
   }
   
-  /// Check if current user can delete orders
-  bool get _canDeleteOrders {
+  /// Check if current user can delete an order
+  bool _canDeleteOrder(domain.Order order) {
     final user = AuthStateService().currentUser;
-    return user != null && user.isBoss; // Faqat Boss delete qila oladi
+    if (user == null) return false;
+    
+    // Hamma "pending" dagi orderni o'chira oladi
+    if (order.status == 'pending') {
+      return true;
+    }
+    
+    // Pending bo'lmasa, faqat Boss delete qila oladi
+    return user.isBoss;
   }
   
   /// Check if current user can edit orders (pending orders only)
@@ -1005,8 +1013,8 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Repository pattern - works for both web and mobile
   Future<void> _deleteOrder(domain.Order order) async {
     // Permission check
-    if (!_canDeleteOrders) {
-      _showSnackBar('Sizda order o\'chirish huquqi yo\'q. Faqat Manager va Boss order o\'chira oladi.', Colors.red);
+    if (!_canDeleteOrder(order)) {
+      _showSnackBar('Sizda order o\'chirish huquqi yo\'q. Bajarilgan orderni faqat Boss o\'chira oladi.', Colors.red);
       return;
     }
     
@@ -1770,7 +1778,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                 department: department,
                                 onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
                                 onEdit: (domainOrder.status == 'pending' && _canEditOrders) ? () => _editOrder(domainOrder) : null,
-                                onDelete: _canDeleteOrders ? () => _deleteOrder(domainOrder) : null,
+                                onDelete: _canDeleteOrder(domainOrder) ? () => _deleteOrder(domainOrder) : null,
                                 isCompleting: _completingOrderId == domainOrder.id,
                                 // Add take away functionality
                                 onTakeAwayToggle: _canCompleteOrders 
