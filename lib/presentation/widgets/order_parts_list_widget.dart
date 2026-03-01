@@ -85,25 +85,39 @@ class _OrderPartsListWidgetState extends State<OrderPartsListWidget> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Total quantity badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.green.shade300,
-                          width: 1,
+                    // Total quantity and Stock status
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.green.shade300,
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            '$totalQty ta kerak',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade900,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
-                      child: Text(
-                        '$totalQty ta',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green.shade900,
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(height: 4),
+                        Text(
+                          'Skladda: ${part?.quantity ?? 0} ta',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: (part?.quantity ?? 0) < totalQty ? Colors.red : Colors.grey.shade600,
+                            fontWeight: (part?.quantity ?? 0) < totalQty ? FontWeight.bold : FontWeight.normal,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
@@ -132,7 +146,7 @@ class _OrderPartsListWidgetState extends State<OrderPartsListWidget> {
                   Text(
                     _isExpanded 
                         ? 'Yig\'ish' 
-                        : '+${partsList.length - _maxCollapsedItems} ta ko\'p',
+                        : '+${partsList.length - _maxCollapsedItems} ta qism ko\'p',
                     style: TextStyle(
                       fontSize: 11,
                       color: Colors.green.shade700,

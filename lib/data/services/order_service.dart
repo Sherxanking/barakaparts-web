@@ -100,6 +100,10 @@ class OrderService {
           try {
             _boxService.ordersBox.add(order);
             debugPrint('✅ Order created in both Supabase and Hive');
+            
+            // 3. Telegram notification yuborish
+            _sendOrderCreationNotification(order);
+            
             return true;
           } catch (e) {
             debugPrint('⚠️ Order created in Supabase but failed to save to Hive: $e');
@@ -110,6 +114,47 @@ class OrderService {
     } catch (e) {
       debugPrint('❌ Error in addOrder: $e');
       return false;
+    }
+  }
+
+  /// Telegram notification yuborish (Creation va Shortage uchun)
+  void _sendOrderCreationNotification(data.Order order) async {
+    try {
+      // 1. Umumiy yaratilganligi haqida habar
+      TelegramNotificationService.sendOrderCreatedNotification(
+        order.productName,
+        order.quantity,
+      );
+
+      // 2. Shortage tekshirish va habar yuborish
+      final shortages = <Map<String, dynamic>>[];
+      final product = _productService.getAllProducts().firstWhere(
+        (p) => p.name == order.productName,
+        orElse: () => throw StateError('Product not found'),
+      );
+
+      for (var entry in product.parts.entries) {
+        final partId = entry.key;
+        final qtyPerProduct = entry.value;
+        final totalNeeded = qtyPerProduct * order.quantity;
+        
+        final part = _partService.getPartById(partId);
+        final currentStock = part?.quantity ?? 0;
+        
+        if (currentStock < totalNeeded) {
+          shortages.add({
+            'partName': part?.name ?? partId,
+            'shortage': totalNeeded - currentStock,
+            'currentStock': currentStock,
+          });
+        }
+      }
+
+      if (shortages.isNotEmpty) {
+        TelegramNotificationService.sendPartsShortageNotification(shortages);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error sending telegram notification: $e');
     }
   }
 
@@ -1523,8 +1568,8 @@ class OrderService {
         takenItems: [],
       );
 
-      // Check for parts shortage
-      final shortages = _checkPartsShortage(product, quantity);
+      // Check for parts shortage (handled in addOrder via _sendOrderCreationNotification)
+      _checkPartsShortage(product, quantity);
       
       // Even if there are shortages, create the order in pending state
       final result = await addOrder(order);

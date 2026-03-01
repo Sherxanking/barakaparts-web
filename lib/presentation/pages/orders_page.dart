@@ -35,7 +35,6 @@ import '../widgets/sort_dropdown_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/error_widget.dart';
 import '../widgets/order_item_widget.dart';
-import '../../core/services/error_handler_service.dart';
 import 'order_history_page.dart';
 import 'analytics_page.dart';
 import '../../l10n/app_localizations.dart';
@@ -177,6 +176,36 @@ class _OrdersPageState extends State<OrdersPage> {
         setState(() {});
       }
     });
+  }
+
+  /// Helper to build a filter chip
+  Widget _buildFilterChip(String? status, String label) {
+    final isSelected = _selectedStatusFilter == status;
+    return FilterChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? Colors.white : Colors.black87,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      selected: isSelected,
+      onSelected: (selected) {
+        setState(() {
+          _selectedStatusFilter = selected ? status : null;
+        });
+      },
+      selectedColor: Theme.of(context).primaryColor,
+      backgroundColor: Colors.grey.shade100,
+      checkmarkColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
+        ),
+      ),
+    );
   }
 
   /// Get filtered orders based on user role
@@ -1245,89 +1274,7 @@ class _OrdersPageState extends State<OrdersPage> {
     );
   }
 
-  // State for take away functionality
-  List<String> _selectedTakeAwayOrderIds = [];
 
-  /// Toggle order selection for take away
-  void _toggleTakeAwayOrderSelection(String orderId) {
-    setState(() {
-      if (_selectedTakeAwayOrderIds.contains(orderId)) {
-        _selectedTakeAwayOrderIds.remove(orderId);
-      } else {
-        _selectedTakeAwayOrderIds.add(orderId);
-      }
-    });
-  }
-
-  /// Mark selected orders as taken away
-  Future<void> _markOrdersAsTakenAway() async {
-    if (_selectedTakeAwayOrderIds.isEmpty) {
-      _showSnackBar('Hech qanday order tanlanmagan', Colors.red);
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Tasdiqlash'),
-        content: Text('Siz ${_selectedTakeAwayOrderIds.length} ta orderlarni olib ketdi deb belgilamoqchimisiz?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Bekor qilish'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Tasdiqlash'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      setState(() {
-        _isInitialLoading = true;
-      });
-
-      try {
-        int completedCount = 0;
-        
-        for (final orderId in _selectedTakeAwayOrderIds) {
-          // Use repository directly
-          final result = await _orderRepository.completeOrder(orderId);
-          result.fold(
-            (failure) {
-              debugPrint('❌ Failed to complete order: ${failure.message}');
-            },
-            (completedOrder) {
-              completedCount++;
-            },
-          );
-        }
-
-        if (mounted) {
-          setState(() {
-            _selectedTakeAwayOrderIds.clear();
-            _isInitialLoading = false;
-          });
-          
-          _showSnackBar('$completedCount ta order olib ketdi deb belgilandi', Colors.green);
-        }
-      } catch (e) {
-        setState(() {
-          _isInitialLoading = false;
-        });
-        _showSnackBar('Xatolik yuz berdi: $e', Colors.red);
-      }
-    }
-  }
-
-  /// Clear take away selection
-  void _clearTakeAwaySelection() {
-    setState(() {
-      _selectedTakeAwayOrderIds.clear();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1426,412 +1373,392 @@ class _OrdersPageState extends State<OrdersPage> {
                       onChanged: (_) => setState(() {}),
                       onClear: () => setState(() {}),
                     ),
-
+                    const SizedBox(height: 16),
+                    // Status Filter Chips
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildFilterChip(null, 'Hammasi'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('pending', 'Kutilmoqda'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('in_progress', 'Jarayonda'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('partially_completed', 'Qisman'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('completed', 'Tugallangan'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('cancelled', 'Bekor qilingan'),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
 
-              // Take away action bar (only for managers/boss)
-              if (_canCompleteOrders && _selectedTakeAwayOrderIds.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Colors.green.shade50,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '${_selectedTakeAwayOrderIds.length} ta order tanlangan',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          TextButton(
-                            onPressed: _clearTakeAwaySelection,
-                            child: const Text('Tozalash'),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            onPressed: _markOrdersAsTakenAway,
-                            icon: const Icon(Icons.check),
-                            label: const Text('Olib ketdi'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
 
-              // FIX: Main content - CustomScrollView + SliverList ishlatish
-              // Bu nested scroll muammosini hal qiladi va performance ni yaxshilaydi
+
+              // Main content - CustomScrollView + SliverList
               Expanded(
                 child: Builder(
                   builder: (context) {
-                    // RefreshIndicator with CustomScrollView + SliverList
                     return RefreshIndicator(
                       onRefresh: () async {
                         setState(() => _isInitialLoading = true);
                         await Future.delayed(const Duration(milliseconds: 500));
                         setState(() => _isInitialLoading = false);
                       },
-                  // FIX: BouncingScrollPhysics + AlwaysScrollableScrollPhysics
-                  // Bu scroll ni silliq qiladi va refresh ni to'g'ri ishlatadi
-                  child: CustomScrollView(
-                    physics: const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
-                    ),
-                    slivers: [
-                      // Create Order Section - SliverToBoxAdapter
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (!_showCreateOrderForm)
-                                ElevatedButton.icon(
-                                  onPressed: () {
-                                    setState(() {
-                                      _showCreateOrderForm = true;
-                                    });
-                                  },
-                                  icon: const Icon(Icons.add),
-                                  label: Text(AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order'),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                    foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                                  ),
-                                ),
-                              if (_showCreateOrderForm)
-                                Card(
-                          elevation: 2,
-                          child: Padding(
-                            padding: const EdgeInsets.all(20.0),
+                      child: CustomScrollView(
+                        physics: const BouncingScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics(),
+                        ),
+                        slivers: [
+                          // Create Order Section
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Text(
-                                    AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
-                                    style: const TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 20),
-                                  
-                                  // Department dropdown
-                                  ValueListenableBuilder(
-                                    valueListenable: _boxService.departmentsListenable,
-                                    builder: (context, Box<Department> deptBox, _) {
-                                      final departments = deptBox.values.toList();
-                                      return DropdownButtonFormField<String>(
-                                        value: selectedDepartmentId,
-                                        decoration: InputDecoration(
-                                          labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
-                                          hintText: 'Bo\'limni tanlang',
-                                          border: const OutlineInputBorder(),
-                                          prefixIcon: const Icon(Icons.business),
-                                        ),
-                                        items: departments.isEmpty
-                                            ? [
-                                                DropdownMenuItem(
-                                                  value: null,
-                                                  enabled: false,
-                                                  child: Text(
-                                                    'Bo\'limlar mavjud emas',
-                                                    style: TextStyle(color: Colors.grey[600]),
-                                                  ),
-                                                ),
-                                              ]
-                                            : [
-                                                DropdownMenuItem<String>(
-                                                  value: null,
-                                                  child: Text(
-                                                    'Bo\'limni tanlang',
-                                                    style: TextStyle(color: Colors.grey[600]),
-                                                  ),
-                                                ),
-                                                ...departments.map((dept) {
-                                                  return DropdownMenuItem(
-                                                    value: dept.id,
-                                                    child: Text(dept.name),
-                                                  );
-                                                }).toList(),
-                                              ],
-                                        onChanged: (value) {
-                                          setState(() {
-                                            selectedDepartmentId = value;
-                                            selectedProductId = null; // Reset product
-                                          });
-                                        },
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: 20),
-                                  
-                                  // Product dropdown (filtered by department)
-                                  ValueListenableBuilder(
-                                    valueListenable: _boxService.productsListenable,
-                                    builder: (context, Box<Product> prodBox, _) {
-                                      final products = selectedDepartmentId != null
-                                          ? _productService.getProductsByDepartment(selectedDepartmentId!)
-                                          : <Product>[];
-                                      
-                                      return DropdownButtonFormField<String>(
-                                        key: ValueKey('product_${selectedDepartmentId}_${selectedProductId}'), // FIX: Key qo'shish - dropdown yangilanishi uchun
-                                        value: selectedProductId,
-                                        decoration: InputDecoration(
-                                          labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
-                                          hintText: 'Mahsulotni tanlang',
-                                          border: const OutlineInputBorder(),
-                                          prefixIcon: const Icon(Icons.inventory),
-                                        ),
-                                        items: selectedDepartmentId == null
-                                            ? [
-                                                DropdownMenuItem(
-                                                  value: null,
-                                                  enabled: false,
-                                                  child: Text(
-                                                    'Avval bo\'limni tanlang',
-                                                    style: TextStyle(color: Colors.grey[600]),
-                                                  ),
-                                                ),
-                                              ]
-                                            : products.isEmpty
-                                                ? [
-                                                    DropdownMenuItem(
-                                                      value: null,
-                                                      enabled: false,
-                                                      child: Text(
-                                                        'Bu bo\'limda mahsulotlar yo\'q',
-                                                        style: TextStyle(color: Colors.grey[600]),
-                                                      ),
-                                                    ),
-                                                  ]
-                                                : [
-                                                    DropdownMenuItem<String>(
-                                                      value: null,
-                                                      child: Text(
-                                                        'Mahsulotni tanlang',
-                                                        style: TextStyle(color: Colors.grey[600]),
-                                                      ),
-                                                    ),
-                                                    ...products.map((product) {
-                                                      return DropdownMenuItem(
-                                                        value: product.id,
-                                                        child: Text(product.name),
-                                                      );
-                                                    }).toList(),
-                                                  ],
-                                        onChanged: selectedDepartmentId != null && products.isNotEmpty
-                                            ? (value) {
-                                                setState(() {
-                                                  selectedProductId = value;
-                                                });
-                                              }
-                                            : null,
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  
-                                  // Quantity selector
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-                                      Text('${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ', style: const TextStyle(fontSize: 16)),
-              IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline),
-                onPressed: () {
-                  if (quantity > 1) {
-                    setState(() {
-                      quantity--;
-                      _quantityController.text = quantity.toString();
-                    });
-                  }
-                },
-              ),
-                                      SizedBox(
-                                        width: 80,
-                                        child: TextField(
-                                          controller: _quantityController,
-                                          keyboardType: TextInputType.number,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                          decoration: const InputDecoration(
-                                            isDense: true,
-                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          onChanged: (value) {
-                                            final newQuantity = int.tryParse(value);
-                                            if (newQuantity != null && newQuantity > 0) {
-                                              setState(() => quantity = newQuantity);
-                                            } else if (value.isEmpty) {
-                                              // Allow empty during typing
-                                            }
-                                          },
-                                        ),
-                                      ),
-              IconButton(
-                                        icon: const Icon(Icons.add_circle_outline),
-                onPressed: () {
-                  setState(() {
-                    quantity++;
-                    _quantityController.text = quantity.toString();
-                  });
-                },
-              ),
-            ],
-          ),
-                                  const SizedBox(height: 12),
-                                  
-                                  // Recipient input (Majburiy)
-                                  TextField(
-                                    controller: _soldToController,
-                                    decoration: InputDecoration(
-                                      labelText: 'Kim olib ketdi *',
-                                      hintText: 'Masalan: Ahmad, Mijoz, Usta, va hokazo',
-                                      border: const OutlineInputBorder(),
-                                      prefixIcon: const Icon(Icons.person),
-                                      helperText: 'Buyurtmani kim olib ketganini kiriting (Majburiy)',
-                                      errorText: _showSoldToError && _soldToController.text.trim().isEmpty
-                                          ? 'Kim olib ketganini kiriting'
-                                          : null,
-                                    ),
-                                    textCapitalization: TextCapitalization.words,
-                                    onChanged: (value) {
-                                      if (_showSoldToError && value.trim().isNotEmpty) {
+                                  if (!_showCreateOrderForm)
+                                    ElevatedButton.icon(
+                                      onPressed: () {
                                         setState(() {
-                                          _showSoldToError = false;
+                                          _showCreateOrderForm = true;
                                         });
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(height: 16),
-                                  
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextButton(
-                                          onPressed: () {
-                                            setState(() {
-                                              _showCreateOrderForm = false;
-                                              selectedDepartmentId = null;
-                                              selectedProductId = null;
-                                              quantity = 1;
-                                              _quantityController.text = '1';
-                                              _soldToController.clear();
-                                              _showSoldToError = false;
-                                            });
-                                          },
-                                          child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
-                                        ),
+                                      },
+                                      icon: const Icon(Icons.add),
+                                      label: Text(AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order'),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
                                       ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        flex: 2,
-                                        child: ElevatedButton.icon(
-                                          onPressed: _canCreateOrders ? () {
-                                            _createOrder();
-                                            if (!_showSoldToError && selectedDepartmentId != null && selectedProductId != null) {
-                                              setState(() => _showCreateOrderForm = false);
-                                            }
-                                          } : null,
-                                          icon: const Icon(Icons.add_shopping_cart),
-                                          label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
-                                          style: ElevatedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                    ),
+                                  if (_showCreateOrderForm)
+                                    Align(
+                                      alignment: Alignment.topCenter,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 600),
+                                        child: Card(
+                                          elevation: 3,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(24.0),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                Text(
+                                                  AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
+                                                  style: const TextStyle(
+                                                    fontSize: 22,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 20),
+                                                
+                                                // Department dropdown
+                                                ValueListenableBuilder(
+                                                  valueListenable: _boxService.departmentsListenable,
+                                                  builder: (context, Box<Department> deptBox, _) {
+                                                    final departments = deptBox.values.toList();
+                                                    return DropdownButtonFormField<String>(
+                                                      initialValue: selectedDepartmentId,
+                                                      decoration: InputDecoration(
+                                                        labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
+                                                        hintText: 'Bo\'limni tanlang',
+                                                        border: const OutlineInputBorder(),
+                                                        prefixIcon: const Icon(Icons.business),
+                                                      ),
+                                                      items: departments.isEmpty
+                                                          ? [
+                                                              DropdownMenuItem(
+                                                                value: null,
+                                                                enabled: false,
+                                                                child: Text(
+                                                                  'Bo\'limlar mavjud emas',
+                                                                  style: TextStyle(color: Colors.grey[600]),
+                                                                ),
+                                                              ),
+                                                            ]
+                                                          : [
+                                                              DropdownMenuItem<String>(
+                                                                value: null,
+                                                                child: Text(
+                                                                  'Bo\'limni tanlang',
+                                                                  style: TextStyle(color: Colors.grey[600]),
+                                                                ),
+                                                              ),
+                                                              ...departments.map((dept) {
+                                                                return DropdownMenuItem(
+                                                                  value: dept.id,
+                                                                  child: Text(dept.name),
+                                                                );
+                                                              }).toList(),
+                                                            ],
+                                                      onChanged: (value) {
+                                                        setState(() {
+                                                          selectedDepartmentId = value;
+                                                          selectedProductId = null; // Reset product
+                                                        });
+                                                      },
+                                                    );
+                                                  },
+                                                ),
+                                                const SizedBox(height: 20),
+                                                
+                                                // Product dropdown (filtered by department)
+                                                ValueListenableBuilder(
+                                                  valueListenable: _boxService.productsListenable,
+                                                  builder: (context, Box<Product> prodBox, _) {
+                                                    final products = selectedDepartmentId != null
+                                                        ? _productService.getProductsByDepartment(selectedDepartmentId!)
+                                                        : <Product>[];
+                                                    
+                                                    return DropdownButtonFormField<String>(
+                                                      key: ValueKey('product_${selectedDepartmentId}_${selectedProductId}'),
+                                                      initialValue: selectedProductId,
+                                                      decoration: InputDecoration(
+                                                        labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
+                                                        hintText: 'Mahsulotni tanlang',
+                                                        border: const OutlineInputBorder(),
+                                                        prefixIcon: const Icon(Icons.inventory),
+                                                      ),
+                                                      items: selectedDepartmentId == null
+                                                          ? [
+                                                              DropdownMenuItem(
+                                                                value: null,
+                                                                enabled: false,
+                                                                child: Text(
+                                                                  'Avval bo\'limni tanlang',
+                                                                  style: TextStyle(color: Colors.grey[600]),
+                                                                ),
+                                                              ),
+                                                            ]
+                                                          : products.isEmpty
+                                                              ? [
+                                                                  DropdownMenuItem(
+                                                                    value: null,
+                                                                    enabled: false,
+                                                                    child: Text(
+                                                                      'Bu bo\'limda mahsulotlar yo\'q',
+                                                                      style: TextStyle(color: Colors.grey[600]),
+                                                                    ),
+                                                                  ),
+                                                                ]
+                                                              : [
+                                                                  DropdownMenuItem<String>(
+                                                                    value: null,
+                                                                    child: Text(
+                                                                      'Mahsulotni tanlang',
+                                                                      style: TextStyle(color: Colors.grey[600]),
+                                                                    ),
+                                                                  ),
+                                                                  ...products.map((product) {
+                                                                    return DropdownMenuItem(
+                                                                      value: product.id,
+                                                                      child: Text(product.name),
+                                                                    );
+                                                                  }).toList(),
+                                                                ],
+                                                      onChanged: selectedDepartmentId != null && products.isNotEmpty
+                                                          ? (value) {
+                                                              setState(() {
+                                                                selectedProductId = value;
+                                                              });
+                                                            }
+                                                          : null,
+                                                    );
+                                                  },
+                                                ),
+                                                const SizedBox(height: 12),
+                                                
+                                                // Quantity selector
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Text('${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ', style: const TextStyle(fontSize: 16)),
+                                                    IconButton(
+                                                      icon: const Icon(Icons.remove_circle_outline),
+                                                      onPressed: () {
+                                                        if (quantity > 1) {
+                                                          setState(() {
+                                                            quantity--;
+                                                            _quantityController.text = quantity.toString();
+                                                          });
+                                                        }
+                                                      },
+                                                    ),
+                                                    SizedBox(
+                                                      width: 80,
+                                                      child: TextField(
+                                                        controller: _quantityController,
+                                                        keyboardType: TextInputType.number,
+                                                        textAlign: TextAlign.center,
+                                                        style: const TextStyle(
+                                                          fontSize: 18,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                        decoration: const InputDecoration(
+                                                          isDense: true,
+                                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                          border: OutlineInputBorder(),
+                                                        ),
+                                                        onChanged: (value) {
+                                                          final newQuantity = int.tryParse(value);
+                                                          if (newQuantity != null && newQuantity > 0) {
+                                                            setState(() => quantity = newQuantity);
+                                                          }
+                                                        },
+                                                      ),
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(Icons.add_circle_outline),
+                                                      onPressed: () {
+                                                        setState(() {
+                                                          quantity++;
+                                                          _quantityController.text = quantity.toString();
+                                                        });
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 12),
+                                                
+                                                // Recipient input (Majburiy)
+                                                TextField(
+                                                  controller: _soldToController,
+                                                  decoration: InputDecoration(
+                                                    labelText: 'Kim olib ketdi *',
+                                                    hintText: 'Masalan: Ahmad, Mijoz, Usta, va hokazo',
+                                                    border: const OutlineInputBorder(),
+                                                    prefixIcon: const Icon(Icons.person),
+                                                    helperText: 'Buyurtmani kim olib ketganini kiriting (Majburiy)',
+                                                    errorText: _showSoldToError && _soldToController.text.trim().isEmpty
+                                                        ? 'Kim olib ketganini kiriting'
+                                                        : null,
+                                                  ),
+                                                  textCapitalization: TextCapitalization.words,
+                                                  onChanged: (value) {
+                                                    if (_showSoldToError && value.trim().isNotEmpty) {
+                                                      setState(() {
+                                                        _showSoldToError = false;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                                const SizedBox(height: 16),
+                                                
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: TextButton(
+                                                        onPressed: () {
+                                                          setState(() {
+                                                            _showCreateOrderForm = false;
+                                                            selectedDepartmentId = null;
+                                                            selectedProductId = null;
+                                                            quantity = 1;
+                                                            _quantityController.text = '1';
+                                                            _soldToController.clear();
+                                                            _showSoldToError = false;
+                                                          });
+                                                        },
+                                                        child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 16),
+                                                    Expanded(
+                                                      flex: 2,
+                                                      child: ElevatedButton.icon(
+                                                        onPressed: _canCreateOrders ? () {
+                                                          _createOrder();
+                                                          if (!_showSoldToError && selectedDepartmentId != null && selectedProductId != null) {
+                                                            setState(() => _showCreateOrderForm = false);
+                                                          }
+                                                        } : null,
+                                                        icon: const Icon(Icons.add_shopping_cart),
+                                                        label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
+                                                        style: ElevatedButton.styleFrom(
+                                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
                                 ],
                               ),
                             ),
                           ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      
-                      // Orders List Header
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                          child: Text(
-                            AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
+                          
+                          // Orders List Header
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                              child: Text(
+                                AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          
+                          // Orders list - SliverList
+                          if (filteredOrders.isEmpty)
+                            SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: EmptyStateWidget(
+                                icon: Icons.shopping_cart_outlined,
+                                title: orders.isEmpty 
+                                    ? 'No orders yet' 
+                                    : 'No orders match your filters',
+                                subtitle: orders.isEmpty
+                                    ? 'Create your first order using the form above'
+                                    : 'Try adjusting your search or filters',
+                              ),
+                            )
+                          else
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final domainOrder = filteredOrders[index];
+                                  final department = _departmentService.getDepartmentById(domainOrder.departmentId);
+                                  final dataOrder = _orderService.getOrderById(domainOrder.id);
+                                  
+                                  return OrderItemWidget(
+                                    order: domainOrder,
+                                    dataOrder: dataOrder,
+                                    department: department,
+                                    onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
+                                    onEdit: (['pending', 'in_progress', 'partially_completed'].contains(domainOrder.status) && _canEditOrders) 
+                                        ? () => _editOrder(domainOrder) 
+                                        : null,
+                                    onDelete: _canDeleteOrder(domainOrder) ? () => _deleteOrder(domainOrder) : null,
+                                    isCompleting: _completingOrderId == domainOrder.id,
+                                    onCourierAssign: () => _showCourierAssignmentDialog(domainOrder.id, domainOrder.quantity),
+                                    isCourierMode: (_currentUser?.isManager == true || _currentUser?.isBoss == true),
+                                  );
+                                },
+                                childCount: filteredOrders.length,
+                              ),
+                            ),
+                        ],
                       ),
-                      
-                      // Orders list - SliverList
-                      if (filteredOrders.isEmpty)
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: EmptyStateWidget(
-                            icon: Icons.shopping_cart_outlined,
-                            title: orders.isEmpty 
-                                ? 'No orders yet' 
-                                : 'No orders match your filters',
-                            subtitle: orders.isEmpty
-                                ? 'Create your first order using the form above'
-                                : 'Try adjusting your search or filters',
-                          ),
-                        )
-                      else
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final domainOrder = filteredOrders[index];
-                              final department = _departmentService.getDepartmentById(domainOrder.departmentId);
-                              
-                              // Get the corresponding data model for extended fields
-                              final dataOrder = _orderService.getOrderById(domainOrder.id);
-                              return OrderItemWidget(
-                                order: domainOrder, // Domain Order'dan to'g'ridan-to'g'ri foydalanish
-                                dataOrder: dataOrder, // Pass data model for extended fields
-                                department: department,
-                                onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
-                                onEdit: (domainOrder.status == 'pending' && _canEditOrders) ? () => _editOrder(domainOrder) : null,
-                                onDelete: _canDeleteOrder(domainOrder) ? () => _deleteOrder(domainOrder) : null,
-                                isCompleting: _completingOrderId == domainOrder.id,
-                                // Add take away functionality
-                                onTakeAwayToggle: _canCompleteOrders 
-                                    ? () => _toggleTakeAwayOrderSelection(domainOrder.id) 
-                                    : null,
-                                isTakeAwaySelected: _selectedTakeAwayOrderIds.contains(domainOrder.id),
-                                // Courier assignment functionality
-                                onCourierAssign: () => _showCourierAssignmentDialog(domainOrder.id, domainOrder.quantity),
-                                isCourierMode: (_currentUser?.isManager == true || _currentUser?.isBoss == true), // Only managers/boss can assign couriers
-                              );
-                            },
-                            childCount: filteredOrders.length,
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
         );
       },
     );

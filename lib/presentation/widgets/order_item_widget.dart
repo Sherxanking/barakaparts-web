@@ -28,10 +28,6 @@ class OrderItemWidget extends StatefulWidget {
   final VoidCallback? onEdit; // Nullable - for pending orders
   final VoidCallback? onDelete; // Nullable - permission-based
   final bool isCompleting; // OPTIMIZATION: Loading state
-  // New parameters for take away functionality
-  final VoidCallback? onTakeAwayToggle;
-  final bool isTakeAwaySelected;
-  // New parameters for courier assignment functionality
   final VoidCallback? onCourierAssign;
   final bool isCourierMode; // Flag to enable courier assignment mode
 
@@ -44,8 +40,6 @@ class OrderItemWidget extends StatefulWidget {
     this.onEdit,
     this.onDelete,
     this.isCompleting = false, // Default: not loading
-    this.onTakeAwayToggle,
-    this.isTakeAwaySelected = false,
     this.onCourierAssign,
     this.isCourierMode = false,
   });
@@ -75,18 +69,17 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     // FIX: Const constructor ishlatish - rebuild optimizatsiyasi
     return AnimatedListItem(
       child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        elevation: 2,
+        elevation: 3,
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
         child: Container(
           decoration: BoxDecoration(
+            color: Colors.white,
             border: Border(
               left: BorderSide(
                 color: _getStatusColor(widget.order.status),
-                width: 6,
+                width: 10,
               ),
             ),
           ),
@@ -96,355 +89,366 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
             },
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 16, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header: Product name va Visual Status
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.order.productName,
-                            style: const TextStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.5,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          // Visual Progress Bar
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: widget.order.completedQuantity / widget.order.quantity,
-                              backgroundColor: Colors.grey.shade200,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                _getPercentageColor((widget.order.completedQuantity / widget.order.quantity) * 100),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header: Product name va Visual Status
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.order.productName,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color: Color(0xFF1A1C1E),
                               ),
-                              minHeight: 6,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            // Visual Progress Bar
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: LinearProgressIndicator(
+                                value: (widget.order.quantity > 0) ? (widget.order.completedQuantity / widget.order.quantity) : 0,
+                                backgroundColor: Colors.grey.shade100,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  _getPercentageColor((widget.order.quantity > 0) ? (widget.order.completedQuantity / widget.order.quantity) * 100 : 0),
+                                ),
+                                minHeight: 8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          StatusBadgeWidget(status: widget.order.status),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${widget.order.completedQuantity} / ${widget.order.quantity}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.blue.shade900,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
+                          if (widget.isCourierMode)
+                            IconButton(
+                              onPressed: widget.onCourierAssign,
+                              icon: const Icon(Icons.delivery_dining, color: Color(0xFFF2994A)),
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0xFFF2994A).withOpacity(0.1),
+                              ),
+                            ),
                         ],
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        StatusBadgeWidget(status: widget.order.status),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${widget.order.completedQuantity}/${widget.order.quantity}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Feasibility Section (NEW)
+                  if (widget.order.status == 'pending' || widget.order.status == 'in_progress')
+                    _buildFeasibilityInfo(),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Metadata Section - Clean Grid
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                        if (widget.onTakeAwayToggle != null)
-                          Checkbox(
-                            value: widget.isTakeAwaySelected,
-                            onChanged: (_) => widget.onTakeAwayToggle?.call(),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          )
-                        else if (widget.isCourierMode)
-                          IconButton(
-                            onPressed: widget.onCourierAssign,
-                            icon: const Icon(Icons.delivery_dining, color: Colors.orange),
-                            tooltip: 'Assign Courier',
-                          ),
                       ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                
-                // Metadata Section: Department, Worker, SoldTo, Dates
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          if (widget.department != null)
-                            Expanded(
-                              child: _buildInfoRow(
-                                Icons.business,
+                    child: Column(
+                      children: [
+                        GridView.count(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisCount: 2,
+                          childAspectRatio: 4,
+                          children: [
+                            if (widget.department != null)
+                              _buildInfoRow(
+                                Icons.business_outlined,
                                 widget.department!.name,
                                 Colors.grey.shade700,
                               ),
+                            _buildInfoRow(
+                              Icons.calendar_today_outlined,
+                              widget.order.createdAt.toString().substring(5, 16),
+                              Colors.grey.shade600,
                             ),
-                          if (widget.order.workerId != null && widget.order.workerId!.isNotEmpty)
-                            Expanded(
-                              child: FutureBuilder<String?>(
+                            _buildInfoRow(
+                              Icons.person_outline,
+                              (widget.order.soldTo?.isNotEmpty == true) ? widget.order.soldTo! : 'Noma\'lum',
+                              Colors.purple.shade600,
+                              label: 'Mijoz:',
+                            ),
+                            if (widget.order.workerId != null && widget.order.workerId!.isNotEmpty)
+                              FutureBuilder<String?>(
                                 future: _getWorkerName(widget.order.workerId!),
                                 builder: (context, snapshot) {
                                   final workerName = snapshot.data ?? '...';
                                   return _buildInfoRow(
-                                    Icons.engineering,
+                                    Icons.engineering_outlined,
                                     workerName,
-                                    Colors.blue.shade700,
+                                    Colors.blue.shade800,
                                     isBold: true,
                                   );
                                 },
                               ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildInfoRow(
-                              Icons.person,
-                              (widget.order.soldTo?.isNotEmpty == true) ? widget.order.soldTo! : 'Ko\'rsatilmagan',
-                              Colors.purple.shade700,
-                              label: '${AppLocalizations.of(context)?.translate('soldTo') ?? 'Sold to'}:',
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildInfoRow(
-                              Icons.calendar_today,
-                              widget.order.createdAt.toString().substring(5, 16),
-                              Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (widget.order.completedAt != null || widget.order.durationHours != null) ...[
-                        const SizedBox(height: 4),
-                        const Divider(height: 12),
-                        Row(
-                          children: [
-                            if (widget.order.completedAt != null)
-                              Expanded(
-                                child: _buildInfoRow(
-                                  Icons.check_circle_outline,
-                                  widget.order.completedAt!.toString().substring(5, 16),
-                                  Colors.green.shade700,
-                                ),
-                              ),
-                            if (widget.order.durationHours != null)
-                              Expanded(
-                                child: _buildInfoRow(
-                                  Icons.timer,
-                                  '${widget.order.durationHours!.toStringAsFixed(1)}h',
-                                  Colors.orange.shade700,
-                                ),
-                              ),
                           ],
                         ),
+                        if (widget.order.completedAt != null || widget.order.durationHours != null) ...[
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8.0),
+                            child: Divider(height: 1),
+                          ),
+                          Row(
+                            children: [
+                              if (widget.order.completedAt != null)
+                                Expanded(
+                                  child: _buildInfoRow(
+                                    Icons.task_alt_outlined,
+                                    widget.order.completedAt!.toString().substring(5, 16),
+                                    Colors.green.shade700,
+                                  ),
+                                ),
+                              if (widget.order.durationHours != null)
+                                Expanded(
+                                  child: _buildInfoRow(
+                                    Icons.hourglass_bottom_outlined,
+                                    '${widget.order.durationHours!.toStringAsFixed(1)}s',
+                                    Colors.orange.shade800,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
 
-                // FIX: Barcha orderlar uchun parts ko'rsatish (ixcham - icon bilan yashirib turish)
-                // Completed va Pending orderlar uchun ham
-                ...[
-                  const SizedBox(height: 12),
-                  Divider(color: Colors.grey[300]),
-                  const SizedBox(height: 8),
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _showParts = !_showParts;
-                      });
-                    },
-                    child: Row(
-                      children: [
-                        Icon(
-                          _showParts ? Icons.expand_less : Icons.expand_more,
-                          size: 20,
-                          color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.build,
-                          size: 18,
-                          color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
-                        ),
-                        const SizedBox(width: 8),
+                  // FIX: Barcha orderlar uchun parts ko'rsatish (ixcham - icon bilan yashirib turish)
+                  // Completed va Pending orderlar uchun ham
+                  ...[
+                    const SizedBox(height: 12),
+                    Divider(color: Colors.grey[300]),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _showParts = !_showParts;
+                        });
+                      },
+                      child: Row(
+                        children: [
+                          Icon(
+                            _showParts ? Icons.expand_less : Icons.expand_more,
+                            size: 20,
+                            color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.build,
+                            size: 18,
+                            color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            widget.order.status == 'completed' 
+                                ? (AppLocalizations.of(context)?.translate('partsUsed') ?? 'Parts Used')
+                                : (AppLocalizations.of(context)?.translate('partsRequired') ?? 'Parts Required'),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _showParts ? 'Yig\'ish' : 'Ko\'rsatish',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: widget.order.status == 'completed' ? Colors.green[600] : Colors.blue[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_showParts) ...[
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (context) {
+                          debugPrint('✅ Order ${widget.order.id} - _showParts = true, _buildPartsList chaqirilmoqda');
+                          return _buildPartsList(context);
+                        },
+                      ),
+                      // Show taken items if any
+                      if (widget.dataOrder?.takenItems != null && widget.dataOrder!.takenItems.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Divider(color: Colors.grey[300]),
+                        const SizedBox(height: 8),
                         Text(
-                          widget.order.status == 'completed' 
-                              ? (AppLocalizations.of(context)?.translate('partsUsed') ?? 'Parts Used')
-                              : (AppLocalizations.of(context)?.translate('partsRequired') ?? 'Parts Required'),
+                          'Taken Items',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: widget.order.status == 'completed' ? Colors.green[700] : Colors.blue[700],
+                            color: Colors.green[700],
                           ),
                         ),
-                        const Spacer(),
-                        Text(
-                          _showParts ? 'Yig\'ish' : 'Ko\'rsatish',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: widget.order.status == 'completed' ? Colors.green[600] : Colors.blue[600],
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_showParts) ...[
-                    const SizedBox(height: 8),
-                    Builder(
-                      builder: (context) {
-                        debugPrint('✅ Order ${widget.order.id} - _showParts = true, _buildPartsList chaqirilmoqda');
-                        return _buildPartsList(context);
-                      },
-                    ),
-                    // Show taken items if any
-                    if (widget.dataOrder?.takenItems != null && widget.dataOrder!.takenItems.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Divider(color: Colors.grey[300]),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Taken Items',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green[700],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...widget.dataOrder!.takenItems.map((takenItem) {
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          color: Colors.green[50],
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.check,
-                                  size: 16,
-                                  color: Colors.green[700],
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Quantity: ${takenItem.quantity}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.green[800],
-                                    ),
+                        const SizedBox(height: 8),
+                        ...widget.dataOrder!.takenItems.map((takenItem) {
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            color: Colors.green[50],
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.check,
+                                    size: 16,
+                                    color: Colors.green[700],
                                   ),
-                                ),
-                                if (takenItem.notes != null && takenItem.notes!.isNotEmpty)
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Notes: ${takenItem.notes}',
+                                      'Quantity: ${takenItem.quantity}',
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: Colors.green[800],
-                                        fontStyle: FontStyle.italic,
                                       ),
                                     ),
                                   ),
-                              ],
+                                  if (takenItem.notes != null && takenItem.notes!.isNotEmpty)
+                                    Expanded(
+                                      child: Text(
+                                        'Notes: ${takenItem.notes}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green[800],
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      }),
+                          );
+                        }),
+                      ],
                     ],
                   ],
-                ],
-                
-                const SizedBox(height: 12),
-                
-                // Action buttons Section
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    // Primary Actions
-                    if (widget.order.status == 'pending' && widget.onComplete != null && _hasStartPermission())
-                      _buildActionButton(
-                        onPressed: () => _showStartOrderDialog(context),
-                        icon: Icons.play_arrow,
-                        label: 'Start',
-                        color: Colors.orange.shade700,
-                      ),
-                    
-                    if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
-                        widget.onComplete != null && _hasCompletePermission()) ...[
-                      _buildActionButton(
-                        onPressed: () => _showPartialCompleteDialog(context),
-                        icon: Icons.check_circle_outline,
-                        label: 'Partial',
-                        color: Colors.green.shade600,
-                      ),
-                      const SizedBox(width: 8),
-                      _buildActionButton(
-                        onPressed: widget.isCompleting ? null : widget.onComplete!,
-                        icon: Icons.check_circle,
-                        label: AppLocalizations.of(context)?.translate('complete') ?? 'Finish',
-                        color: Colors.green.shade700,
-                        isLoading: widget.isCompleting,
-                      ),
-                      if (widget.order.quantity > 1 && widget.order.completedQuantity < widget.order.quantity) ...[
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Action buttons Section
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      // Primary Actions
+                      if (widget.order.status == 'pending' && widget.onComplete != null && _hasStartPermission())
+                        _buildActionButton(
+                          onPressed: () => _showStartOrderDialog(context),
+                          icon: Icons.play_arrow,
+                          label: 'Start',
+                          color: Colors.orange.shade700,
+                        ),
+                      
+                      if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
+                          widget.onComplete != null && _hasCompletePermission()) ...[
+                        _buildActionButton(
+                          onPressed: () => _showPartialCompleteDialog(context),
+                          icon: Icons.check_circle_outline,
+                          label: 'Partial',
+                          color: Colors.green.shade600,
+                        ),
                         const SizedBox(width: 8),
                         _buildActionButton(
-                          onPressed: () => _completeOneItem(context),
-                          icon: Icons.add,
-                          label: '+1',
-                          color: Colors.blue.shade700,
+                          onPressed: widget.isCompleting ? null : widget.onComplete!,
+                          icon: Icons.check_circle,
+                          label: AppLocalizations.of(context)?.translate('complete') ?? 'Finish',
+                          color: Colors.green.shade700,
+                          isLoading: widget.isCompleting,
                         ),
+                        if (widget.order.quantity > 1 && widget.order.completedQuantity < widget.order.quantity) ...[
+                          const SizedBox(width: 8),
+                          _buildActionButton(
+                            onPressed: () => _completeOneItem(context),
+                            icon: Icons.add,
+                            label: '+1',
+                            color: Colors.blue.shade700,
+                          ),
+                        ],
                       ],
+
+                      const Spacer(),
+
+                      // Secondary Actions (Popup Menu)
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert),
+                        onSelected: (value) {
+                          if (value == 'edit' && widget.onEdit != null) widget.onEdit!();
+                          if (value == 'delete' && widget.onDelete != null) widget.onDelete!();
+                        },
+                        itemBuilder: (context) => [
+                          if (['pending', 'in_progress', 'partially_completed'].contains(widget.order.status) && 
+                            widget.onEdit != null && _hasEditPermission())
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit, size: 20, color: Colors.blue),
+                                  SizedBox(width: 8),
+                                  Text('Edit'),
+                                ],
+                              ),
+                            ),
+                          if (widget.onDelete != null)
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, size: 20, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text(_isBoss() ? 'Permanent Delete' : 'Delete'),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
-
-                    const Spacer(),
-
-                    // Secondary Actions (Popup Menu)
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert),
-                      onSelected: (value) {
-                        if (value == 'edit' && widget.onEdit != null) widget.onEdit!();
-                        if (value == 'delete' && widget.onDelete != null) widget.onDelete!();
-                      },
-                      itemBuilder: (context) => [
-                        if (widget.order.status == 'pending' && widget.onEdit != null && _hasEditPermission())
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Row(
-                              children: [
-                                Icon(Icons.edit, size: 20, color: Colors.blue),
-                                SizedBox(width: 8),
-                                Text('Edit'),
-                              ],
-                            ),
-                          ),
-                        if (widget.onDelete != null)
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete, size: 20, color: Colors.red),
-                                SizedBox(width: 8),
-                                Text(_isBoss() ? 'Permanent Delete' : 'Delete'),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -528,17 +532,18 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
   Color _getStatusColor(String status) {
     switch (status) {
       case 'pending':
-        return Colors.orange.shade400;
+        return const Color(0xFFF2C94C); // Warning Yellow
       case 'in_progress':
-        return Colors.blue.shade400;
+        return const Color(0xFF2F80ED); // Info Blue
       case 'partially_completed':
-        return Colors.purple.shade400;
+        return const Color(0xFF9B51E0); // Purple
       case 'completed':
-        return Colors.green.shade500;
+        return const Color(0xFF27AE60); // Success Green
       case 'cancelled':
-        return Colors.red.shade400;
+      case 'rejected':
+        return const Color(0xFFEB5757); // Danger Red
       default:
-        return Colors.grey.shade400;
+        return const Color(0xFFBDBDBD); // Grey
     }
   }
 
@@ -658,6 +663,36 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     }
   }
 
+  /// Buttonni yaratish uchun helper
+  Widget _buildActionButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool isLoading = false,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: isLoading ? null : onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color.withValues(alpha: 0.1),
+        foregroundColor: color,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: color, width: 1),
+        ),
+      ),
+      icon: isLoading 
+          ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: color))
+          : Icon(icon, size: 18),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      ),
+    );
+  }
+
   /// Helper to build a consistent info row with icon and text
   Widget _buildInfoRow(IconData icon, String text, Color color, {String? label, bool isBold = false}) {
     return Row(
@@ -687,36 +722,105 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     );
   }
 
-  /// Helper to build a primary action button
-  Widget _buildActionButton({
-    required VoidCallback? onPressed,
-    required IconData icon,
-    required String label,
-    required Color color,
-    bool isLoading = false,
-  }) {
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      icon: isLoading
-          ? SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-              ),
-            )
-          : Icon(icon, size: 16),
-      label: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color.withValues(alpha: 0.1),
-        foregroundColor: color,
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: color.withValues(alpha: 0.2)),
+  /// Build Feasibility Info Widget
+  Widget _buildFeasibilityInfo() {
+    final product = _getProduct();
+    if (product == null) return const SizedBox.shrink();
+
+    final partService = PartService();
+    int minPossible = 999999;
+    Map<String, int> shortages = {};
+
+    product.parts.forEach((partId, reqQty) {
+      final part = partService.getPartById(partId);
+      final currentStock = part?.quantity ?? 0;
+      
+      final possibleForThisPart = currentStock ~/ reqQty;
+      if (possibleForThisPart < minPossible) {
+        minPossible = possibleForThisPart;
+      }
+
+      final totalNeeded = reqQty * widget.order.quantity;
+      if (currentStock < totalNeeded) {
+        shortages[partId] = totalNeeded - currentStock;
+      }
+    });
+
+    if (minPossible > widget.order.quantity) minPossible = widget.order.quantity;
+
+    final bool isFullyPossible = minPossible >= widget.order.quantity;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isFullyPossible ? Colors.green.shade50 : Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isFullyPossible ? Colors.green.shade200 : Colors.orange.shade200,
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isFullyPossible ? Icons.check_circle : Icons.warning_amber_rounded,
+                size: 20,
+                color: isFullyPossible ? Colors.green.shade700 : Colors.orange.shade700,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isFullyPossible 
+                      ? 'Ishlab chiqarishga tayyor: ${widget.order.quantity} ta'
+                      : 'Hozirda faqat $minPossible ta uchun qism yetarli',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isFullyPossible ? Colors.green.shade900 : Colors.orange.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (shortages.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 4),
+            Text(
+              'Yetishmayotgan qismlar:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: shortages.entries.map((e) {
+                final part = partService.getPartById(e.key);
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.red.shade100),
+                  ),
+                  child: Text(
+                    '${part?.name ?? e.key}: -${e.value}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.red.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
       ),
     );
   }
