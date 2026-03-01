@@ -68,6 +68,7 @@ class _OrdersPageState extends State<OrdersPage> {
   final TextEditingController _soldToController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   bool _showSoldToError = false;
+  bool _showCreateOrderForm = false;
 
   // Search, Filter, Sort state
   final TextEditingController _searchController = TextEditingController();
@@ -1489,8 +1490,27 @@ class _OrdersPageState extends State<OrdersPage> {
                       // Create Order Section - SliverToBoxAdapter
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.all(16),
-                        child: Card(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (!_showCreateOrderForm)
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _showCreateOrderForm = true;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  label: Text(AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                    foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                              if (_showCreateOrderForm)
+                                Card(
                           elevation: 2,
                           child: Padding(
                             padding: const EdgeInsets.all(20.0),
@@ -1700,18 +1720,48 @@ class _OrdersPageState extends State<OrdersPage> {
                                   ),
                                   const SizedBox(height: 16),
                                   
-                                  // Create order button
-                                  ElevatedButton.icon(
-                                    onPressed: _canCreateOrders ? _createOrder : null,
-                                    icon: const Icon(Icons.add_shopping_cart),
-                                    label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
-                                    style: ElevatedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _showCreateOrderForm = false;
+                                              selectedDepartmentId = null;
+                                              selectedProductId = null;
+                                              quantity = 1;
+                                              _quantityController.text = '1';
+                                              _soldToController.clear();
+                                              _showSoldToError = false;
+                                            });
+                                          },
+                                          child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        flex: 2,
+                                        child: ElevatedButton.icon(
+                                          onPressed: _canCreateOrders ? () {
+                                            _createOrder();
+                                            if (!_showSoldToError && selectedDepartmentId != null && selectedProductId != null) {
+                                              setState(() => _showCreateOrderForm = false);
+                                            }
+                                          } : null,
+                                          icon: const Icon(Icons.add_shopping_cart),
+                                          label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
+                          ),
+                            ],
                           ),
                         ),
                       ),
