@@ -11,6 +11,9 @@ class StatusBadgeWidget extends StatelessWidget {
   /// Status matni
   final String status;
   
+  /// Ixcham rejim
+  final bool compact;
+  
   /// Status rangini aniqlash
   final Color? color;
 
@@ -18,6 +21,7 @@ class StatusBadgeWidget extends StatelessWidget {
     super.key,
     required this.status,
     this.color,
+    this.compact = false,
   });
 
   /// Status bo'yicha rangni aniqlash
@@ -50,23 +54,26 @@ class StatusBadgeWidget extends StatelessWidget {
     final localizedStatus = status.localizedStatus(context);
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 8, 
+        vertical: compact ? 2 : 4,
+      ),
       decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
+        color: statusColor.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(compact ? 8 : 12),
         border: Border.all(color: statusColor, width: 1),
       ),
-      constraints: const BoxConstraints(
-        maxWidth: 80, // Max kenglikni cheklash
+      constraints: BoxConstraints(
+        maxWidth: compact ? 70 : 80,
       ),
       child: Text(
         localizedStatus,
         style: TextStyle(
           color: statusColor,
-          fontSize: 10,
+          fontSize: compact ? 9 : 10,
           fontWeight: FontWeight.bold,
         ),
-        overflow: TextOverflow.ellipsis, // Agar uzun bo'lsa, ... qo'yish
+        overflow: TextOverflow.ellipsis,
         maxLines: 1,
       ),
     );

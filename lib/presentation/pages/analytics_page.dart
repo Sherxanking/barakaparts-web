@@ -206,25 +206,19 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = AuthStateService().currentUser;
+    
     return Scaffold(
+      backgroundColor: Colors.grey[50]!, // Modern background
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)?.translate('analytics') ?? 'Analytics'),
+        elevation: 0, // Clean flat look
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.black87,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              // Navigate to settings page
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsPage()),
-              );
-            },
-            tooltip: 'Settings',
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadAnalytics,
-            tooltip: 'Refresh',
           ),
         ],
       ),
@@ -233,20 +227,84 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           : RefreshIndicator(
               onRefresh: _loadAnalytics,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Summary Cards
-                    _buildSummaryCards(),
-                    const SizedBox(height: 24),
+                    // Welcome Header
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Xayrli kun, ${currentUser?.name ?? "Do'stim"}',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _getFormattedDate(),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
 
-                    // Product Focus Section (New)
-                    _buildProductFocusSection(),
-                    const SizedBox(height: 24),
-                    
-                    // This Month Production
-                    _buildThisMonthProduction(),
+                    // Summary Cards (Horizontal Scroll for responsiveness)
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.only(left: 16, right: 8),
+                      child: Row(
+                        children: [
+                          _buildStatCard(
+                            'Shu oy',
+                            '$_thisMonthProduction',
+                            Icons.production_quantity_limits,
+                            const Color(0xFF2D9CDB), // Professional Blue
+                          ),
+                          _buildStatCard(
+                            'Kam qolgan',
+                            '$_lowStockParts',
+                            Icons.error_outline,
+                            const Color(0xFFEB5757), // Professional Danger
+                          ),
+                          _buildStatCard(
+                            'Barcha qismlar',
+                            '$_totalParts',
+                            Icons.settings_suggest,
+                            const Color(0xFF27AE60), // Professional Green
+                          ),
+                          _buildStatCard(
+                            'Mahsulotlar',
+                            '$_totalProducts',
+                            Icons.layers,
+                            const Color(0xFF9B51E0), // Professional Purple
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Product Focus Section
+                          _buildProductFocusSection(),
+                          const SizedBox(height: 24),
+                          
+                          // Charts section... (keeping existing but wrapped in padding)
+                          _buildThisMonthProduction(),
                     const SizedBox(height: 24),
                     
                     // This Month Parts Used
@@ -302,72 +360,66 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  Widget _buildSummaryCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            'This Month',
-            '$_thisMonthProduction',
-            Icons.production_quantity_limits,
-            Colors.blue,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            'Low Stock',
-            '$_lowStockParts',
-            Icons.warning,
-            Colors.orange,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            'Total Parts',
-            '$_totalParts',
-            Icons.build,
-            Colors.green,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            'Products',
-            '$_totalProducts',
-            Icons.inventory,
-            Colors.purple,
-          ),
-        ),
-      ],
-    );
+  // Helper for date formatting
+  String _getFormattedDate() {
+    final now = DateTime.now();
+    final months = [
+      'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+      'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'
+    ];
+    return '${now.day}-${months[now.month - 1]}, ${now.year}';
   }
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 2,
+    return Container(
+      width: 140,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: color.withOpacity(0.1), width: 1),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(height: 16),
             Text(
               value,
-              style: TextStyle(
-                fontSize: 24,
+              style: const TextStyle(
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: color,
+                color: Colors.black87, // Dark contrast
+                height: 1.1,
               ),
             ),
+            const SizedBox(height: 4),
             Text(
               title,
               style: TextStyle(
                 fontSize: 12,
+                fontWeight: FontWeight.w500,
                 color: Colors.grey[600],
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

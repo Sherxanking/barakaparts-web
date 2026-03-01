@@ -3,6 +3,7 @@
 /// Bu service order CRUD operatsiyalarini, qidiruv, filtrlash, 
 /// tartiblash va order completion (stock reduction) funksiyalarini boshqaradi.
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import '../models/order_model.dart' as data;
 import '../models/taken_item.dart'; // TakenItem model
 import '../models/product_model.dart';
@@ -12,9 +13,7 @@ import 'part_service.dart';
 import '../../domain/entities/order.dart' as domain;
 import '../../domain/entities/user.dart' as user_domain; // To'g'ri import
 import '../../core/di/service_locator.dart';
-import '../../core/utils/either.dart';
 import '../../core/services/auth_state_service.dart'; // AuthStateService import
-import '../../domain/repositories/user_repository.dart'; // UserRepository import
 import '../../core/services/telegram_notification_service.dart'; // Telegram notification service
 
 class OrderService {
@@ -24,6 +23,9 @@ class OrderService {
   
   // Repository for Supabase sync
   final _orderRepository = ServiceLocator.instance.orderRepository;
+
+  // Hive box name for orders
+  static const String _orderBoxName = 'orders';
 
   /// Barcha orderlarni olish
   /// FIX: Xavfsiz box kirish - xatolik bo'lsa bo'sh ro'yxat qaytarish
@@ -40,6 +42,12 @@ class OrderService {
   data.Order? getOrderById(String id) {
     // Hive boxda ID key emas, shuning uchun barcha elementlarni qidirish kerak
     try {
+      // Hive boxda ID key emas, shuning uchun barcha elementlarni qidirish kerak
+      // Agar box key-value bo'lsa, get(id) ishlatiladi. Hozirda values.firstWhere
+      // ishlatilgani uchun, bu ID ni qidirishni anglatadi.
+      // Agar Hive box key-value sifatida order.id ni saqlasa, _boxService.ordersBox.get(id) ishlatiladi.
+      // Hozirgi implementatsiyada ordersBox.add(order) ishlatilgan, bu esa int indexni key sifatida ishlatadi.
+      // Shuning uchun, ID bo'yicha topish uchun values.firstWhere ishlatish to'g'ri.
       return _boxService.ordersBox.values.firstWhere(
         (order) => order.id == id,
         orElse: () => throw StateError('Order not found'),
@@ -74,7 +82,7 @@ class OrderService {
       
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id, // Fallback to order.id if product not found
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -178,7 +186,7 @@ class OrderService {
       
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -194,7 +202,8 @@ class OrderService {
           debugPrint('❌ Failed to update order in Supabase: ${failure.message}');
           // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
           try {
-            await order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             return true; // Hive'ga yozildi, lekin sync yo'q
           } catch (e) {
             return false;
@@ -203,7 +212,8 @@ class OrderService {
         (updatedOrder) async {
           // 2. Hive'ga ham yozish (offline cache uchun)
           try {
-            await order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Order updated in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -230,12 +240,9 @@ class OrderService {
           debugPrint('❌ Failed to delete order in Supabase: ${failure.message}');
           // Supabase'dan o'chirish xato bo'lsa ham Hive'dan o'chirishga harakat qilamiz
           try {
-            final order = getOrderById(orderId);
-            if (order != null) {
-              await order.delete();
-              return true; // Hive'dan o'chirildi, lekin sync yo'q
-            }
-            return false;
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.delete(orderId);
+            return true; // Hive'dan o'chirildi, lekin sync yo'q
           } catch (e) {
             return false;
           }
@@ -243,14 +250,10 @@ class OrderService {
         (_) async {
           // 2. Hive'dan ham o'chirish (offline cache uchun)
           try {
-            final order = getOrderById(orderId);
-            if (order != null) {
-              await order.delete();
-              debugPrint('✅ Order deleted from both Supabase and Hive');
-              return true;
-            }
-            debugPrint('⚠️ Order deleted from Supabase but not found in Hive');
-            return true; // Supabase'dan o'chirildi, bu asosiy
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.delete(orderId);
+            debugPrint('✅ Order deleted from both Supabase and Hive');
+            return true;
           } catch (e) {
             debugPrint('⚠️ Order deleted from Supabase but failed to delete from Hive: $e');
             return true; // Supabase'dan o'chirildi, bu asosiy
@@ -275,7 +278,7 @@ class OrderService {
   /// FIX: Supabase'ga ham yozish (realtime sync uchun)
   Future<bool> updateOrderStatus(String orderId, String status) async {
     try {
-      final order = getOrderById(orderId);
+      final data.Order? order = getOrderById(orderId);
       if (order == null) {
         return false;
       }
@@ -294,9 +297,9 @@ class OrderService {
         productId = order.productName; // Fallback
       }
       
-      final domainOrder = domain.Order(
+      final domain.Order domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -307,23 +310,25 @@ class OrderService {
       
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to update order status in Supabase: ${failure.message}');
           // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
           try {
             order.status = status;
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             return true; // Hive'ga yozildi, lekin sync yo'q
           } catch (e) {
             return false;
           }
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // 2. Hive'ga ham yozish (offline cache uchun)
           try {
             order.status = status;
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Order status updated in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -340,13 +345,13 @@ class OrderService {
 
   /// Order completion - stock reduction bilan
   /// Bu funksiya order complete bo'lganda partlarning miqdorini kamaytiradi
-  Future<bool> completeOrder(data.Order order) async {
+  /// [isForce] true bo'lsa, qismlar yetishmasa ham tugatadi (faqat borini ayiradi)
+  Future<bool> completeOrder(data.Order order, {bool isForce = false}) async {
     if (order.status == 'completed') {
       return false; // Already completed
     }
 
     // Product topish
-    // FIX: firstWhere xatolikni oldini olish - try-catch qo'shildi
     Product? product;
     try {
       product = _productService.getAllProducts().firstWhere(
@@ -362,12 +367,12 @@ class OrderService {
       return false; // Product topilmadi
     }
 
-    if (product == null || product.id.isEmpty) {
+    if (product.id.isEmpty) {
       return false; // Product not found
     }
 
-    // FIX: Barcha partlarni bir marta tekshirish (performance)
     final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
+    final missingParts = <String>[]; // Yetishmagan qismlar nomi
     
     for (var entry in product.parts.entries) {
       final partId = entry.key;
@@ -376,32 +381,58 @@ class OrderService {
       
       final part = _partService.getPartById(partId);
       if (part == null) {
+        if (isForce) {
+          missingParts.add('Noma\'lum qism ($partId)');
+          continue;
+        }
         return false; // Part not found
       }
 
       if (part.quantity < totalQty) {
+        if (isForce) {
+          // Force bo'lsa - borini ayiradi, yoki shunchaki skip qiladi
+          missingParts.add('${part.name} (-${totalQty - part.quantity})');
+          if (part.quantity > 0) {
+            partsToUpdate[partId] = part.quantity; // Borini ayirib yuboramiz
+          }
+          continue;
+        }
         return false; // Insufficient stock
       }
 
-      // Barcha o'zgarishlarni to'plab olish
       partsToUpdate[partId] = totalQty;
     }
 
-    // OPTIMIZATION: Barcha partlarni bir marta batch update qilish (tezroq)
-    final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
-    if (!batchResult) {
-      debugPrint('❌ Failed to update parts in batch');
-      return false;
+    // Update parts in batch
+    if (partsToUpdate.isNotEmpty) {
+      final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+      if (!batchResult) {
+        debugPrint('❌ Failed to update parts in batch');
+        return false;
+      }
     }
 
-    // Order statusini yangilash (Supabase'ga ham yozish)
+    // Order statusini yangilash
     order.status = 'completed';
+    order.completedAt = DateTime.now();
     
-    // FIX: Supabase'ga ham yozish (realtime sync uchun)
+    // Agar force bo'lgan bo'lsa, notes ga yozib qo'yamiz
+    if (isForce && missingParts.isNotEmpty) {
+      final shortageNote = '⚠️ Majburiy tugatildi. Yetishmagan qismlar: ${missingParts.join(', ')}';
+      order.notes = order.notes != null ? '${order.notes}\n$shortageNote' : shortageNote;
+    }
+
+    // Calculate duration if startedAt exists
+    if (order.startedAt != null) {
+      final diff = order.completedAt!.difference(order.startedAt!);
+      order.durationHours = diff.inMinutes / 60.0;
+    }
+    
+    // Supabase va Hive'ni yangilash
     final updateResult = await updateOrder(order);
     if (!updateResult) {
-      // Supabase'ga yozish xato bo'lsa ham Hive'ga yozish
-      await order.save();
+      final box = await Hive.openBox<data.Order>(_orderBoxName);
+      await box.put(order.id, order);
     }
 
     return true;
@@ -420,7 +451,7 @@ class OrderService {
       return false; // Product topilmadi
     }
 
-    if (product == null || product.id.isEmpty) return false;
+    if (product.id.isEmpty) return false;
 
     for (var entry in product.parts.entries) {
       final partId = entry.key;
@@ -534,7 +565,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -552,12 +583,13 @@ class OrderService {
           debugPrint('❌ Failed to assign worker to order: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.workerId = workerId; // Yangi maydonni yangilash
             order.updatedAt = DateTime.now(); // Yangilangan vaqtini belgilash
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Worker assigned to order in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -602,7 +634,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -616,19 +648,20 @@ class OrderService {
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
+      return await result.fold(
         (failure) {
           debugPrint('❌ Failed to start order with time tracking: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.status = 'in_progress';
             order.workerId = workerId;
             order.startedAt = DateTime.now(); // Boshlangan vaqtni belgilash
             order.updatedAt = DateTime.now();
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Order started with time tracking successfully in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -673,7 +706,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -686,18 +719,19 @@ class OrderService {
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to start order: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.status = 'in_progress';
             order.workerId = workerId;
             order.updatedAt = DateTime.now();
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Order started successfully in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -748,7 +782,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         completedQuantity: completedQuantity, // Completed miqdorini yangilash
@@ -762,18 +796,19 @@ class OrderService {
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to partially complete order: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.status = 'partially_completed';
             order.completedQuantity = completedQuantity;
             order.updatedAt = DateTime.now();
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Order partially completed successfully in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -830,7 +865,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         completedQuantity: newCompletedQuantity, // Yangilangan completed miqdor
@@ -846,12 +881,12 @@ class OrderService {
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to add partial completion: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.status = newStatus;
@@ -859,7 +894,8 @@ class OrderService {
             order.completedBy = newStatus == 'completed' ? AuthStateService().currentUser?.id : null;
             order.completedAt = newStatus == 'completed' ? DateTime.now() : null;
             order.updatedAt = DateTime.now();
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Partial completion added successfully in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -898,7 +934,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         departmentId: order.departmentId,
@@ -911,18 +947,19 @@ class OrderService {
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to reject order: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.status = 'rejected';
             order.notes = reason;
             order.updatedAt = DateTime.now();
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Order rejected successfully in both Supabase and Hive');
             return true;
           } catch (e) {
@@ -1186,7 +1223,7 @@ class OrderService {
       return false; // Product not found
     }
 
-    if (product == null || product.id.isEmpty) {
+    if (product.id.isEmpty) {
       return false; // Product not found
     }
 
@@ -1238,7 +1275,8 @@ class OrderService {
       final updateResult = await updateOrder(dataOrder);
       if (!updateResult) {
         // Supabase'ga yozish xato bo'lsa ham Hive'ga yozish
-        await dataOrder.save();
+        final box = await Hive.openBox<data.Order>(_orderBoxName);
+        await box.put(dataOrder.id, dataOrder);
       }
     }
 
@@ -1348,7 +1386,7 @@ class OrderService {
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
-        productId: productId ?? order.id,
+        productId: productId,
         productName: order.productName,
         quantity: order.quantity,
         completedQuantity: order.completedQuantity,
@@ -1360,22 +1398,22 @@ class OrderService {
         notes: updatedNotes,
       );
       
-      // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
       
-      return result.fold(
-        (failure) {
+      return await result.fold(
+        (failure) async {
           debugPrint('❌ Failed to assign courier to order: ${failure.message}');
           return false;
         },
-        (updatedOrder) {
+        (updatedOrder) async {
           // Hive'ga ham saqlash
           try {
             order.workerId = order.workerId ?? courierId;
             order.notes = updatedNotes;
             order.status = newStatus;
             order.updatedAt = DateTime.now();
-            order.save();
+            final box = await Hive.openBox<data.Order>(_orderBoxName);
+            await box.put(order.id, order);
             debugPrint('✅ Courier assigned to order successfully in both Supabase and Hive');
             
             // Send notification to manager about ready orders
@@ -1430,7 +1468,7 @@ class OrderService {
       return false; // Product not found
     }
 
-    if (product == null || product.id.isEmpty) {
+    if (product.id.isEmpty) {
       return false; // Product not found
     }
 
@@ -1472,7 +1510,8 @@ class OrderService {
     final updateResult = await updateOrder(order);
     if (!updateResult) {
       // Supabase'ga yozish xato bo'lsa ham Hive'ga yozish
-      await order.save();
+      final box = await Hive.openBox<data.Order>(_orderBoxName);
+      await box.put(order.id, order);
     }
 
     // Send notification about order completion
@@ -1653,6 +1692,8 @@ class OrderService {
       }
 
       // Update the order in both Hive and Supabase
+      final box = await Hive.openBox<data.Order>(_orderBoxName);
+      await box.put(order.id, order);
       final result = await updateOrder(order);
       if (!result) {
         debugPrint('⚠️ Failed to update order after adding taken item');
