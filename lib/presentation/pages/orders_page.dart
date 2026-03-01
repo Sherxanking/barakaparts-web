@@ -505,6 +505,7 @@ class _OrdersPageState extends State<OrdersPage> {
             selectedDepartmentId = null;
             selectedProductId = null;
             quantity = 1;
+            _quantityController.text = '1';
             _soldToController.clear();
             _showSoldToError = false;
           });
@@ -981,6 +982,7 @@ class _OrdersPageState extends State<OrdersPage> {
               selectedDepartmentId = null;
               selectedProductId = null;
               quantity = 1;
+              _quantityController.text = '1';
               _soldToController.clear();
             });
             _showSnackBar(AppLocalizations.of(context)?.translate('orderUpdated') ?? 'Order updated successfully', Colors.green);
@@ -993,6 +995,7 @@ class _OrdersPageState extends State<OrdersPage> {
         selectedDepartmentId = null;
         selectedProductId = null;
         quantity = 1;
+        _quantityController.text = '1';
         _soldToController.clear();
       });
     }
