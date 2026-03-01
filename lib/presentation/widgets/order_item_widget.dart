@@ -99,370 +99,156 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header: Product name va Status
+                // Header: Product name va Visual Status
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
-                        widget.order.productName,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Show checkbox if take away functionality is enabled
-                    if (widget.onTakeAwayToggle != null)
-                      Checkbox(
-                        value: widget.isTakeAwaySelected,
-                        onChanged: (_) => widget.onTakeAwayToggle?.call(),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      )
-                    else if (widget.isCourierMode) // Show courier assignment button
-                      ElevatedButton.icon(
-                        onPressed: widget.onCourierAssign,
-                        icon: const Icon(Icons.delivery_dining, size: 16),
-                        label: const Text('Assign Courier'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
-                          foregroundColor: Colors.white,
-                        ),
-                      )
-                    else
-                      // Show status with completion info
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          StatusBadgeWidget(status: widget.order.status),
-                          const SizedBox(height: 4),
-                          // Show completion info: completed/total (percentage)
                           Text(
-                            '${widget.order.completedQuantity}/${widget.order.quantity}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${((widget.order.completedQuantity / widget.order.quantity) * 100).round()}%',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: _getPercentageColor((widget.order.completedQuantity / widget.order.quantity) * 100),
+                            widget.order.productName,
+                            style: const TextStyle(
+                              fontSize: 19,
                               fontWeight: FontWeight.bold,
+                              letterSpacing: -0.5,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          // Visual Progress Bar
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: widget.order.completedQuantity / widget.order.quantity,
+                              backgroundColor: Colors.grey.shade200,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                _getPercentageColor((widget.order.completedQuantity / widget.order.quantity) * 100),
+                              ),
+                              minHeight: 6,
                             ),
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        StatusBadgeWidget(status: widget.order.status),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${widget.order.completedQuantity}/${widget.order.quantity}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (widget.onTakeAwayToggle != null)
+                          Checkbox(
+                            value: widget.isTakeAwaySelected,
+                            onChanged: (_) => widget.onTakeAwayToggle?.call(),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          )
+                        else if (widget.isCourierMode)
+                          IconButton(
+                            onPressed: widget.onCourierAssign,
+                            icon: const Icon(Icons.delivery_dining, color: Colors.orange),
+                            tooltip: 'Assign Courier',
+                          ),
+                      ],
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 
-                // Department info
-                if (widget.department != null)
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.business,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.department!.name,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ],
+                // Metadata Section: Department, Worker, SoldTo, Dates
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
                   ),
-                const SizedBox(height: 8),
-                
-                // Worker assignment (agar mavjud bo'lsa)
-                if (widget.order.workerId != null && widget.order.workerId!.isNotEmpty) ...[
-                  FutureBuilder<String?>(
-                    future: _getWorkerName(widget.order.workerId!),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Row(
-                          children: [
-                            Icon(Icons.person, size: 16, color: Colors.grey),
-                            SizedBox(width: 4),
-                            Text('Loading worker...', 
-                              style: TextStyle(fontSize: 14, color: Colors.grey)),
-                          ],
-                        );
-                      }
-                      
-                      final workerName = snapshot.data ?? 'Unknown Worker';
-                      
-                      return Row(
+                  child: Column(
+                    children: [
+                      Row(
                         children: [
-                          Icon(
-                            Icons.engineering,
-                            size: 16,
-                            color: Colors.blue[700],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Worker: ',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
-                              fontWeight: FontWeight.w500,
+                          if (widget.department != null)
+                            Expanded(
+                              child: _buildInfoRow(
+                                Icons.business,
+                                widget.department!.name,
+                                Colors.grey.shade700,
+                              ),
+                            ),
+                          if (widget.order.workerId != null && widget.order.workerId!.isNotEmpty)
+                            Expanded(
+                              child: FutureBuilder<String?>(
+                                future: _getWorkerName(widget.order.workerId!),
+                                builder: (context, snapshot) {
+                                  final workerName = snapshot.data ?? '...';
+                                  return _buildInfoRow(
+                                    Icons.engineering,
+                                    workerName,
+                                    Colors.blue.shade700,
+                                    isBold: true,
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildInfoRow(
+                              Icons.person,
+                              (widget.order.soldTo?.isNotEmpty == true) ? widget.order.soldTo! : 'Ko\'rsatilmagan',
+                              Colors.purple.shade700,
+                              label: '${AppLocalizations.of(context)?.translate('soldTo') ?? 'Sold to'}:',
                             ),
                           ),
-                          Text(
-                            workerName,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.blue[800],
-                              fontWeight: FontWeight.bold,
+                          Expanded(
+                            child: _buildInfoRow(
+                              Icons.calendar_today,
+                              widget.order.createdAt.toString().substring(5, 16),
+                              Colors.grey.shade600,
                             ),
                           ),
                         ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                
-                // Quantity va Sold To bir qatorda
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    // Quantity
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.shopping_cart,
-                          size: 16,
-                          color: Colors.grey[600],
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ${widget.order.quantity}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[700],
-                          ),
+                      ),
+                      if (widget.order.completedAt != null || widget.order.durationHours != null) ...[
+                        const SizedBox(height: 4),
+                        const Divider(height: 12),
+                        Row(
+                          children: [
+                            if (widget.order.completedAt != null)
+                              Expanded(
+                                child: _buildInfoRow(
+                                  Icons.check_circle_outline,
+                                  widget.order.completedAt!.toString().substring(5, 16),
+                                  Colors.green.shade700,
+                                ),
+                              ),
+                            if (widget.order.durationHours != null)
+                              Expanded(
+                                child: _buildInfoRow(
+                                  Icons.timer,
+                                  '${widget.order.durationHours!.toStringAsFixed(1)}h',
+                                  Colors.orange.shade700,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
-                    ),
-                    // Completed quantity (agar qisman completed bo'lsa)
-                    if (widget.order.status == 'partially_completed' || widget.order.status == 'completed') ...[
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.check_circle,
-                            size: 16,
-                            color: Colors.green[700],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Completed: ${widget.order.completedQuantity}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.green[800],
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
-                    // Remaining quantity (agar qisman completed bo'lsa)
-                    if (widget.order.status == 'partially_completed') ...[
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.hourglass_empty,
-                            size: 16,
-                            color: Colors.orange[700],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Remaining: ${widget.order.quantity - widget.order.completedQuantity}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.orange[800],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    // Sold To (chiroyli badge formatida - har doim ko'rsatiladi)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                            ? Colors.purple.shade50
-                            : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                              ? Colors.purple.shade200
-                              : Colors.grey.shade300,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                ? Icons.person
-                                : Icons.person_outline,
-                            size: 16,
-                            color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                ? Colors.purple.shade700
-                                : Colors.grey.shade600,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${AppLocalizations.of(context)?.translate('soldTo') ?? 'Kimga sotilgan'}: ',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                  ? Colors.purple.shade800
-                                  : Colors.grey.shade600,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Text(
-                            (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                ? widget.order.soldTo!
-                                : 'Ko\'rsatilmagan',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                  ? Colors.purple.shade900
-                                  : Colors.grey.shade600,
-                              fontWeight: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              fontStyle: (widget.order.soldTo != null && widget.order.soldTo!.isNotEmpty)
-                                  ? FontStyle.normal
-                                  : FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                
-                // Created date va Completed date (agar mavjud bo'lsa)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.calendar_today,
-                      size: 16,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${AppLocalizations.of(context)?.translate('created') ?? 'Created'}: ${widget.order.createdAt.toString().substring(0, 16)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-                if (widget.order.startedAt != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.play_arrow,
-                        size: 16,
-                        color: Colors.blue[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Started: ${widget.order.startedAt!.toString().substring(0, 16)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (widget.order.completedAt != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 16,
-                        color: Colors.green[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Completed: ${widget.order.completedAt!.toString().substring(0, 16)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                // Show fully completed at date if available
-                if (widget.order.fullyCompletedAt != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: Colors.green[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Fully Completed: ${widget.order.fullyCompletedAt!.toString().substring(0, 16)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (widget.order.durationHours != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.timer,
-                        size: 16,
-                        color: Colors.orange[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Duration: ${widget.order.durationHours!.toStringAsFixed(1)} hours',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
 
                 // FIX: Barcha orderlar uchun parts ko'rsatish (ixcham - icon bilan yashirib turish)
                 // Completed va Pending orderlar uchun ham
@@ -579,109 +365,80 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                 
                 const SizedBox(height: 12),
                 
-                // Action buttons with proper permissions
+                // Action buttons Section
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    // Edit button (only for pending orders and managers/boss)
-                    if (widget.order.status == 'pending' && 
-                        widget.onEdit != null &&
-                        _hasEditPermission()) ...[
-                      TextButton.icon(
-                        onPressed: widget.onEdit,
-                        icon: const Icon(Icons.edit, size: 18),
-                        label: Text(AppLocalizations.of(context)?.translate('edit') ?? 'Edit'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    
-                    // Start button (for pending orders - assign worker and start)
-                    if (widget.order.status == 'pending' && 
-                        widget.onComplete != null &&
-                        _hasStartPermission()) ...[
-                      TextButton.icon(
+                    // Primary Actions
+                    if (widget.order.status == 'pending' && widget.onComplete != null && _hasStartPermission())
+                      _buildActionButton(
                         onPressed: () => _showStartOrderDialog(context),
-                        icon: const Icon(Icons.play_arrow, size: 18),
-                        label: const Text('Start'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.orange,
-                        ),
+                        icon: Icons.play_arrow,
+                        label: 'Start',
+                        color: Colors.orange.shade700,
                       ),
-                      const SizedBox(width: 8),
-                    ],
                     
-                    // Partial complete button (for in_progress/partially_completed)
                     if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
-                        widget.onComplete != null &&
-                        _hasCompletePermission()) ...[
-                      TextButton.icon(
+                        widget.onComplete != null && _hasCompletePermission()) ...[
+                      _buildActionButton(
                         onPressed: () => _showPartialCompleteDialog(context),
-                        icon: const Icon(Icons.check_circle_outline, size: 18),
-                        label: const Text('Partially Complete'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.green,
-                        ),
+                        icon: Icons.check_circle_outline,
+                        label: 'Partial',
+                        color: Colors.green.shade600,
                       ),
                       const SizedBox(width: 8),
-                    ],
-                    
-                    // Complete button (only for pending/in_progress orders and if permission granted)
-                    if ((widget.order.status == 'pending' || widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
-                        widget.onComplete != null &&
-                        _hasCompletePermission()) ...[
-                      TextButton.icon(
-                        onPressed: widget.isCompleting ? null : widget.onComplete, // Disable while loading
-                        icon: widget.isCompleting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-                                ),
-                              )
-                            : const Icon(Icons.check_circle, size: 18),
-                        label: Text(AppLocalizations.of(context)?.translate('complete') ?? 'Complete'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.green,
-                        ),
+                      _buildActionButton(
+                        onPressed: widget.isCompleting ? null : widget.onComplete!,
+                        icon: Icons.check_circle,
+                        label: AppLocalizations.of(context)?.translate('complete') ?? 'Finish',
+                        color: Colors.green.shade700,
+                        isLoading: widget.isCompleting,
                       ),
-                      const SizedBox(width: 8),
-                    ],
-                    
-                    // Complete 1 item button (for in_progress/partially_completed orders)
-                    if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
-                        widget.onComplete != null &&
-                        _hasCompletePermission() &&
-                        widget.order.quantity > 1 &&
-                        widget.order.completedQuantity < widget.order.quantity) ...[
-                      TextButton.icon(
-                        onPressed: () => _completeOneItem(context),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('+1'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.blue,
+                      if (widget.order.quantity > 1 && widget.order.completedQuantity < widget.order.quantity) ...[
+                        const SizedBox(width: 8),
+                        _buildActionButton(
+                          onPressed: () => _completeOneItem(context),
+                          icon: Icons.add,
+                          label: '+1',
+                          color: Colors.blue.shade700,
                         ),
-                      ),
-                      const SizedBox(width: 8),
+                      ],
                     ],
-                    
-                    // Delete button (controlled by parent through widget.onDelete)
-                    if (widget.onDelete != null) ...[
-                      IconButton(
-                        icon: Icon(
-                          _isBoss() ? Icons.delete_forever : Icons.delete,
-                          color: _isBoss() ? Colors.red.shade800 : Colors.red.shade600,
-                        ),
-                        onPressed: widget.onDelete,
-                        tooltip: _isBoss() 
-                            ? AppLocalizations.of(context)?.translate('permanentDeleteOrder') ?? 'Permanently Delete Order'
-                            : AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
-                      ),
-                    ],
+
+                    const Spacer(),
+
+                    // Secondary Actions (Popup Menu)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (value) {
+                        if (value == 'edit' && widget.onEdit != null) widget.onEdit!();
+                        if (value == 'delete' && widget.onDelete != null) widget.onDelete!();
+                      },
+                      itemBuilder: (context) => [
+                        if (widget.order.status == 'pending' && widget.onEdit != null && _hasEditPermission())
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit, size: 20, color: Colors.blue),
+                                SizedBox(width: 8),
+                                Text('Edit'),
+                              ],
+                            ),
+                          ),
+                        if (widget.onDelete != null)
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, size: 20, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text(_isBoss() ? 'Permanent Delete' : 'Delete'),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ],
@@ -1065,5 +822,67 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     }
   }
 
+  /// Helper to build a consistent info row with icon and text
+  Widget _buildInfoRow(IconData icon, String text, Color color, {String? label, bool isBold = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color.withValues(alpha: 0.8)),
+        const SizedBox(width: 4),
+        if (label != null) ...[
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(width: 2),
+        ],
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: color,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Helper to build a primary action button
+  Widget _buildActionButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool isLoading = false,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: isLoading
+          ? SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            )
+          : Icon(icon, size: 16),
+      label: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color.withValues(alpha: 0.1),
+        foregroundColor: color,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: color.withValues(alpha: 0.2)),
+        ),
+      ),
+    );
+  }
 }
 
