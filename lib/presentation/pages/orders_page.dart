@@ -1335,22 +1335,14 @@ class _OrdersPageState extends State<OrdersPage> {
       builder: (context, snapshot) {
         // Handle loading state
         if (_isInitialLoading && !snapshot.hasData) {
-          return Scaffold(
-            appBar: AppBar(
-              title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
-              elevation: 2,
-            ),
-            body: const Center(child: CircularProgressIndicator()),
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
           );
         }
         
         // Handle error state
         if (snapshot.hasError) {
           return Scaffold(
-            appBar: AppBar(
-              title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
-              elevation: 2,
-            ),
             body: ErrorDisplayWidget(
               error: snapshot.error,
               onRetry: () => setState(() => _isInitialLoading = true),
@@ -1378,57 +1370,6 @@ class _OrdersPageState extends State<OrdersPage> {
         final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
         
         return Scaffold(
-          appBar: AppBar(
-            title: Text(AppLocalizations.of(context)?.translate('orders') ?? 'Orders'),
-            elevation: 2,
-            actions: [
-              PopupMenuButton<SortOption>(
-                icon: const Icon(Icons.sort),
-                tooltip: 'Sort',
-                initialValue: _selectedSortOption,
-                onSelected: (option) {
-                  setState(() {
-                    _selectedSortOption = option;
-                  });
-                },
-                itemBuilder: (context) => const [
-                  SortOption.dateDesc,
-                  SortOption.dateAsc,
-                  SortOption.nameAsc,
-                  SortOption.nameDesc,
-                ].map((option) {
-                  return PopupMenuItem(
-                    value: option,
-                    child: Text(option.getLabel(context)),
-                  );
-                }).toList(),
-              ),
-              if (canSeeAnalytics)
-                IconButton(
-                  icon: const Icon(Icons.analytics),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                    );
-                  },
-                  tooltip: 'Analytics',
-                ),
-              // Order History button
-              IconButton(
-                icon: const Icon(Icons.history),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => OrderHistoryPage(orders: orders),
-                    ),
-                  );
-                },
-                tooltip: 'Order History',
-              ),
-            ],
-          ),
           body: Column(
             children: [
               // Search va Filter section
@@ -1437,6 +1378,57 @@ class _OrdersPageState extends State<OrdersPage> {
                 color: Theme.of(context).colorScheme.surface,
                 child: Column(
                   children: [
+                    // Action Buttons (Moved from AppBar)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        PopupMenuButton<SortOption>(
+                          icon: const Icon(Icons.sort),
+                          tooltip: 'Sort',
+                          initialValue: _selectedSortOption,
+                          onSelected: (option) {
+                            setState(() {
+                              _selectedSortOption = option;
+                            });
+                          },
+                          itemBuilder: (context) => const [
+                            SortOption.dateDesc,
+                            SortOption.dateAsc,
+                            SortOption.nameAsc,
+                            SortOption.nameDesc,
+                          ].map((option) {
+                            return PopupMenuItem(
+                              value: option,
+                              child: Text(option.getLabel(context)),
+                            );
+                          }).toList(),
+                        ),
+                        if (canSeeAnalytics)
+                          IconButton(
+                            icon: const Icon(Icons.analytics),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const AnalyticsPage()),
+                              );
+                            },
+                            tooltip: 'Analytics',
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.history),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => OrderHistoryPage(orders: orders),
+                              ),
+                            );
+                          },
+                          tooltip: 'Order History',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     // Search bar
                     SearchBarWidget(
                       controller: _searchController,

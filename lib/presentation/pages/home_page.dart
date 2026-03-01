@@ -237,18 +237,41 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         elevation: 2,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: l10n?.settings ?? 'Settings',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsPage()),
-              );
-            },
-          ),
-        ],
+      ),
+      drawer: Drawer(
+        child: Column(
+          children: [
+            UserAccountsDrawerHeader(
+              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
+              accountName: Text(currentUser?.name ?? 'User'),
+              accountEmail: Text(currentUser?.role ?? ''),
+              currentAccountPicture: const CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(Icons.person, color: Colors.blue, size: 40),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: Text(l10n?.settings ?? 'Settings'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                );
+              },
+            ),
+            const Spacer(),
+            // Add a proper logout or version info later, here just keeping it clean
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Baraka Parts v3.0 (Demo)',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+            ),
+          ],
+        ),
       ),
       body: IndexedStack(
         index: _currentIndex >= visibleIndices.length ? 0 : _currentIndex,
