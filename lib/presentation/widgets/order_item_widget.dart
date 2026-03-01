@@ -572,13 +572,6 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     return currentUser != null && (currentUser.isManager || currentUser.isBoss);
   }
 
-  /// Check if current user has delete permission
-  bool _hasDeletePermission() {
-    final currentUser = AuthStateService().currentUser;
-    // Managers can soft delete, Boss can do everything
-    return currentUser != null && (currentUser.isManager || currentUser.isBoss);
-  }
-
   /// Check if current user is boss
   bool _isBoss() {
     final currentUser = AuthStateService().currentUser;
@@ -602,7 +595,6 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
   /// Complete one item of the order
   Future<void> _completeOneItem(BuildContext context) async {
     final orderService = OrderService();
-    final newCompletedQuantity = widget.order.completedQuantity + 1;
     
     final confirmed = await showDialog<bool>(
       context: context,
@@ -658,162 +650,6 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text('Failed to complete item'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  /// Show delete confirmation dialog with proper permissions
-  Future<void> _showDeleteDialog(BuildContext context) async {
-    final isBoss = _isBoss();
-    final orderService = OrderService();
-    
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              isBoss ? Icons.delete_forever : Icons.delete,
-              color: isBoss ? Colors.red.shade800 : Colors.red.shade600,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              isBoss 
-                  ? AppLocalizations.of(context)?.translate('permanentDeleteOrder') ?? 'Permanently Delete Order'
-                  : AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order',
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${AppLocalizations.of(context)?.translate('deleteOrderConfirm') ?? 'Are you sure you want to delete order for'} ${widget.order.productName}?',
-            ),
-            const SizedBox(height: 12),
-            if (isBoss) ...[
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning, size: 16, color: Colors.red.shade700),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'This will permanently delete the order from the database. This action cannot be undone.',
-                        style: TextStyle(fontSize: 12, color: Colors.red.shade900),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ] else ...[
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 16, color: Colors.orange.shade700),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'This will mark the order as deleted. Only Boss can permanently delete orders.',
-                        style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            // Reason input for deletion
-            TextField(
-              decoration: InputDecoration(
-                labelText: 'Reason for deletion (optional)',
-                border: const OutlineInputBorder(),
-                helperText: 'Please provide a reason for deleting this order',
-              ),
-              maxLines: 2,
-              onChanged: (value) {
-                // Store reason for use in deletion
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: isBoss ? Colors.red.shade800 : Colors.red.shade600),
-            child: Text(
-              isBoss 
-                  ? AppLocalizations.of(context)?.translate('permanentDelete') ?? 'Permanently Delete'
-                  : AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      // Show loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-      
-      bool success;
-      if (isBoss) {
-        // Boss can permanently delete
-        success = await orderService.permanentlyDeleteOrder(widget.order.id);
-      } else {
-        // Managers do soft delete
-        success = await orderService.softDeleteOrder(widget.order.id);
-      }
-      
-      if (context.mounted) {
-        Navigator.pop(context); // Close loading dialog
-        
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isBoss 
-                    ? 'Order permanently deleted' 
-                    : 'Order deleted successfully',
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isBoss 
-                    ? 'Failed to permanently delete order' 
-                    : 'Failed to delete order',
-              ),
               backgroundColor: Colors.red,
             ),
           );
