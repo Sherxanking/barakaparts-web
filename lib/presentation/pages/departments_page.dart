@@ -367,18 +367,6 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
               title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
               elevation: 2,
               actions: [
-                // Analytics button
-                if (canSeeAnalytics)
-                  IconButton(
-                    icon: const Icon(Icons.analytics),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                      );
-                    },
-                    tooltip: 'Analytics',
-                  ),
               ],
             ),
             body: const Center(child: CircularProgressIndicator()),
@@ -392,18 +380,6 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
               title: Text(AppLocalizations.of(context)?.translate('departments') ?? 'Departments'),
               elevation: 2,
               actions: [
-                // Analytics button
-                if (canSeeAnalytics)
-                  IconButton(
-                    icon: const Icon(Icons.analytics),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                      );
-                    },
-                    tooltip: 'Analytics',
-                  ),
               ],
             ),
             body: ErrorDisplayWidget(
@@ -475,18 +451,6 @@ class _DepartmentsPageState extends State<DepartmentsPage> {
                   );
                 }).toList(),
               ),
-              // Analytics button
-              if (canSeeAnalytics)
-                IconButton(
-                  icon: const Icon(Icons.analytics),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                    );
-                  },
-                  tooltip: 'Analytics',
-                ),
             ],
           ),
           body: Column(

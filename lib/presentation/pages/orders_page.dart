@@ -1403,17 +1403,6 @@ class _OrdersPageState extends State<OrdersPage> {
                             );
                           }).toList(),
                         ),
-                        if (canSeeAnalytics)
-                          IconButton(
-                            icon: const Icon(Icons.analytics),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                              );
-                            },
-                            tooltip: 'Analytics',
-                          ),
                         IconButton(
                           icon: const Icon(Icons.history),
                           onPressed: () {

@@ -1793,17 +1793,6 @@ class _PartsPageState extends State<PartsPage> {
                   );
                 }).toList(),
               ),
-              if (canSeeAnalytics)
-                IconButton(
-                  icon: const Icon(Icons.analytics),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AnalyticsPage()),
-                    );
-                  },
-                  tooltip: 'Analytics',
-                ),
               // Low Stock Filter Toggle (har doim ko'rsatiladi)
               IconButton(
                 icon: Icon(

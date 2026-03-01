@@ -75,14 +75,27 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
     // FIX: Const constructor ishlatish - rebuild optimizatsiyasi
     return AnimatedListItem(
       child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         elevation: 2,
-        child: InkWell(
-          onTap: () {
-            // Order details (keyinchalik qo'shilishi mumkin)
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: _getStatusColor(widget.order.status),
+                width: 6,
+              ),
+            ),
+          ),
+          child: InkWell(
+            onTap: () {
+              // Order details (keyinchalik qo'shilishi mumkin)
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -675,6 +688,7 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
             ),
           ),
         ),
+        ),
       ),
     );
   }
@@ -751,6 +765,24 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
       orderQuantity: widget.order.quantity,
       partService: partService,
     );
+  }
+
+  /// Get border color based on order status
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return Colors.orange.shade400;
+      case 'in_progress':
+        return Colors.blue.shade400;
+      case 'partially_completed':
+        return Colors.purple.shade400;
+      case 'completed':
+        return Colors.green.shade500;
+      case 'cancelled':
+        return Colors.red.shade400;
+      default:
+        return Colors.grey.shade400;
+    }
   }
 
   /// Get color based on completion percentage
