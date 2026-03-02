@@ -201,6 +201,16 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
     final workers = await _orderService.getWorkers();
     if (!mounted) return;
 
+    if (workers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n?.translate('noWorkersFound') ?? 'Ishchilar topilmadi'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final selectedWorkerId = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -213,17 +223,38 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
             itemBuilder: (context, index) => ListTile(
               leading: const Icon(Icons.person),
               title: Text(workers[index].name),
+              subtitle: Text(workers[index].role),
               onTap: () => Navigator.pop(context, workers[index].id),
             ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l10n?.translate('cancel') ?? 'Bekor qilish'),
+          ),
+        ],
       ),
     );
 
-    if (selectedWorkerId != null) {
+    if (selectedWorkerId != null && mounted) {
       final success = await _orderService.startOrderWithTimeTracking(order.id, selectedWorkerId);
+      if (!mounted) return;
       if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n?.translate('orderStarted') ?? 'Buyurtma boshlandi'),
+            backgroundColor: Colors.green,
+          ),
+        );
         _refresh();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n?.translate('errorOccurred') ?? 'Xatolik yuz berdi. Logni tekshiring.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }

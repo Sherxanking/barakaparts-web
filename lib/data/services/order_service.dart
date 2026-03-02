@@ -609,12 +609,15 @@ class OrderService {
     try {
       final order = getOrderById(orderId);
       if (order == null) {
+        debugPrint('❌ startOrderWithTimeTracking: order not found in Hive (id=$orderId). Box count=${_boxService.ordersBox.length}');
         return false;
       }
       
-      // Statusni tekshirish
-      if (order.status != 'pending') {
-        debugPrint('⚠️ Order status is not pending: ${order.status}');
+      debugPrint('▶️ startOrderWithTimeTracking: orderId=$orderId, status=${order.status}, workerId=$workerId');
+      
+      // Statusni tekshirish — pending yoki in_progress (qayta tayinlash uchun)
+      if (order.status != 'pending' && order.status != 'in_progress') {
+        debugPrint('⚠️ Order status is not startable: ${order.status}');
         return false;
       }
       
