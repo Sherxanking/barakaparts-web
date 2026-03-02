@@ -192,21 +192,22 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                           const Spacer(),
                           
                           // Primary Actions
-                          if (widget.order.status == 'pending' && widget.onComplete != null && _hasStartPermission())
-                            _buildActionButton(
-                              onPressed: () => _showStartOrderDialog(context),
-                              icon: Icons.play_arrow_rounded,
-                              label: 'Start',
-                              color: Colors.orange.shade700,
-                              isCompact: true,
-                            ),
+                          // Start button is hidden to simplify flow
+                          // if (widget.order.status == 'pending' && widget.onComplete != null && _hasStartPermission())
+                          //   _buildActionButton(
+                          //     onPressed: () => _showStartOrderDialog(context),
+                          //     icon: Icons.play_arrow_rounded,
+                          //     label: 'Start',
+                          //     color: Colors.orange.shade700,
+                          //     isCompact: true,
+                          //   ),
                           
-                          if ((widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
+                          if ((widget.order.status == 'pending' || widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
                               widget.onComplete != null && _hasCompletePermission()) ...[
                             _buildActionButton(
                               onPressed: widget.isCompleting ? null : () => _handleFinish(context),
                               icon: Icons.check_circle_rounded,
-                              label: 'Finish',
+                              label: 'Tugatish',
                               color: Colors.green.shade700,
                               isLoading: widget.isCompleting,
                               isCompact: true,

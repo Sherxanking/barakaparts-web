@@ -153,25 +153,25 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         ),
         child: Row(
           children: [
-            if (order.status == 'pending' && _hasStartPermission())
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _startOrder(context, order),
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(l10n?.translate('start') ?? 'Start'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            if ((order.status == 'in_progress' || order.status == 'partially_completed') && _hasCompletePermission(order)) ...[
+            // if (order.status == 'pending' && _hasStartPermission())
+            //   Expanded(
+            //     child: ElevatedButton.icon(
+            //       onPressed: () => _startOrder(context, order),
+            //       icon: const Icon(Icons.play_arrow),
+            //       label: Text(l10n?.translate('start') ?? 'Start'),
+            //       style: ElevatedButton.styleFrom(
+            //         backgroundColor: Colors.orange,
+            //         foregroundColor: Colors.white,
+            //         padding: const EdgeInsets.symmetric(vertical: 12),
+            //       ),
+            //     ),
+            //   ),
+            if ((order.status == 'pending' || order.status == 'in_progress' || order.status == 'partially_completed') && _hasCompletePermission(order)) ...[
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () => _finishOrder(context, order),
                   icon: const Icon(Icons.check_circle),
-                  label: Text(l10n?.translate('finish') ?? 'Finish'),
+                  label: Text(l10n?.translate('finish') ?? 'Tugatish'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,

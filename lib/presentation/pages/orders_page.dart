@@ -1379,24 +1379,24 @@ class _OrdersPageState extends State<OrdersPage> {
                     ),
                     const SizedBox(height: 16),
                     // Status Filter Chips
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _buildFilterChip(null, 'Hammasi'),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('pending', 'Kutilmoqda'),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('in_progress', 'Jarayonda'),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('partially_completed', 'Qisman'),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('completed', 'Tugallangan'),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('cancelled', 'Bekor qilingan'),
-                        ],
-                      ),
-                    ),
+                    // SingleChildScrollView(
+                    //   scrollDirection: Axis.horizontal,
+                    //   child: Row(
+                    //     children: [
+                    //       _buildFilterChip(null, 'Hammasi'),
+                    //       const SizedBox(width: 8),
+                    //       _buildFilterChip('pending', 'Kutilmoqda'),
+                    //       const SizedBox(width: 8),
+                    //       // _buildFilterChip('in_progress', 'Jarayonda'),
+                    //       // const SizedBox(width: 8),
+                    //       // _buildFilterChip('partially_completed', 'Qisman'),
+                    //       // const SizedBox(width: 8),
+                    //       _buildFilterChip('completed', 'Tugallangan'),
+                    //       // const SizedBox(width: 8),
+                    //       // _buildFilterChip('cancelled', 'Bekor qilingan'),
+                    //     ],
+                    //   ),
+                    // ),
                   ],
                 ),
               ),
