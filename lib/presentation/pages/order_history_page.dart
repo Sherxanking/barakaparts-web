@@ -30,10 +30,52 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer; // Debounce timer
 
+  // Statistics
+  int _completedToday = 0;
+  int _completedThisWeek = 0;
+  int _completedThisMonth = 0;
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    _calculateStats();
+  }
+
+  void _calculateStats() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+    final startOfMonth = DateTime(now.year, now.month, 1);
+
+    int countToday = 0;
+    int countWeek = 0;
+    int countMonth = 0;
+
+    for (final order in widget.orders) {
+      if (order.status == 'completed') {
+        final date = order.updatedAt ?? order.createdAt;
+        final dateOnly = DateTime(date.year, date.month, date.day);
+        
+        if (!dateOnly.isBefore(startOfMonth)) {
+          countMonth += order.quantity;
+          
+          if (!dateOnly.isBefore(startOfWeek)) {
+            countWeek += order.quantity;
+            
+            if (!dateOnly.isBefore(today)) {
+              countToday += order.quantity;
+            }
+          }
+        }
+      }
+    }
+
+    setState(() {
+      _completedToday = countToday;
+      _completedThisWeek = countWeek;
+      _completedThisMonth = countMonth;
+    });
   }
 
   void _onSearchChanged() {
@@ -94,6 +136,20 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
       ),
       body: Column(
         children: [
+          // Quick Stats (Today, This Week, This Month)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Theme.of(context).colorScheme.surface,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildStatColumn('Bugun', _completedToday.toString(), Colors.blue),
+                _buildStatColumn('Shu hafta', _completedThisWeek.toString(), Colors.orange),
+                _buildStatColumn('Shu oy', _completedThisMonth.toString(), Colors.green),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
           // Search and Filters
           Container(
             padding: const EdgeInsets.all(16),
@@ -420,6 +476,29 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
           _selectedStatusFilter = isSelected ? value : null;
         });
       },
+    );
+  }
+
+  Widget _buildStatColumn(String label, String count, Color color) {
+    return Column(
+      children: [
+        Text(
+          count,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }

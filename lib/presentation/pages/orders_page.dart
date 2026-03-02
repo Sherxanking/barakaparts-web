@@ -9,6 +9,7 @@
 import 'dart:async' show StreamSubscription, TimeoutException, Timer;
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/models/department_model.dart';
@@ -1149,82 +1150,49 @@ class _OrdersPageState extends State<OrdersPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  AppLocalizations.of(context)?.translate('partsInsufficient') ?? 'The following parts are insufficient:',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 16),
-                // FIX: ListView.builder o'rniga Column ishlatish - overflow muammosini oldini olish
-                ...shortages.map((shortage) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Colors.red.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            shortage.partName == 'Unknown Part'
-                                ? '${AppLocalizations.of(context)?.translate('unknownPart') ?? 'Unknown Part'} (ID: ${shortage.partId})'
-                                : shortage.partName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${AppLocalizations.of(context)?.translate('required') ?? 'Required'}: ${shortage.required}',
-                                    style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${AppLocalizations.of(context)?.translate('available') ?? 'Available'}: ${shortage.available}',
-                                    style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.shade100,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.red.shade300,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  '${AppLocalizations.of(context)?.translate('short') ?? 'Short'}: ${shortage.shortage}',
-                                  style: TextStyle(
-                                    color: Colors.red.shade900,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        AppLocalizations.of(context)?.translate('partsInsufficient') ?? 'Quyidagi qismlar yetishmayapti:',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.copy),
+                      tooltip: 'Nusxa olish',
+                      color: Colors.blue,
+                      onPressed: () {
+                        final text = shortages.map((s) => '- ${s.partName}: Kam: ${s.shortage} (Bor: ${s.available}, Kerak: ${s.required})').join('\n');
+                        Clipboard.setData(ClipboardData(text: text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Ro\'yxat nusxalandi!'), backgroundColor: Colors.green),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ...shortages.map((shortage) {
+                  return Column(
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(
+                          shortage.partName == 'Unknown Part' ? 'Noma\'lum qism (ID: ${shortage.partId})' : shortage.partName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        subtitle: Text('Bor: ${shortage.available}  |  Kerak: ${shortage.required}'),
+                        trailing: Text(
+                          'Kam: ${shortage.shortage}',
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ),
+                      const Divider(height: 1),
+                    ],
                   );
                 }),
                 const SizedBox(height: 16),

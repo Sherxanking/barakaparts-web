@@ -192,15 +192,14 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
                           const Spacer(),
                           
                           // Primary Actions
-                          // Start button is hidden to simplify flow
-                          // if (widget.order.status == 'pending' && widget.onComplete != null && _hasStartPermission())
-                          //   _buildActionButton(
-                          //     onPressed: () => _showStartOrderDialog(context),
-                          //     icon: Icons.play_arrow_rounded,
-                          //     label: 'Start',
-                          //     color: Colors.orange.shade700,
-                          //     isCompact: true,
-                          //   ),
+                          if (widget.order.status == 'completed') 
+                            _buildActionButton(
+                              onPressed: () => _showProductHistoryDialog(context),
+                              icon: Icons.bar_chart_rounded,
+                              label: 'Hisobot',
+                              color: Colors.purple.shade700,
+                              isCompact: true,
+                            ),
                           
                           if ((widget.order.status == 'pending' || widget.order.status == 'in_progress' || widget.order.status == 'partially_completed') && 
                               widget.onComplete != null && _hasCompletePermission()) ...[
@@ -693,6 +692,97 @@ class _OrderItemWidgetState extends State<OrderItemWidget> {
         }
       }
     }
+  }
+
+  /// Show simple report dialog
+  void _showProductHistoryDialog(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    int today = 0;
+    int week = 0;
+    int month = 0;
+
+    try {
+      final repository = ServiceLocator.instance.orderRepository;
+      final result = await repository.getAllOrders();
+      result.fold(
+        (_) {},
+        (orders) {
+          final now = DateTime.now();
+          final startToday = DateTime(now.year, now.month, now.day);
+          final startWeek = startToday.subtract(Duration(days: startToday.weekday - 1));
+          final startMonth = DateTime(now.year, now.month, 1);
+
+          for (final o in orders) {
+            if (o.status == 'completed' && o.productName == widget.order.productName) {
+              final date = o.updatedAt ?? o.createdAt;
+              final dOnly = DateTime(date.year, date.month, date.day);
+              if (!dOnly.isBefore(startMonth)) {
+                month += o.quantity;
+                if (!dOnly.isBefore(startWeek)) {
+                  week += o.quantity;
+                  if (!dOnly.isBefore(startToday)) {
+                    today += o.quantity;
+                  }
+                }
+              }
+            }
+          }
+        },
+      );
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    Navigator.pop(context); // close loading
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('${widget.order.productName}\nhisoboti', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.today, color: Colors.blue),
+                title: const Text('Bugun tayyorlandi'),
+                trailing: Text('$today ta', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.date_range, color: Colors.orange),
+                title: const Text('Hafta davomida'),
+                trailing: Text('$week ta', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.calendar_month, color: Colors.green),
+                title: const Text('Shu oyda d/m'),
+                trailing: Text('$month ta', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ],
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Yopish'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Buttonni yaratish uchun helper
