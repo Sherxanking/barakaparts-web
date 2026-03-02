@@ -15,6 +15,7 @@ import '../../domain/entities/user.dart' as user_domain; // To'g'ri import
 import '../../core/di/service_locator.dart';
 import '../../core/services/auth_state_service.dart'; // AuthStateService import
 import '../../core/services/telegram_notification_service.dart'; // Telegram notification service
+import '../../infrastructure/datasources/supabase_client.dart'; // Direct Supabase access
 
 class OrderService {
   final HiveBoxService _boxService = HiveBoxService();
@@ -621,58 +622,39 @@ class OrderService {
         return false;
       }
       
-      // ProductId topish
-      String? productId;
+      final now = DateTime.now();
+      
+      // 1. Supabase da faqat zarur maydonlarni to'g'ridan-to'g'ri yangilash
+      bool supabaseSuccess = false;
       try {
-        final products = _productService.getAllProducts();
-        final product = products.firstWhere(
-          (p) => p.name == order.productName,
-          orElse: () => throw StateError('Product not found'),
-        );
-        productId = product.id;
+        await AppSupabaseClient.instance.client
+            .from('orders')
+            .update({
+              'status': 'in_progress',
+              'worker_id': workerId,
+              'started_at': now.toIso8601String(),
+              'updated_at': now.toIso8601String(),
+            })
+            .eq('id', orderId);
+        supabaseSuccess = true;
+        debugPrint('✅ Supabase PATCH success: status=in_progress, worker=$workerId');
       } catch (e) {
-        productId = order.productName; // Fallback
+        debugPrint('⚠️ Supabase PATCH failed: $e — using Hive-only fallback');
       }
       
-      // Domain Order yaratish
-      final domainOrder = domain.Order(
-        id: order.id,
-        productId: productId,
-        productName: order.productName,
-        quantity: order.quantity,
-        departmentId: order.departmentId,
-        status: 'in_progress', // Statusni yangilash
-        workerId: workerId, // Worker ID qo'shish
-        startedAt: DateTime.now(), // Boshlangan vaqtni belgilash
-        createdAt: order.createdAt,
-        updatedAt: DateTime.now(),
-      );
-      
-      // Repository orqali yangilash
-      final result = await _orderRepository.updateOrder(domainOrder);
-      
-      return await result.fold(
-        (failure) {
-          debugPrint('❌ Failed to start order with time tracking: ${failure.message}');
-          return false;
-        },
-        (updatedOrder) async {
-          // Hive'ga ham saqlash
-          try {
-            order.status = 'in_progress';
-            order.workerId = workerId;
-            order.startedAt = DateTime.now(); // Boshlangan vaqtni belgilash
-            order.updatedAt = DateTime.now();
-            final box = await Hive.openBox<data.Order>(_orderBoxName);
-            await box.put(order.id, order);
-            debugPrint('✅ Order started with time tracking successfully in both Supabase and Hive');
-            return true;
-          } catch (e) {
-            debugPrint('⚠️ Order started with time tracking in Supabase but failed to save to Hive: $e');
-            return true;
-          }
-        },
-      );
+      // 2. Hive da ham yangilash (har doim — lokal holat uchun)
+      try {
+        order.status = 'in_progress';
+        order.workerId = workerId;
+        order.startedAt = now;
+        order.updatedAt = now;
+        await _boxService.ordersBox.put(order.key, order);
+        debugPrint('✅ Hive updated: status=in_progress, workerId=$workerId');
+        return true;
+      } catch (e) {
+        debugPrint('❌ Hive update failed: $e');
+        return supabaseSuccess;
+      }
     } catch (e) {
       debugPrint('❌ Error in startOrderWithTimeTracking: $e');
       return false;
