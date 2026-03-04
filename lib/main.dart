@@ -1,13 +1,13 @@
 // Baraka Parts - Buyurtma va ombor boshqaruv tizimi (MVP)
-/// 
+///
 /// Bu loyiha Flutter va Hive asosida qurilgan inventory/order management tizimi.
-/// 
+///
 /// Arxitektura:
 /// - data/models/ - Hive modellar
 /// - data/services/ - Business logic va data access
 /// - presentation/pages/ - UI sahifalar
 /// - presentation/widgets/ - Reusable UI komponentlar
-/// 
+///
 /// Asosiy funksiyalar:
 /// - Department, Product, Part, Order CRUD operatsiyalari
 /// - Qidiruv, filtrlash, tartiblash
@@ -39,7 +39,7 @@ import 'l10n/app_localizations.dart';
 import 'presentation/pages/splash_page.dart';
 
 /// Dastur kirish nuqtasi
-/// 
+///
 /// Bu funksiya:
 /// 1. Flutter binding ni ishga tushiradi
 /// 2. Hive ni initialize qiladi
@@ -50,7 +50,7 @@ import 'presentation/pages/splash_page.dart';
 void main() async {
   // Flutter binding ni ishga tushirish (async operatsiyalar uchun zarur)
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Hive ni initialize qilish (local storage uchun)
   await Hive.initFlutter();
 
@@ -87,7 +87,13 @@ void main() async {
 
   // Start background services immediately without awaiting
   _initializeServicesInBackground();
-  _initializeDefaultData(); 
+
+  // FIX: Initialize default data AFTER boxes are opened
+  // This prevents "Box not found" error
+  initializationFuture.then((_) {
+    debugPrint('✅ All boxes opened, initializing default data...');
+    _initializeDefaultData();
+  });
 
   // Wait for critical initialization with a shorter timeout
   try {
@@ -99,16 +105,8 @@ void main() async {
   // Global error handling
   _setupErrorHandling();
 
-  // Dasturni ishga tushirish - runZonedGuarded bilan
-  runZonedGuarded(
-    () {
-      runApp(const MyApp());
-    },
-    (error, stackTrace) {
-      // Zone error handler - async xatoliklarini catch qiladi
-      ErrorHandlerService.instance.handleZoneError(error, stackTrace);
-    },
-  );
+  // Dasturni ishga tushirish
+  runApp(const MyApp());
 }
 
 /// Global error handling setup
@@ -156,22 +154,29 @@ Future<void> _initializeServicesInBackground() async {
       // WHY: Sets up global listener for auth state changes (critical for OAuth redirects)
       await AuthStateService().initialize();
       debugPrint('✅ Auth state service initialized');
-      
+
       // FIX: Birinchi marta ma'lumotlarni yuklash (agar box'lar bo'sh bo'lsa)
       // WHY: App reinstall qilinganda Supabase'dan ma'lumotlarni yuklash kerak
       // FIX: Background'da ishlaydi - appni bloklamaydi
       // IMPORTANT: Timeout qo'shildi - agar uzoq davom etsa, o'tkazib yuboriladi
-      Future.microtask(() { // Changed from delayed to microtask for faster execution
-        _syncInitialDataFromSupabase().timeout(
-          const Duration(seconds: 12), // Reduced from 15 to 12 seconds
-          onTimeout: () {
-            debugPrint('⚠️ Data sync timeout - app offline mode da ishlaydi');
-          },
-        ).catchError((e) {
-          debugPrint('⚠️ Data sync error: $e - app offline mode da ishlaydi');
-        });
+      Future.microtask(() {
+        // Changed from delayed to microtask for faster execution
+        _syncInitialDataFromSupabase()
+            .timeout(
+              const Duration(seconds: 12), // Reduced from 15 to 12 seconds
+              onTimeout: () {
+                debugPrint(
+                  '⚠️ Data sync timeout - app offline mode da ishlaydi',
+                );
+              },
+            )
+            .catchError((e) {
+              debugPrint(
+                '⚠️ Data sync error: $e - app offline mode da ishlaydi',
+              );
+            });
       });
-      
+
       // Initialize realtime streams for products and orders
       // WHY: Keep Hive cache synced with Supabase in real-time
       _initializeRealtimeStreams();
@@ -192,29 +197,38 @@ Future<void> _syncInitialDataFromSupabase() async {
   try {
     // FIX: Supabase initialize bo'lishini tekshirish
     if (!AppSupabaseClient.isInitialized) {
-      debugPrint('⚠️ Supabase hali initialize bo\'lmagan, yuklash o\'tkazib yuborildi');
+      debugPrint(
+        '⚠️ Supabase hali initialize bo\'lmagan, yuklash o\'tkazib yuborildi',
+      );
       return;
     }
-    
+
     final partsBox = Hive.box<PartModel>('partsBox');
     final productsBox = Hive.box<model.Product>('productsBox');
     final ordersBox = Hive.box<model.Order>('ordersBox');
     final departmentsBox = Hive.box<model.Department>('departmentsBox');
-    
+
     // Agar barcha box'lar bo'sh bo'lsa, Supabase'dan yuklash
-    final isEmpty = partsBox.isEmpty && productsBox.isEmpty && 
-                    ordersBox.isEmpty && departmentsBox.isEmpty;
-    
-    debugPrint('🔍 Box\'lar holati: parts=${partsBox.length}, products=${productsBox.length}, orders=${ordersBox.length}, departments=${departmentsBox.length}');
-    
+    final isEmpty =
+        partsBox.isEmpty &&
+        productsBox.isEmpty &&
+        ordersBox.isEmpty &&
+        departmentsBox.isEmpty;
+
+    debugPrint(
+      '🔍 Box\'lar holati: parts=${partsBox.length}, products=${productsBox.length}, orders=${ordersBox.length}, departments=${departmentsBox.length}',
+    );
+
     if (isEmpty) {
-      debugPrint('📥 Box\'lar bo\'sh, Supabase\'dan ma\'lumotlarni yuklayapman...');
-      
+      debugPrint(
+        '📥 Box\'lar bo\'sh, Supabase\'dan ma\'lumotlarni yuklayapman...',
+      );
+
       final partRepository = ServiceLocator.instance.partRepository;
       final productRepository = ServiceLocator.instance.productRepository;
       final orderRepository = ServiceLocator.instance.orderRepository;
       final supabaseClient = AppSupabaseClient.instance.client;
-      
+
       // Parts yuklash va Hive box'ga yozish
       debugPrint('🔄 Parts yuklayapman...');
       final partsResult = await partRepository.getAllParts();
@@ -226,7 +240,9 @@ Future<void> _syncInitialDataFromSupabase() async {
         (parts) async {
           debugPrint('✅ ${parts.length} ta part yuklandi Supabase\'dan');
           if (parts.isEmpty) {
-            debugPrint('⚠️ Parts ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q');
+            debugPrint(
+              '⚠️ Parts ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q',
+            );
           } else {
             // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
             for (var part in parts) {
@@ -235,7 +251,9 @@ Future<void> _syncInitialDataFromSupabase() async {
                 name: part.name,
                 quantity: part.quantity,
                 minQuantity: part.minQuantity,
-                status: part.quantity < part.minQuantity ? 'lowstock' : 'available',
+                status: part.quantity < part.minQuantity
+                    ? 'lowstock'
+                    : 'available',
                 imagePath: part.imagePath,
               );
               await partsBox.add(partModel);
@@ -244,7 +262,7 @@ Future<void> _syncInitialDataFromSupabase() async {
           }
         },
       );
-      
+
       // Products yuklash va Hive box'ga yozish
       debugPrint('🔄 Products yuklayapman...');
       final productsResult = await productRepository.getAllProducts();
@@ -256,7 +274,9 @@ Future<void> _syncInitialDataFromSupabase() async {
         (products) async {
           debugPrint('✅ ${products.length} ta product yuklandi Supabase\'dan');
           if (products.isEmpty) {
-            debugPrint('⚠️ Products ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q');
+            debugPrint(
+              '⚠️ Products ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q',
+            );
           } else {
             // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
             for (var product in products) {
@@ -264,7 +284,8 @@ Future<void> _syncInitialDataFromSupabase() async {
                 id: product.id,
                 name: product.name,
                 departmentId: product.departmentId,
-                parts: product.partsRequired, // FIX: Domain entity'da partsRequired deb nomlangan
+                parts: product
+                    .partsRequired, // FIX: Domain entity'da partsRequired deb nomlangan
               );
               await productsBox.add(productModel);
             }
@@ -272,7 +293,7 @@ Future<void> _syncInitialDataFromSupabase() async {
           }
         },
       );
-      
+
       // Orders yuklash va Hive box'ga yozish
       debugPrint('🔄 Orders yuklayapman...');
       final ordersResult = await orderRepository.getAllOrders();
@@ -284,7 +305,9 @@ Future<void> _syncInitialDataFromSupabase() async {
         (orders) async {
           debugPrint('✅ ${orders.length} ta order yuklandi Supabase\'dan');
           if (orders.isEmpty) {
-            debugPrint('⚠️ Orders ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q');
+            debugPrint(
+              '⚠️ Orders ro\'yxati bo\'sh, Supabase\'da ma\'lumotlar yo\'q',
+            );
           } else {
             // FIX: Repository cache'ga yozadi, lekin asosiy box'ga yozish kerak
             for (var order in orders) {
@@ -302,14 +325,14 @@ Future<void> _syncInitialDataFromSupabase() async {
           }
         },
       );
-      
+
       // Departments yuklash (to'g'ridan-to'g'ri Supabase'dan)
       try {
         final response = await supabaseClient
             .from('departments')
             .select()
             .order('name');
-        
+
         final departments = (response as List).map((json) {
           return model.Department(
             id: json['id'] as String,
@@ -318,7 +341,7 @@ Future<void> _syncInitialDataFromSupabase() async {
             productParts: {},
           );
         }).toList();
-        
+
         if (departments.isNotEmpty) {
           await _updateDepartmentsBox(departments);
           debugPrint('✅ ${departments.length} ta department yuklandi');
@@ -326,22 +349,30 @@ Future<void> _syncInitialDataFromSupabase() async {
       } catch (e) {
         debugPrint('⚠️ Departments yuklanmadi: $e');
       }
-      
+
       // FIX: Agar Supabase'da ma'lumotlar bo'sh bo'lsa, default ma'lumotlarni yuklash
       final finalPartsCount = partsBox.length;
       final finalProductsCount = productsBox.length;
       final finalOrdersCount = ordersBox.length;
       final finalDepartmentsCount = departmentsBox.length;
-      
-      debugPrint('📊 Yakuniy holat: parts=$finalPartsCount, products=$finalProductsCount, orders=$finalOrdersCount, departments=$finalDepartmentsCount');
-      
+
+      debugPrint(
+        '📊 Yakuniy holat: parts=$finalPartsCount, products=$finalProductsCount, orders=$finalOrdersCount, departments=$finalDepartmentsCount',
+      );
+
       // Agar hali ham bo'sh bo'lsa, default ma'lumotlarni yuklash
-      if (finalPartsCount == 0 && finalProductsCount == 0 && finalDepartmentsCount == 0) {
-        debugPrint('⚠️ Supabase\'da ma\'lumotlar yo\'q, default ma\'lumotlarni yuklayapman...');
+      if (finalPartsCount == 0 &&
+          finalProductsCount == 0 &&
+          finalDepartmentsCount == 0) {
+        debugPrint(
+          '⚠️ Supabase\'da ma\'lumotlar yo\'q, default ma\'lumotlarni yuklayapman...',
+        );
         await _initializeDefaultData();
         debugPrint('✅ Default ma\'lumotlar yuklandi');
       } else {
-        debugPrint('✅ Barcha ma\'lumotlar Supabase\'dan yuklandi va Hive box\'larga yozildi');
+        debugPrint(
+          '✅ Barcha ma\'lumotlar Supabase\'dan yuklandi va Hive box\'larga yozildi',
+        );
       }
     } else {
       debugPrint('📦 Box\'larda ma\'lumotlar bor, yuklash o\'tkazib yuborildi');
@@ -360,13 +391,13 @@ bool _realtimeInitialized = false;
 void _initializeRealtimeStreams() {
   if (_realtimeInitialized) return;
   _realtimeInitialized = true;
-  
+
   try {
     final productRepository = ServiceLocator.instance.productRepository;
     final partRepository = ServiceLocator.instance.partRepository;
     final orderRepository = ServiceLocator.instance.orderRepository;
     final supabaseClient = AppSupabaseClient.instance.client;
-    
+
     // Products stream - updates Hive cache automatically
     productRepository.watchProducts().listen(
       (result) {
@@ -375,7 +406,9 @@ void _initializeRealtimeStreams() {
             debugPrint('⚠️ Products stream error: ${failure.message}');
           },
           (products) {
-            debugPrint('✅ Products realtime update: ${products.length} products');
+            debugPrint(
+              '✅ Products realtime update: ${products.length} products',
+            );
             // Cache is automatically updated by repository
           },
         );
@@ -386,7 +419,7 @@ void _initializeRealtimeStreams() {
       cancelOnError: false, // Keep listening even on errors
     );
     debugPrint('✅ Products realtime stream initialized');
-    
+
     // Parts stream - updates Hive cache automatically
     partRepository.watchParts().listen(
       (result) {
@@ -406,16 +439,20 @@ void _initializeRealtimeStreams() {
       cancelOnError: false, // Keep listening even on errors
     );
     debugPrint('✅ Parts realtime stream initialized');
-    
+
     // Orders stream - updates Hive cache automatically
     orderRepository.watchOrders().listen(
       (result) {
         result.fold(
           (failure) {
-            debugPrint('⚠️ Orders stream error in main.dart: ${failure.message}');
+            debugPrint(
+              '⚠️ Orders stream error in main.dart: ${failure.message}',
+            );
           },
           (orders) {
-            debugPrint('✅ Orders realtime update in main.dart: ${orders.length} orders');
+            debugPrint(
+              '✅ Orders realtime update in main.dart: ${orders.length} orders',
+            );
             // Cache and Hive box are automatically updated by repository
           },
         );
@@ -427,7 +464,7 @@ void _initializeRealtimeStreams() {
       cancelOnError: false, // Keep listening even on errors
     );
     debugPrint('✅ Orders realtime stream initialized');
-    
+
     // Departments stream - updates Hive cache automatically
     // FIX: Departments uchun repository yo'q, shuning uchun to'g'ridan-to'g'ri Supabase stream ishlatamiz
     supabaseClient
@@ -441,13 +478,17 @@ void _initializeRealtimeStreams() {
                 return model.Department(
                   id: json['id'] as String,
                   name: json['name'] as String,
-                  productIds: [], // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
-                  productParts: {}, // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
+                  productIds:
+                      [], // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
+                  productParts:
+                      {}, // FIX: Supabase'da saqlanmaydi, Hive'dan olinadi
                 );
               }).toList();
-              
-              debugPrint('✅ Departments realtime update: ${departments.length} departments');
-              
+
+              debugPrint(
+                '✅ Departments realtime update: ${departments.length} departments',
+              );
+
               // Update Hive box
               _updateDepartmentsBox(departments).catchError((e) {
                 debugPrint('⚠️ DepartmentsBox update error: $e');
@@ -462,7 +503,6 @@ void _initializeRealtimeStreams() {
           cancelOnError: false,
         );
     debugPrint('✅ Departments realtime stream initialized');
-    
   } catch (e) {
     debugPrint('⚠️ Failed to initialize realtime streams: $e');
     // Don't crash app - continue without realtime sync
@@ -476,15 +516,15 @@ Future<void> _updateDepartmentsBox(List<model.Department> departments) async {
       await Hive.openBox<model.Department>('departmentsBox');
     }
     final box = Hive.box<model.Department>('departmentsBox');
-    
+
     // FIX: Mavjud department'larni saqlab qolish (productIds ni yo'qotmaslik uchun)
     final existingDepartments = <String, model.Department>{};
     for (var dept in box.values) {
       existingDepartments[dept.id] = dept;
     }
-    
+
     await box.clear();
-    
+
     for (var department in departments) {
       // FIX: Mavjud department bo'lsa, productIds va productParts ni saqlab qolish
       final existing = existingDepartments[department.id];
@@ -494,19 +534,21 @@ Future<void> _updateDepartmentsBox(List<model.Department> departments) async {
       }
       await box.add(department);
     }
-    debugPrint('✅ DepartmentsBox updated with ${departments.length} departments');
+    debugPrint(
+      '✅ DepartmentsBox updated with ${departments.length} departments',
+    );
   } catch (e) {
     debugPrint('⚠️ Error updating departmentsBox: $e');
   }
 }
 
 /// Default ma'lumotlarni yuklash
-/// 
+///
 /// Bu funksiya boxlar bo'sh bo'lganda test/demo ma'lumotlarini yuklaydi:
 /// - 4 ta part (Screw M5, Bolt M8, Washer, Nut M5)
 /// - 3 ta department (Assembly, Packaging, Quality Control)
 /// - 3 ta product (Widget A, B, C) - parts bilan biriktirilgan
-/// 
+///
 /// Bu ma'lumotlar faqat birinchi marta yuklanadi.
 /// Keyingi ishga tushirishlarda mavjud ma'lumotlar saqlanadi.
 Future<void> _initializeDefaultData() async {
@@ -589,7 +631,7 @@ Future<void> _initializeDefaultData() async {
       // FIX: departmentsBox bo'sh bo'lmasligini tekshirish
       if (parts.length >= 4 && departmentsBox.isNotEmpty) {
         final dept1 = departmentsBox.values.first;
-        
+
         final product1 = model.Product(
           id: uuid.v4(),
           name: 'Widget A',
@@ -632,14 +674,14 @@ Future<void> _initializeDefaultData() async {
 }
 
 /// Asosiy app widget
-/// 
+///
 /// Bu widget MaterialApp ni yaratadi va barcha sahifalarni boshqaradi.
 /// HomePage bottom navigation bar bilan 4 ta asosiy sahifani ko'rsatadi:
 /// - Orders: Buyurtmalar
 /// - Departments: Bo'limlar
 /// - Products: Mahsulotlar
 /// - Parts: Qismlar
-/// 
+///
 /// Multi-language support: Uzbek, Russian, English
 /// Language preference is saved and persists across app restarts.
 class MyApp extends StatefulWidget {

@@ -1,5 +1,5 @@
 /// Order entity - Domain layer
-/// 
+///
 /// Represents a production order.
 
 class Order {
@@ -16,7 +16,8 @@ class Order {
   final String? approvedBy;
   final String? soldTo; // Kimga sotilgan
   final String? notes; // Izoh
-  final Map<String, int>? partsRequired; // Order yaratilgan vaqtidagi part miqdorlari (snapshot)
+  final Map<String, int>?
+  partsRequired; // Order yaratilgan vaqtidagi part miqdorlari (snapshot)
   final DateTime createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt; // Order tugatilgan vaqt
@@ -49,34 +50,36 @@ class Order {
 
   /// Check if order is pending
   bool get isPending => status == 'pending';
-  
+
   /// Check if order is in progress
   bool get isInProgress => status == 'in_progress';
-  
+
   /// Check if order is completed
   bool get isCompleted => status == 'completed';
-  
+
   /// Check if order is rejected
   bool get isRejected => status == 'rejected';
-  
+
   /// Check if order is partially completed
-  bool get isPartiallyCompleted => completedQuantity > 0 && completedQuantity < quantity;
-  
+  bool get isPartiallyCompleted =>
+      completedQuantity > 0 && completedQuantity < quantity;
+
   /// Get remaining quantity
   int get remainingQuantity => quantity - completedQuantity;
-  
+
   /// Check if order can be approved
   bool canBeApproved() => isPending;
-  
+
   /// Check if order can be started (assigned to worker)
   bool canBeStarted() => isPending || isInProgress;
-  
+
   /// Check if order can be completed (partially or fully)
-  bool canBeCompleted() => isInProgress || isPartiallyCompleted;
-  
+  /// FIX: Worker pending orderlarni ham completed qila olishi uchun
+  bool canBeCompleted() => isPending || isInProgress || isPartiallyCompleted;
+
   /// Check if order can be rejected
   bool canBeRejected() => isPending || isInProgress;
-  
+
   /// Check if order can be assigned to worker
   bool canAssignWorker() => isPending || isInProgress;
 
@@ -129,9 +132,7 @@ class Order {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is Order &&
-          runtimeType == other.runtimeType &&
-          id == other.id;
+      other is Order && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -146,10 +147,9 @@ class Order {
   }
 
   /// Check if order is fully completed
-  bool get isFullyCompleted => completedQuantity >= quantity && status == 'completed';
+  bool get isFullyCompleted =>
+      completedQuantity >= quantity && status == 'completed';
 
   /// Check if order has started
   bool get hasStarted => startedAt != null;
-
 }
-

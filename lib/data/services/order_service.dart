@@ -1,6 +1,6 @@
 /// OrderService - Order bilan ishlash uchun business logic
-/// 
-/// Bu service order CRUD operatsiyalarini, qidiruv, filtrlash, 
+///
+/// Bu service order CRUD operatsiyalarini, qidiruv, filtrlash,
 /// tartiblash va order completion (stock reduction) funksiyalarini boshqaradi.
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
@@ -21,7 +21,7 @@ class OrderService {
   final HiveBoxService _boxService = HiveBoxService();
   final ProductService _productService = ProductService();
   final PartService _partService = PartService();
-  
+
   // Repository for Supabase sync
   final _orderRepository = ServiceLocator.instance.orderRepository;
 
@@ -59,10 +59,14 @@ class OrderService {
   }
 
   /// Order qo'shish
-  /// FIX: Hive va Supabase'ga yozish (realtime sync uchun)
+  /// FIX: Worker uchun avval Hive'ga saqlash, keyin Supabase'ga sync qilish
   Future<bool> addOrder(data.Order order) async {
     try {
-      // 1. Supabase'ga yozish (realtime sync uchun)
+      // 1. Avval Hive'ga saqlash (worker uchun muhim)
+      _boxService.ordersBox.add(order);
+      debugPrint('✅ Order saved to Hive first');
+
+      // 2. Supabase'ga yozish (realtime sync uchun)
       // NOTE: Order model'da productId yo'q, faqat productName bor
       // Domain Order'da productId kerak, shuning uchun productName'dan productId topamiz
       String? productId;
@@ -80,7 +84,7 @@ class OrderService {
         // (Bu ideal emas, lekin Supabase'ga yozish uchun zarur)
         productId = order.productName; // Temporary fallback
       }
-      
+
       final domainOrder = domain.Order(
         id: order.id,
         productId: productId,
@@ -90,34 +94,28 @@ class OrderService {
         status: order.status,
         createdAt: order.createdAt,
       );
-      
+
       final result = await _orderRepository.createOrder(domainOrder);
-      
+
       return result.fold(
         (failure) {
-          debugPrint('❌ Failed to create order in Supabase: ${failure.message}');
-          // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
-          try {
-            _boxService.ordersBox.add(order);
-            return true; // Hive'ga yozildi, lekin sync yo'q
-          } catch (e) {
-            return false;
-          }
+          debugPrint(
+            '⚠️ Supabase save failed (expected for worker): ${failure.message}',
+          );
+          debugPrint('✅ But order is saved in Hive - will sync later');
+
+          // 3. Telegram notification yuborish
+          _sendOrderCreationNotification(order);
+
+          return true; // Hive'ga yozildi, bu asosiy
         },
         (createdOrder) {
-          // 2. Hive'ga ham yozish (offline cache uchun)
-          try {
-            _boxService.ordersBox.add(order);
-            debugPrint('✅ Order created in both Supabase and Hive');
-            
-            // 3. Telegram notification yuborish
-            _sendOrderCreationNotification(order);
-            
-            return true;
-          } catch (e) {
-            debugPrint('⚠️ Order created in Supabase but failed to save to Hive: $e');
-            return true; // Supabase'ga yozildi, bu asosiy
-          }
+          debugPrint('✅ Order created in both Supabase and Hive');
+
+          // 4. Telegram notification yuborish
+          _sendOrderCreationNotification(order);
+
+          return true;
         },
       );
     } catch (e) {
@@ -146,10 +144,10 @@ class OrderService {
         final partId = entry.key;
         final qtyPerProduct = entry.value;
         final totalNeeded = qtyPerProduct * order.quantity;
-        
+
         final part = _partService.getPartById(partId);
         final currentStock = part?.quantity ?? 0;
-        
+
         if (currentStock < totalNeeded) {
           shortages.add({
             'partName': part?.name ?? partId,
@@ -184,7 +182,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       final domainOrder = domain.Order(
         id: order.id,
         productId: productId,
@@ -195,12 +193,14 @@ class OrderService {
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
-          debugPrint('❌ Failed to update order in Supabase: ${failure.message}');
+          debugPrint(
+            '❌ Failed to update order in Supabase: ${failure.message}',
+          );
           // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
           try {
             final box = await Hive.openBox<data.Order>(_orderBoxName);
@@ -218,7 +218,9 @@ class OrderService {
             debugPrint('✅ Order updated in both Supabase and Hive');
             return true;
           } catch (e) {
-            debugPrint('⚠️ Order updated in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Order updated in Supabase but failed to save to Hive: $e',
+            );
             return true; // Supabase'ga yozildi, bu asosiy
           }
         },
@@ -235,10 +237,12 @@ class OrderService {
     try {
       // 1. Supabase'dan o'chirish (realtime sync uchun)
       final result = await _orderRepository.deleteOrder(orderId);
-      
+
       return await result.fold(
         (failure) async {
-          debugPrint('❌ Failed to delete order in Supabase: ${failure.message}');
+          debugPrint(
+            '❌ Failed to delete order in Supabase: ${failure.message}',
+          );
           // Supabase'dan o'chirish xato bo'lsa ham Hive'dan o'chirishga harakat qilamiz
           try {
             final box = await Hive.openBox<data.Order>(_orderBoxName);
@@ -256,7 +260,9 @@ class OrderService {
             debugPrint('✅ Order deleted from both Supabase and Hive');
             return true;
           } catch (e) {
-            debugPrint('⚠️ Order deleted from Supabase but failed to delete from Hive: $e');
+            debugPrint(
+              '⚠️ Order deleted from Supabase but failed to delete from Hive: $e',
+            );
             return true; // Supabase'dan o'chirildi, bu asosiy
           }
         },
@@ -283,7 +289,7 @@ class OrderService {
       if (order == null) {
         return false;
       }
-      
+
       // 1. Supabase'ga yozish (realtime sync uchun)
       // ProductId topish
       String? productId;
@@ -297,7 +303,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       final domain.Order domainOrder = domain.Order(
         id: order.id,
         productId: productId,
@@ -308,12 +314,14 @@ class OrderService {
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
-          debugPrint('❌ Failed to update order status in Supabase: ${failure.message}');
+          debugPrint(
+            '❌ Failed to update order status in Supabase: ${failure.message}',
+          );
           // Supabase'ga yozish xato bo'lsa ham Hive'ga yozishga harakat qilamiz
           try {
             order.status = status;
@@ -333,7 +341,9 @@ class OrderService {
             debugPrint('✅ Order status updated in both Supabase and Hive');
             return true;
           } catch (e) {
-            debugPrint('⚠️ Order status updated in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Order status updated in Supabase but failed to save to Hive: $e',
+            );
             return true; // Supabase'ga yozildi, bu asosiy
           }
         },
@@ -374,12 +384,12 @@ class OrderService {
 
     final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
     final missingParts = <String>[]; // Yetishmagan qismlar nomi
-    
+
     for (var entry in product.parts.entries) {
       final partId = entry.key;
       final qtyPerProduct = entry.value;
       final totalQty = qtyPerProduct * order.quantity;
-      
+
       final part = _partService.getPartById(partId);
       if (part == null) {
         if (isForce) {
@@ -406,7 +416,9 @@ class OrderService {
 
     // Update parts in batch
     if (partsToUpdate.isNotEmpty) {
-      final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+      final batchResult = await _partService.decreaseQuantitiesBatch(
+        partsToUpdate,
+      );
       if (!batchResult) {
         debugPrint('❌ Failed to update parts in batch');
         return false;
@@ -416,11 +428,14 @@ class OrderService {
     // Order statusini yangilash
     order.status = 'completed';
     order.completedAt = DateTime.now();
-    
+
     // Agar force bo'lgan bo'lsa, notes ga yozib qo'yamiz
     if (isForce && missingParts.isNotEmpty) {
-      final shortageNote = '⚠️ Majburiy tugatildi. Yetishmagan qismlar: ${missingParts.join(', ')}';
-      order.notes = order.notes != null ? '${order.notes}\n$shortageNote' : shortageNote;
+      final shortageNote =
+          '⚠️ Majburiy tugatildi. Yetishmagan qismlar: ${missingParts.join(', ')}';
+      order.notes = order.notes != null
+          ? '${order.notes}\n$shortageNote'
+          : shortageNote;
     }
 
     // Calculate duration if startedAt exists
@@ -428,7 +443,7 @@ class OrderService {
       final diff = order.completedAt!.difference(order.startedAt!);
       order.durationHours = diff.inMinutes / 60.0;
     }
-    
+
     // Supabase va Hive'ni yangilash
     final updateResult = await updateOrder(order);
     if (!updateResult) {
@@ -458,7 +473,7 @@ class OrderService {
       final partId = entry.key;
       final qtyPerProduct = entry.value;
       final requiredQty = qtyPerProduct * quantity;
-      
+
       final part = _partService.getPartById(partId);
       if (part == null || part.quantity < requiredQty) {
         return false;
@@ -471,11 +486,11 @@ class OrderService {
   /// Qidiruv - product nomi yoki status bo'yicha
   List<data.Order> searchOrders(String query) {
     if (query.isEmpty) return getAllOrders();
-    
+
     final lowerQuery = query.toLowerCase();
     return getAllOrders().where((order) {
       return order.productName.toLowerCase().contains(lowerQuery) ||
-             order.status.toLowerCase().contains(lowerQuery);
+          order.status.toLowerCase().contains(lowerQuery);
     }).toList();
   }
 
@@ -488,7 +503,9 @@ class OrderService {
   /// Department bo'yicha filtrlash
   List<data.Order> filterByDepartment(String? departmentId) {
     if (departmentId == null || departmentId.isEmpty) return getAllOrders();
-    return getAllOrders().where((order) => order.departmentId == departmentId).toList();
+    return getAllOrders()
+        .where((order) => order.departmentId == departmentId)
+        .toList();
   }
 
   /// Qidiruv va filtrlash birga
@@ -514,7 +531,7 @@ class OrderService {
       final lowerQuery = query.toLowerCase();
       orders = orders.where((o) {
         return o.productName.toLowerCase().contains(lowerQuery) ||
-               o.status.toLowerCase().contains(lowerQuery);
+            o.status.toLowerCase().contains(lowerQuery);
       }).toList();
     }
 
@@ -522,7 +539,8 @@ class OrderService {
   }
 
   /// Tartiblash - sana, status yoki product nomi bo'yicha
-  List<data.Order> sortOrders(List<data.Order> orders, {
+  List<data.Order> sortOrders(
+    List<data.Order> orders, {
     bool byDate = true,
     bool ascending = false, // Default: newest first
   }) {
@@ -549,7 +567,7 @@ class OrderService {
       if (order == null) {
         return false;
       }
-      
+
       // ProductId topish
       String? productId;
       try {
@@ -562,7 +580,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
@@ -575,10 +593,10 @@ class OrderService {
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return result.fold(
         (failure) {
           debugPrint('❌ Failed to assign worker to order: ${failure.message}');
@@ -594,7 +612,9 @@ class OrderService {
             debugPrint('✅ Worker assigned to order in both Supabase and Hive');
             return true;
           } catch (e) {
-            debugPrint('⚠️ Worker assigned to order in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Worker assigned to order in Supabase but failed to save to Hive: $e',
+            );
             return true;
           }
         },
@@ -606,24 +626,31 @@ class OrderService {
   }
 
   /// Start order with time tracking (when assigned to worker)
-  Future<bool> startOrderWithTimeTracking(String orderId, String workerId) async {
+  Future<bool> startOrderWithTimeTracking(
+    String orderId,
+    String workerId,
+  ) async {
     try {
       final order = getOrderById(orderId);
       if (order == null) {
-        debugPrint('❌ startOrderWithTimeTracking: order not found in Hive (id=$orderId). Box count=${_boxService.ordersBox.length}');
+        debugPrint(
+          '❌ startOrderWithTimeTracking: order not found in Hive (id=$orderId). Box count=${_boxService.ordersBox.length}',
+        );
         return false;
       }
-      
-      debugPrint('▶️ startOrderWithTimeTracking: orderId=$orderId, status=${order.status}, workerId=$workerId');
-      
+
+      debugPrint(
+        '▶️ startOrderWithTimeTracking: orderId=$orderId, status=${order.status}, workerId=$workerId',
+      );
+
       // Statusni tekshirish — pending yoki in_progress (qayta tayinlash uchun)
       if (order.status != 'pending' && order.status != 'in_progress') {
         debugPrint('⚠️ Order status is not startable: ${order.status}');
         return false;
       }
-      
+
       final now = DateTime.now();
-      
+
       // 1. Supabase da faqat zarur maydonlarni to'g'ridan-to'g'ri yangilash
       bool supabaseSuccess = false;
       try {
@@ -637,11 +664,13 @@ class OrderService {
             })
             .eq('id', orderId);
         supabaseSuccess = true;
-        debugPrint('✅ Supabase PATCH success: status=in_progress, worker=$workerId');
+        debugPrint(
+          '✅ Supabase PATCH success: status=in_progress, worker=$workerId',
+        );
       } catch (e) {
         debugPrint('⚠️ Supabase PATCH failed: $e — using Hive-only fallback');
       }
-      
+
       // 2. Hive da ham yangilash (har doim — lokal holat uchun)
       try {
         order.status = 'in_progress';
@@ -668,13 +697,13 @@ class OrderService {
       if (order == null) {
         return false;
       }
-      
+
       // Statusni tekshirish
       if (order.status != 'pending') {
         debugPrint('⚠️ Order status is not pending: ${order.status}');
         return false;
       }
-      
+
       // ProductId topish
       String? productId;
       try {
@@ -687,7 +716,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
@@ -700,10 +729,10 @@ class OrderService {
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
           debugPrint('❌ Failed to start order: ${failure.message}');
@@ -717,10 +746,14 @@ class OrderService {
             order.updatedAt = DateTime.now();
             final box = await Hive.openBox<data.Order>(_orderBoxName);
             await box.put(order.id, order);
-            debugPrint('✅ Order started successfully in both Supabase and Hive');
+            debugPrint(
+              '✅ Order started successfully in both Supabase and Hive',
+            );
             return true;
           } catch (e) {
-            debugPrint('⚠️ Order started in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Order started in Supabase but failed to save to Hive: $e',
+            );
             return true;
           }
         },
@@ -732,25 +765,33 @@ class OrderService {
   }
 
   /// Qisman (partial) completion - order bajarilishini qismman belgilash
-  Future<bool> partiallyCompleteOrder(String orderId, int completedQuantity) async {
+  Future<bool> partiallyCompleteOrder(
+    String orderId,
+    int completedQuantity,
+  ) async {
     try {
       final order = getOrderById(orderId);
       if (order == null) {
         return false;
       }
-      
+
       // Statusni tekshirish - faqat in_progress yoki partially completed bo'lsa mumkin
-      if (order.status != 'in_progress' && order.status != 'partially_completed') {
-        debugPrint('⚠️ Order status is not in_progress or partially_completed: ${order.status}');
+      if (order.status != 'in_progress' &&
+          order.status != 'partially_completed') {
+        debugPrint(
+          '⚠️ Order status is not in_progress or partially_completed: ${order.status}',
+        );
         return false;
       }
-      
+
       // Completed miqdorini tekshirish
       if (completedQuantity <= 0 || completedQuantity >= order.quantity) {
-        debugPrint('⚠️ Invalid completed quantity: $completedQuantity (total: ${order.quantity})');
+        debugPrint(
+          '⚠️ Invalid completed quantity: $completedQuantity (total: ${order.quantity})',
+        );
         return false;
       }
-      
+
       // ProductId topish
       String? productId;
       try {
@@ -763,7 +804,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
@@ -777,13 +818,15 @@ class OrderService {
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
-          debugPrint('❌ Failed to partially complete order: ${failure.message}');
+          debugPrint(
+            '❌ Failed to partially complete order: ${failure.message}',
+          );
           return false;
         },
         (updatedOrder) async {
@@ -794,10 +837,14 @@ class OrderService {
             order.updatedAt = DateTime.now();
             final box = await Hive.openBox<data.Order>(_orderBoxName);
             await box.put(order.id, order);
-            debugPrint('✅ Order partially completed successfully in both Supabase and Hive');
+            debugPrint(
+              '✅ Order partially completed successfully in both Supabase and Hive',
+            );
             return true;
           } catch (e) {
-            debugPrint('⚠️ Order partially completed in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Order partially completed in Supabase but failed to save to Hive: $e',
+            );
             return true;
           }
         },
@@ -809,28 +856,35 @@ class OrderService {
   }
 
   /// Orderga qo'shimcha miqdor qo'shish (partial completion davom ettirish)
-  Future<bool> addPartialCompletion(String orderId, int additionalQuantity) async {
+  Future<bool> addPartialCompletion(
+    String orderId,
+    int additionalQuantity,
+  ) async {
     try {
       final order = getOrderById(orderId);
       if (order == null) {
         return false;
       }
-      
+
       // Statusni tekshirish
       if (order.status != 'partially_completed') {
-        debugPrint('⚠️ Order status is not partially_completed: ${order.status}');
+        debugPrint(
+          '⚠️ Order status is not partially_completed: ${order.status}',
+        );
         return false;
       }
-      
+
       // Yangi completed miqdorini hisoblash
       final newCompletedQuantity = order.completedQuantity + additionalQuantity;
-      
+
       // Cheklov: completed miqdori umumiy miqdordan oshmasligi kerak
       if (newCompletedQuantity > order.quantity) {
-        debugPrint('⚠️ New completed quantity exceeds total quantity: $newCompletedQuantity > ${order.quantity}');
+        debugPrint(
+          '⚠️ New completed quantity exceeds total quantity: $newCompletedQuantity > ${order.quantity}',
+        );
         return false;
       }
-      
+
       // ProductId topish
       String? productId;
       try {
@@ -843,10 +897,12 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       // Statusni aniqlash - agar barchasi bajarilgan bo'lsa 'completed' qilish
-      final newStatus = newCompletedQuantity >= order.quantity ? 'completed' : 'partially_completed';
-      
+      final newStatus = newCompletedQuantity >= order.quantity
+          ? 'completed'
+          : 'partially_completed';
+
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
@@ -857,15 +913,19 @@ class OrderService {
         departmentId: order.departmentId,
         status: newStatus, // Statusni yangilash
         workerId: order.workerId,
-        completedBy: newStatus == 'completed' ? AuthStateService().currentUser?.id : null, // Agar to'liq completed bo'lsa, kim tugatganini belgilash
-        completedAt: newStatus == 'completed' ? DateTime.now() : null, // Completed vaqtini belgilash
+        completedBy: newStatus == 'completed'
+            ? AuthStateService().currentUser?.id
+            : null, // Agar to'liq completed bo'lsa, kim tugatganini belgilash
+        completedAt: newStatus == 'completed'
+            ? DateTime.now()
+            : null, // Completed vaqtini belgilash
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
           debugPrint('❌ Failed to add partial completion: ${failure.message}');
@@ -876,15 +936,23 @@ class OrderService {
           try {
             order.status = newStatus;
             order.completedQuantity = newCompletedQuantity;
-            order.completedBy = newStatus == 'completed' ? AuthStateService().currentUser?.id : null;
-            order.completedAt = newStatus == 'completed' ? DateTime.now() : null;
+            order.completedBy = newStatus == 'completed'
+                ? AuthStateService().currentUser?.id
+                : null;
+            order.completedAt = newStatus == 'completed'
+                ? DateTime.now()
+                : null;
             order.updatedAt = DateTime.now();
             final box = await Hive.openBox<data.Order>(_orderBoxName);
             await box.put(order.id, order);
-            debugPrint('✅ Partial completion added successfully in both Supabase and Hive');
+            debugPrint(
+              '✅ Partial completion added successfully in both Supabase and Hive',
+            );
             return true;
           } catch (e) {
-            debugPrint('⚠️ Partial completion added in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Partial completion added in Supabase but failed to save to Hive: $e',
+            );
             return true;
           }
         },
@@ -902,7 +970,7 @@ class OrderService {
       if (order == null) {
         return false;
       }
-      
+
       // ProductId topish
       String? productId;
       try {
@@ -915,7 +983,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
@@ -928,10 +996,10 @@ class OrderService {
         createdAt: order.createdAt,
         updatedAt: DateTime.now(),
       );
-      
+
       // Repository orqali yangilash
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
           debugPrint('❌ Failed to reject order: ${failure.message}');
@@ -945,10 +1013,14 @@ class OrderService {
             order.updatedAt = DateTime.now();
             final box = await Hive.openBox<data.Order>(_orderBoxName);
             await box.put(order.id, order);
-            debugPrint('✅ Order rejected successfully in both Supabase and Hive');
+            debugPrint(
+              '✅ Order rejected successfully in both Supabase and Hive',
+            );
             return true;
           } catch (e) {
-            debugPrint('⚠️ Order rejected in Supabase but failed to save to Hive: $e');
+            debugPrint(
+              '⚠️ Order rejected in Supabase but failed to save to Hive: $e',
+            );
             return true;
           }
         },
@@ -965,7 +1037,7 @@ class OrderService {
       // UserRepository orqali barcha foydalanuvchilarni olish
       final userRepository = ServiceLocator.instance.userRepository;
       final result = await userRepository.getAllUsers();
-      
+
       return result.fold(
         (failure) {
           debugPrint('❌ Failed to get users: ${failure.message}');
@@ -973,7 +1045,11 @@ class OrderService {
         },
         (users) {
           // Worker, Manager va Kuryerlarni qaytarish
-          return users.where((user) => user.isWorker || user.isManager || user.isCourier).toList();
+          return users
+              .where(
+                (user) => user.isWorker || user.isManager || user.isCourier,
+              )
+              .toList();
         },
       );
     } catch (e) {
@@ -985,7 +1061,9 @@ class OrderService {
   /// Get orders by worker - workerga tayinlangan buyurtmalarni olish
   List<data.Order> getOrdersByWorker(String workerId) {
     try {
-      return getAllOrders().where((order) => order.workerId == workerId).toList();
+      return getAllOrders()
+          .where((order) => order.workerId == workerId)
+          .toList();
     } catch (e) {
       debugPrint('❌ Error getting orders by worker: $e');
       return [];
@@ -1011,16 +1089,20 @@ class OrderService {
   List<data.Order> getInProgressOrders({int limit = 10}) {
     try {
       final orders = getAllOrders()
-          .where((order) => order.status == 'in_progress' || order.status == 'partially_completed')
+          .where(
+            (order) =>
+                order.status == 'in_progress' ||
+                order.status == 'partially_completed',
+          )
           .toList();
-      
+
       // Sort by start time (most recent first)
       orders.sort((a, b) {
         final timeA = a.startedAt ?? a.updatedAt ?? a.createdAt;
         final timeB = b.startedAt ?? b.updatedAt ?? b.createdAt;
         return timeB.compareTo(timeA); // Descending order (newest first)
       });
-      
+
       return orders.take(limit).toList();
     } catch (e) {
       debugPrint('❌ Error getting in-progress orders: $e');
@@ -1041,7 +1123,9 @@ class OrderService {
   /// Get partially completed orders - qisman tugallangan buyurtmalarni olish
   List<data.Order> getPartiallyCompletedOrders() {
     try {
-      return getAllOrders().where((order) => order.status == 'partially_completed').toList();
+      return getAllOrders()
+          .where((order) => order.status == 'partially_completed')
+          .toList();
     } catch (e) {
       debugPrint('❌ Error getting partially completed orders: $e');
       return [];
@@ -1056,14 +1140,18 @@ class OrderService {
     try {
       // Permission check
       final currentUser = AuthStateService().currentUser;
-      if (currentUser == null || (!currentUser.isManager && !currentUser.isBoss)) {
+      if (currentUser == null ||
+          (!currentUser.isManager && !currentUser.isBoss)) {
         debugPrint('❌ User does not have permission to delete orders');
         return false;
       }
-      
+
       // Use repository to soft delete
-      final result = await _orderRepository.softDeleteOrder(orderId, reason: reason);
-      
+      final result = await _orderRepository.softDeleteOrder(
+        orderId,
+        reason: reason,
+      );
+
       return result.fold(
         (failure) {
           debugPrint('❌ Failed to soft delete order: ${failure.message}');
@@ -1094,10 +1182,10 @@ class OrderService {
         debugPrint('❌ Only boss can restore deleted orders');
         return false;
       }
-      
+
       // Use repository to restore
       final result = await _orderRepository.restoreOrder(orderId);
-      
+
       return result.fold(
         (failure) {
           debugPrint('❌ Failed to restore order: ${failure.message}');
@@ -1129,13 +1217,15 @@ class OrderService {
         debugPrint('❌ Only boss can permanently delete orders');
         return false;
       }
-      
+
       // Confirmation required in UI before calling this
       final result = await _orderRepository.permanentlyDeleteOrder(orderId);
-      
+
       return result.fold(
         (failure) {
-          debugPrint('❌ Failed to permanently delete order: ${failure.message}');
+          debugPrint(
+            '❌ Failed to permanently delete order: ${failure.message}',
+          );
           return false;
         },
         (success) {
@@ -1163,17 +1253,14 @@ class OrderService {
         debugPrint('❌ Only boss can view deleted orders');
         return [];
       }
-      
+
       // Use repository to get deleted orders
       final result = await _orderRepository.getDeletedOrders();
-      
-      return result.fold(
-        (failure) {
-          debugPrint('❌ Failed to get deleted orders: ${failure.message}');
-          return [];
-        },
-        (orders) => orders,
-      );
+
+      return result.fold((failure) {
+        debugPrint('❌ Failed to get deleted orders: ${failure.message}');
+        return [];
+      }, (orders) => orders);
     } catch (e) {
       debugPrint('❌ Error in getDeletedOrders: $e');
       return [];
@@ -1188,7 +1275,9 @@ class OrderService {
 
     // Check if order is fully completed
     if (order.completedQuantity < order.quantity) {
-      debugPrint('⚠️ Order is not fully completed yet: ${order.completedQuantity}/${order.quantity}');
+      debugPrint(
+        '⚠️ Order is not fully completed yet: ${order.completedQuantity}/${order.quantity}',
+      );
       return false;
     }
 
@@ -1214,12 +1303,12 @@ class OrderService {
 
     // FIX: Barcha partlarni bir marta tekshirish (performance)
     final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
-    
+
     for (var entry in product.parts.entries) {
       final partId = entry.key;
       final qtyPerProduct = entry.value;
       final totalQty = qtyPerProduct * order.quantity;
-      
+
       final part = _partService.getPartById(partId);
       if (part == null) {
         return false; // Part not found
@@ -1234,7 +1323,9 @@ class OrderService {
     }
 
     // OPTIMIZATION: Barcha partlarni bir marta batch update qilish (tezroq)
-    final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+    final batchResult = await _partService.decreaseQuantitiesBatch(
+      partsToUpdate,
+    );
     if (!batchResult) {
       debugPrint('❌ Failed to update parts in batch');
       return false;
@@ -1253,9 +1344,10 @@ class OrderService {
     if (dataOrder != null) {
       dataOrder.status = 'completed';
       dataOrder.completedAt = DateTime.now(); // Tugallangan vaqtni belgilash
-      dataOrder.completedBy = AuthStateService().currentUser?.id; // Kim tugatgan
+      dataOrder.completedBy =
+          AuthStateService().currentUser?.id; // Kim tugatgan
       dataOrder.durationHours = durationHours; // Duration qo'shish
-      
+
       // FIX: Supabase'ga ham yozish (realtime sync uchun)
       final updateResult = await updateOrder(dataOrder);
       if (!updateResult) {
@@ -1287,8 +1379,8 @@ class OrderService {
           approvedBy: null, // Not available in data model
           soldTo: dataOrder.soldTo,
           notes: dataOrder.notes,
-          partsRequired: dataOrder.partsRequired != null 
-              ? Map<String, int>.from(dataOrder.partsRequired as Map) 
+          partsRequired: dataOrder.partsRequired != null
+              ? Map<String, int>.from(dataOrder.partsRequired as Map)
               : null,
           createdAt: dataOrder.createdAt,
           updatedAt: dataOrder.updatedAt,
@@ -1306,11 +1398,12 @@ class OrderService {
   /// Calculate average completion time for orders
   double getAverageCompletionTime() {
     try {
-      final orders = getOrdersWithTimeTracking().where((order) => 
-          order.hasStarted && order.isFullyCompleted).toList();
-      
+      final orders = getOrdersWithTimeTracking()
+          .where((order) => order.hasStarted && order.isFullyCompleted)
+          .toList();
+
       if (orders.isEmpty) return 0.0;
-      
+
       double totalDuration = 0.0;
       for (final order in orders) {
         final duration = order.getDurationInHours();
@@ -1318,7 +1411,7 @@ class OrderService {
           totalDuration += duration;
         }
       }
-      
+
       return totalDuration / orders.length;
     } catch (e) {
       debugPrint('❌ Error calculating average completion time: $e');
@@ -1327,34 +1420,41 @@ class OrderService {
   }
 
   /// Assign courier to order with specific quantity
-  Future<bool> assignCourierToOrder(String orderId, String courierId, int quantity) async {
+  Future<bool> assignCourierToOrder(
+    String orderId,
+    String courierId,
+    int quantity,
+  ) async {
     try {
       final order = getOrderById(orderId);
       if (order == null) {
         return false;
       }
-      
+
       // Check if quantity is valid
       if (quantity <= 0 || quantity > order.quantity) {
-        debugPrint('⚠️ Invalid quantity for courier assignment: $quantity (order quantity: ${order.quantity})');
+        debugPrint(
+          '⚠️ Invalid quantity for courier assignment: $quantity (order quantity: ${order.quantity})',
+        );
         return false;
       }
-      
+
       // Check if order has been taken by another courier
       // We'll store this information in the notes field temporarily
       String updatedNotes = '';
       if (order.notes != null && order.notes!.isNotEmpty) {
-        updatedNotes = '${order.notes!}\nCourier $courierId took $quantity items';
+        updatedNotes =
+            '${order.notes!}\nCourier $courierId took $quantity items';
       } else {
         updatedNotes = 'Courier $courierId took $quantity items';
       }
-      
+
       // Update order status if needed
       String newStatus = order.status;
       if (order.status == 'pending') {
         newStatus = 'in_progress';
       }
-      
+
       // ProductId topish
       String? productId;
       try {
@@ -1367,7 +1467,7 @@ class OrderService {
       } catch (e) {
         productId = order.productName; // Fallback
       }
-      
+
       // Domain Order yaratish
       final domainOrder = domain.Order(
         id: order.id,
@@ -1382,9 +1482,9 @@ class OrderService {
         updatedAt: DateTime.now(),
         notes: updatedNotes,
       );
-      
+
       final result = await _orderRepository.updateOrder(domainOrder);
-      
+
       return await result.fold(
         (failure) async {
           debugPrint('❌ Failed to assign courier to order: ${failure.message}');
@@ -1399,18 +1499,28 @@ class OrderService {
             order.updatedAt = DateTime.now();
             final box = await Hive.openBox<data.Order>(_orderBoxName);
             await box.put(order.id, order);
-            debugPrint('✅ Courier assigned to order successfully in both Supabase and Hive');
-            
+            debugPrint(
+              '✅ Courier assigned to order successfully in both Supabase and Hive',
+            );
+
             // Send notification to manager about ready orders
-            TelegramNotificationService.sendReadyOrderNotification(quantity, 'Courier');
-            
+            TelegramNotificationService.sendReadyOrderNotification(
+              quantity,
+              'Courier',
+            );
+
             return true;
           } catch (e) {
-            debugPrint('⚠️ Courier assigned to order in Supabase but failed to save to Hive: $e');
-            
+            debugPrint(
+              '⚠️ Courier assigned to order in Supabase but failed to save to Hive: $e',
+            );
+
             // Still send notification even if Hive save fails
-            TelegramNotificationService.sendReadyOrderNotification(quantity, 'Courier');
-            
+            TelegramNotificationService.sendReadyOrderNotification(
+              quantity,
+              'Courier',
+            );
+
             return true;
           }
         },
@@ -1424,7 +1534,9 @@ class OrderService {
   /// Get orders assigned to a specific courier
   List<data.Order> getOrdersByCourier(String courierId) {
     try {
-      return getAllOrders().where((order) => order.workerId == courierId).toList();
+      return getAllOrders()
+          .where((order) => order.workerId == courierId)
+          .toList();
     } catch (e) {
       debugPrint('❌ Error getting orders by courier: $e');
       return [];
@@ -1458,16 +1570,18 @@ class OrderService {
     }
 
     // Calculate parts to deduct based on completed quantity
-    final completedQty = order.completedQuantity > 0 ? order.completedQuantity : order.quantity;
-    
+    final completedQty = order.completedQuantity > 0
+        ? order.completedQuantity
+        : order.quantity;
+
     // FIX: Barcha partlarni bir marta tekshirish (performance)
     final partsToUpdate = <String, int>{}; // partId -> quantity to decrease
-    
+
     for (var entry in product.parts.entries) {
       final partId = entry.key;
       final qtyPerProduct = entry.value;
       final totalQty = qtyPerProduct * completedQty;
-      
+
       final part = _partService.getPartById(partId);
       if (part == null) {
         return false; // Part not found
@@ -1482,7 +1596,9 @@ class OrderService {
     }
 
     // OPTIMIZATION: Barcha partlarni bir marta batch update qilish (tezroq)
-    final batchResult = await _partService.decreaseQuantitiesBatch(partsToUpdate);
+    final batchResult = await _partService.decreaseQuantitiesBatch(
+      partsToUpdate,
+    );
     if (!batchResult) {
       debugPrint('❌ Failed to update parts in batch');
       return false;
@@ -1490,7 +1606,7 @@ class OrderService {
 
     // Order statusini yangilash (Supabase'ga ham yozish)
     order.status = 'completed';
-    
+
     // FIX: Supabase'ga ham yozish (realtime sync uchun)
     final updateResult = await updateOrder(order);
     if (!updateResult) {
@@ -1500,14 +1616,19 @@ class OrderService {
     }
 
     // Send notification about order completion
-    TelegramNotificationService.sendOrderCompletedNotification(order.productName, completedQty);
+    TelegramNotificationService.sendOrderCompletedNotification(
+      order.productName,
+      completedQty,
+    );
 
     return true;
   }
 
   /// Notify manager about ready orders
   void notifyManagerAboutReadyOrders(int count, String courierName) {
-    debugPrint('🔔 TELEGRAM NOTIFICATION TO MANAGER: $count ta tayyor, $courierName olib ketishi mumkin');
+    debugPrint(
+      '🔔 TELEGRAM NOTIFICATION TO MANAGER: $count ta tayyor, $courierName olib ketishi mumkin',
+    );
     // Send notification via Telegram
     TelegramNotificationService.sendReadyOrderNotification(count, courierName);
   }
@@ -1515,18 +1636,26 @@ class OrderService {
   /// Get courier analytics - who took how many items
   Map<String, int> getCourierAnalytics() {
     try {
-      final orders = getAllOrders().where((order) => 
-          order.status == 'completed' && order.workerId != null && order.workerId!.isNotEmpty).toList();
-      
+      final orders = getAllOrders()
+          .where(
+            (order) =>
+                order.status == 'completed' &&
+                order.workerId != null &&
+                order.workerId!.isNotEmpty,
+          )
+          .toList();
+
       final Map<String, int> analytics = {};
-      
+
       for (final order in orders) {
         final courierId = order.workerId!;
-        final completedQty = order.completedQuantity > 0 ? order.completedQuantity : order.quantity;
-        
+        final completedQty = order.completedQuantity > 0
+            ? order.completedQuantity
+            : order.quantity;
+
         analytics[courierId] = (analytics[courierId] ?? 0) + completedQty;
       }
-      
+
       return analytics;
     } catch (e) {
       debugPrint('❌ Error getting courier analytics: $e');
@@ -1540,14 +1669,14 @@ class OrderService {
       final orders = getAllOrders()
           .where((order) => order.status == 'completed')
           .toList();
-      
+
       // Sort by completion time (most recent first)
       orders.sort((a, b) {
         final timeA = a.completedAt ?? a.updatedAt ?? a.createdAt;
         final timeB = b.completedAt ?? b.updatedAt ?? b.createdAt;
         return timeB.compareTo(timeA); // Descending order (newest first)
       });
-      
+
       return orders.take(limit).toList();
     } catch (e) {
       debugPrint('❌ Error getting recently completed orders: $e');
@@ -1594,15 +1723,18 @@ class OrderService {
 
       // Check for parts shortage (handled in addOrder via _sendOrderCreationNotification)
       _checkPartsShortage(product, quantity);
-      
+
       // Even if there are shortages, create the order in pending state
       final result = await addOrder(order);
-      
+
       // Send notification that order is ready
       if (result) {
-        TelegramNotificationService.sendReadyOrderNotification(quantity, 'Courier');
+        TelegramNotificationService.sendReadyOrderNotification(
+          quantity,
+          'Courier',
+        );
       }
-      
+
       return result;
     } catch (e) {
       debugPrint('❌ Error creating order with parts snapshot: $e');
@@ -1611,10 +1743,13 @@ class OrderService {
   }
 
   /// Check parts shortage for a product
-  List<Map<String, dynamic>> _checkPartsShortage(Product product, int quantity) {
+  List<Map<String, dynamic>> _checkPartsShortage(
+    Product product,
+    int quantity,
+  ) {
     final partService = PartService();
     final shortages = <Map<String, dynamic>>[];
-    
+
     for (final entry in product.parts.entries) {
       final partId = entry.key;
       final part = partService.getPartById(partId);
@@ -1622,7 +1757,7 @@ class OrderService {
         final required = entry.value * quantity;
         final available = part.quantity;
         final shortage = required - available;
-        
+
         if (shortage > 0) {
           shortages.add({
             'partId': partId,
@@ -1634,7 +1769,7 @@ class OrderService {
         }
       }
     }
-    
+
     return shortages;
   }
 
@@ -1668,7 +1803,10 @@ class OrderService {
       }
 
       // Check if all items have been taken to update the overall completion status
-      final totalTaken = order.takenItems.fold(0, (sum, item) => sum + item.quantity);
+      final totalTaken = order.takenItems.fold(
+        0,
+        (sum, item) => sum + item.quantity,
+      );
       if (totalTaken >= order.quantity) {
         order.status = 'completed';
         order.fullyCompletedAt = DateTime.now();
@@ -1752,6 +1890,4 @@ class OrderService {
       return [];
     }
   }
-
 }
-

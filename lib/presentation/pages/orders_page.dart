@@ -1,5 +1,5 @@
 /// OrdersPage - Buyurtmalarni yaratish va boshqarish sahifasi
-/// 
+///
 /// Bu sahifa quyidagi funksiyalarni ta'minlaydi:
 /// - Yangi buyurtma yaratish (Department → Product → Quantity)
 /// - Buyurtmalarni ko'rish va boshqarish
@@ -53,8 +53,9 @@ class OrdersPage extends StatefulWidget {
 
 class _OrdersPageState extends State<OrdersPage> {
   // Repository
-  final OrderRepository _orderRepository = ServiceLocator.instance.orderRepository;
-  
+  final OrderRepository _orderRepository =
+      ServiceLocator.instance.orderRepository;
+
   // Services (for backward compatibility - will be removed gradually)
   final HiveBoxService _boxService = HiveBoxService();
   final OrderService _orderService = OrderService();
@@ -77,45 +78,47 @@ class _OrdersPageState extends State<OrdersPage> {
   String? _selectedStatusFilter = 'pending';
   String? _selectedDepartmentFilter;
   SortOption? _selectedSortOption;
-  
+
   // State for initial load only
   bool _isInitialLoading = true;
-  
+
   // Order completion loading state (optimization)
   String? _completingOrderId;
-  
+
   // Search debounce timer
   Timer? _searchDebounceTimer;
-  
+
   // Loading state for courier assignment
   bool _isLoading = false;
-  
+
   /// Check if current user can create orders
   bool get _canCreateOrders {
     final user = AuthStateService().currentUser;
-    return user != null && (user.isManager || user.isBoss);
+    // ✅ Worker ham order ocha oladi
+    return user != null && (user.isManager || user.isBoss || user.isWorker);
   }
-  
+
   /// Check if current user can complete orders
   bool get _canCompleteOrders {
     final user = AuthStateService().currentUser;
-    return user != null && (user.isManager || user.isBoss);
+    // ✅ Worker ham order completed qila oladi (o'zining orderini)
+    return user != null && (user.isManager || user.isBoss || user.isWorker);
   }
-  
+
   /// Check if current user can delete an order
   bool _canDeleteOrder(domain.Order order) {
     final user = AuthStateService().currentUser;
     if (user == null) return false;
-    
+
     // Hamma "pending" dagi orderni o'chira oladi
     if (order.status == 'pending') {
       return true;
     }
-    
+
     // Pending bo'lmasa, faqat Boss delete qila oladi
     return user.isBoss;
   }
-  
+
   /// Check if current user can edit orders (pending orders only)
   bool get _canEditOrders {
     final user = AuthStateService().currentUser;
@@ -135,7 +138,7 @@ class _OrdersPageState extends State<OrdersPage> {
     // Initialize quantity controller
     _quantityController.text = quantity.toString();
     _quantityController.addListener(_onQuantityChanged);
-    
+
     // Initial load - after first stream event, hide loading
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(seconds: 2), () {
@@ -161,7 +164,7 @@ class _OrdersPageState extends State<OrdersPage> {
     // StreamBuilder handles subscription automatically
     super.dispose();
   }
-  
+
   /// Quantity controller listener - TextField o'zgarganda quantity ni yangilash
   void _onQuantityChanged() {
     final newQuantity = int.tryParse(_quantityController.text);
@@ -205,7 +208,9 @@ class _OrdersPageState extends State<OrdersPage> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
-          color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
+          color: isSelected
+              ? Theme.of(context).primaryColor
+              : Colors.grey.shade300,
         ),
       ),
     );
@@ -214,14 +219,16 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Get filtered orders based on user role
   List<domain.Order> _getFilteredOrders(List<domain.Order> orders) {
     final user = _currentUser;
-    
+
     // Workerlar uchun faqat o'zlariga tayinlangan orderlarni ko'rsatish
     if (user != null && user.isWorker) {
       orders = orders.where((o) => o.workerId == user.id).toList();
     }
     // Manager uchun department filter (faqat o'z department'idagi orders)
     else if (user != null && user.isManager && user.departmentId != null) {
-      orders = orders.where((o) => o.departmentId == user.departmentId).toList();
+      orders = orders
+          .where((o) => o.departmentId == user.departmentId)
+          .toList();
     }
 
     // Search filter
@@ -239,7 +246,9 @@ class _OrdersPageState extends State<OrdersPage> {
 
     // Department filter
     if (_selectedDepartmentFilter != null) {
-      orders = orders.where((o) => o.departmentId == _selectedDepartmentFilter).toList();
+      orders = orders
+          .where((o) => o.departmentId == _selectedDepartmentFilter)
+          .toList();
     }
 
     // Sort
@@ -249,12 +258,12 @@ class _OrdersPageState extends State<OrdersPage> {
         switch (_selectedSortOption!) {
           case SortOption.dateAsc:
           case SortOption.dateDesc:
-            return ascending 
+            return ascending
                 ? a.createdAt.compareTo(b.createdAt)
                 : b.createdAt.compareTo(a.createdAt);
           case SortOption.nameAsc:
           case SortOption.nameDesc:
-            return ascending 
+            return ascending
                 ? a.productName.compareTo(b.productName)
                 : b.productName.compareTo(a.productName);
           default:
@@ -265,7 +274,7 @@ class _OrdersPageState extends State<OrdersPage> {
 
     return orders;
   }
-  
+
   /// Convert domain Order to Order model (for backward compatibility)
   Order _domainToModel(domain.Order domainOrder) {
     return Order(
@@ -283,12 +292,12 @@ class _OrdersPageState extends State<OrdersPage> {
     _productService.getAllProducts().forEach((product) {
       if (product.name == productName) {
         final shortages = <PartShortage>[];
-        
+
         for (var entry in product.parts.entries) {
           final partId = entry.key;
           final qtyPerProduct = entry.value;
           final requiredQty = qtyPerProduct * quantity;
-          
+
           final part = _partService.getPartById(partId);
           if (part == null) continue;
 
@@ -299,12 +308,14 @@ class _OrdersPageState extends State<OrdersPage> {
 
           // 2. Immediate Shortage for current order
           if (part.quantity < requiredQty) {
-            shortages.add(PartShortage(
-              partId: partId,
-              partName: part.name,
-              required: requiredQty,
-              available: part.quantity,
-            ));
+            shortages.add(
+              PartShortage(
+                partId: partId,
+                partName: part.name,
+                required: requiredQty,
+                available: part.quantity,
+              ),
+            );
           }
         }
 
@@ -318,32 +329,36 @@ class _OrdersPageState extends State<OrdersPage> {
 
   /// Notify manager about parts shortage via Telegram (simulated)
   void _notifyManagerAboutShortage(List<PartShortage> shortages) {
-    final shortageMessages = shortages.map((s) => 
-      "${s.partName}: ${s.shortage} dona yetmayapti"
-    ).join(", ");
-    
+    final shortageMessages = shortages
+        .map((s) => "${s.partName}: ${s.shortage} dona yetmayapti")
+        .join(", ");
+
     // Simulate sending message to manager via Telegram
-    debugPrint('🔔 TELEGRAM NOTIFICATION TO MANAGER: Yetmaydigan qismlar: $shortageMessages');
-    
+    debugPrint(
+      '🔔 TELEGRAM NOTIFICATION TO MANAGER: Yetmaydigan qismlar: $shortageMessages',
+    );
+
     // In real app, you would call Telegram Bot API here
     // For now, just show in UI
     _showSnackBar(
-      'Yetmaydigan qismlar aniqlandi: $shortageMessages', 
-      Colors.orange
+      'Yetmaydigan qismlar aniqlandi: $shortageMessages',
+      Colors.orange,
     );
   }
 
   /// Notify manager about ready orders via Telegram (simulated)
   void _notifyManagerAboutReadyOrders(int count, String courierName) {
     // Simulate sending message to manager via Telegram
-    debugPrint('🔔 TELEGRAM NOTIFICATION TO MANAGER: $count ta tayyor, $courierName olib ketishi mumkin');
-    
+    debugPrint(
+      '🔔 TELEGRAM NOTIFICATION TO MANAGER: $count ta tayyor, $courierName olib ketishi mumkin',
+    );
+
     // Send notification via Telegram
     TelegramNotificationService.sendReadyOrderNotification(count, courierName);
-    
+
     _showSnackBar(
-      '$count ta tayyor, $courierName olib ketishi mumkin', 
-      Colors.green
+      '$count ta tayyor, $courierName olib ketishi mumkin',
+      Colors.green,
     );
   }
 
@@ -362,21 +377,29 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   /// Assign courier to order
-  Future<void> _assignCourierToOrder(String orderId, String courierId, int quantity) async {
+  Future<void> _assignCourierToOrder(
+    String orderId,
+    String courierId,
+    int quantity,
+  ) async {
     setState(() {
       _isLoading = true; // Using existing _isLoading state
     });
 
     try {
-      final success = await _orderService.assignCourierToOrder(orderId, courierId, quantity);
-      
+      final success = await _orderService.assignCourierToOrder(
+        orderId,
+        courierId,
+        quantity,
+      );
+
       if (success) {
         // Find the courier name
         // Load user to get courier name
         final userRepository = ServiceLocator.instance.userRepository;
         final result = await userRepository.getUserById(courierId);
         String courierName = 'Courier';
-        
+
         result.fold(
           (failure) {
             courierName = 'Courier';
@@ -385,7 +408,7 @@ class _OrdersPageState extends State<OrdersPage> {
             courierName = user?.name ?? 'Courier';
           },
         );
-        
+
         // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -394,7 +417,7 @@ class _OrdersPageState extends State<OrdersPage> {
               backgroundColor: Colors.green,
             ),
           );
-          
+
           // Reload orders
           // Data will be reloaded by the stream automatically
         }
@@ -411,10 +434,7 @@ class _OrdersPageState extends State<OrdersPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Xatolik: \$e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Xatolik: \$e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -429,7 +449,7 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Show analytics for courier assignments
   void _showCourierAnalytics() {
     final analytics = _orderService.getCourierAnalytics();
-    
+
     showDialog(
       context: context,
       builder: (context) {
@@ -442,9 +462,9 @@ class _OrdersPageState extends State<OrdersPage> {
               children: [
                 Text(
                   'Courier Analytics',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -457,7 +477,10 @@ class _OrdersPageState extends State<OrdersPage> {
                             return ListTile(
                               title: Text(entry.key),
                               subtitle: Text('\${entry.value} items taken'),
-                              trailing: const Icon(Icons.check_circle, color: Colors.green),
+                              trailing: const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                              ),
                             );
                           },
                         ),
@@ -479,7 +502,13 @@ class _OrdersPageState extends State<OrdersPage> {
   Future<void> _createOrder() async {
     // Validatsiya
     if (selectedDepartmentId == null || selectedProductId == null) {
-      _showSnackBar(AppLocalizations.of(context)?.translate('pleaseSelectDepartmentAndProduct') ?? 'Please select a department and product', Colors.red);
+      _showSnackBar(
+        AppLocalizations.of(
+              context,
+            )?.translate('pleaseSelectDepartmentAndProduct') ??
+            'Please select a department and product',
+        Colors.red,
+      );
       return;
     }
 
@@ -494,27 +523,45 @@ class _OrdersPageState extends State<OrdersPage> {
       return;
     }
 
-    final department = _departmentService.getDepartmentById(selectedDepartmentId!);
+    final department = _departmentService.getDepartmentById(
+      selectedDepartmentId!,
+    );
     final product = _productService.getProductById(selectedProductId!);
 
     if (department == null || product == null) {
-      _showSnackBar(AppLocalizations.of(context)?.translate('selectedDepartmentOrProductNotFound') ?? 'Selected department or product not found', Colors.red);
+      _showSnackBar(
+        AppLocalizations.of(
+              context,
+            )?.translate('selectedDepartmentOrProductNotFound') ??
+            'Selected department or product not found',
+        Colors.red,
+      );
       return;
     }
 
     // Qismlar yetishmovchiligini hisoblash va dialog ko'rsatish
-    final calculationResult = _partCalculatorService.calculateShortage(product, quantity);
-    
+    final calculationResult = _partCalculatorService.calculateShortage(
+      product,
+      quantity,
+    );
+
     // Yetishmovchilik bor bo'lsa, dialog ko'rsatish
     if (calculationResult.hasShortage) {
-      final shouldProceed = await _showShortageDialog(calculationResult.shortages);
+      final shouldProceed = await _showShortageDialog(
+        calculationResult.shortages,
+      );
       if (shouldProceed != true) {
         return; // Foydalanuvchi bekor qildi
       }
     }
 
     // Domain Order yaratish
-    final soldTo = _soldToController.text.trim(); // Endi majburiy, null bo'lmaydi
+    final soldTo = _soldToController.text
+        .trim(); // Endi majburiy, null bo'lmaydi
+
+    // FIX: Worker order yaratganda worker_id ni avtomatik qo'shish
+    final currentUser = AuthStateService().currentUser;
+    final workerId = currentUser?.id;
 
     final domainOrder = domain.Order(
       id: const Uuid().v4(),
@@ -523,18 +570,38 @@ class _OrdersPageState extends State<OrdersPage> {
       departmentId: department.id,
       quantity: quantity,
       status: 'pending',
-      soldTo: soldTo.isEmpty ? null : soldTo, // Domain'da nullable, lekin UI'da majburiy
-      partsRequired: Map<String, int>.from(product.parts), // Order yaratilgan vaqtidagi part miqdorlari (snapshot) - model'da 'parts' nomi bilan
+      workerId: workerId, // ✅ Worker ID qo'shildi
+      soldTo: soldTo.isEmpty
+          ? null
+          : soldTo, // Domain'da nullable, lekin UI'da majburiy
+      partsRequired: Map<String, int>.from(
+        product.parts,
+      ), // Order yaratilgan vaqtidagi part miqdorlari (snapshot)
       createdAt: DateTime.now(),
     );
 
     // Use repository to create order
     final result = await _orderRepository.createOrder(domainOrder);
-    
+
     if (mounted) {
       result.fold(
         (failure) {
-          _showSnackBar('Failed to create order: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
+          debugPrint('❌ Order creation failed: ${failure.message}');
+          // Agar Supabase'da xato bo'lsa ham, Hive'ga saqlash
+          final dataOrder = Order(
+            id: domainOrder.id,
+            departmentId: domainOrder.departmentId,
+            productName: domainOrder.productName,
+            quantity: domainOrder.quantity,
+            status: domainOrder.status,
+            workerId: domainOrder.workerId,
+            soldTo: domainOrder.soldTo,
+            createdAt: domainOrder.createdAt,
+          );
+          _boxService.ordersBox.add(dataOrder);
+          debugPrint('✅ Order saved to Hive (offline mode)');
+
+          _showSnackBar('Buyurtma yaratildi (offline rejim)', Colors.orange);
         },
         (createdOrder) {
           // Formni tozalash
@@ -546,16 +613,17 @@ class _OrdersPageState extends State<OrdersPage> {
             _soldToController.clear();
             _showSoldToError = false;
           });
-          
+
           // Hisoblash va xabarnoma yuborish
           _calculateAndNotifyPartsShortage(product.name, quantity);
+          debugPrint('✅ Order created successfully in Supabase');
         },
       );
     }
   }
 
   /// Buyurtmani complete qilish
-  /// Repository pattern - works for both web and mobile
+  /// FIX: Worker completed qila olishi uchun OrderService'dan foydalanish
   Future<void> _completeOrder(domain.Order order) async {
     // Loading state
     if (mounted) {
@@ -563,20 +631,50 @@ class _OrdersPageState extends State<OrdersPage> {
         _completingOrderId = order.id;
       });
     }
-    
+
     try {
-      // Use repository to complete order
-      final result = await _orderRepository.completeOrder(order.id);
-      
+      // FIX: Use OrderService instead of repository for better control
+      final dataOrder = _orderService.getOrderById(order.id);
+
+      if (dataOrder == null) {
+        if (mounted) {
+          _showSnackBar('Order not found', Colors.red);
+        }
+        return;
+      }
+
+      // Check if order can be completed
+      if (!order.canBeCompleted()) {
+        if (mounted) {
+          _showSnackBar(
+            'Order cannot be completed in current status: ${order.status}',
+            Colors.orange,
+          );
+        }
+        return;
+      }
+
+      // FIX: Use OrderService.completeOrder which handles Hive + Supabase
+      final success = await _orderService.completeOrder(dataOrder);
+
       if (mounted) {
-        result.fold(
-          (failure) {
-            _showSnackBar('Failed to complete order: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
-          },
-          (completedOrder) {
-            _showSnackBar(AppLocalizations.of(context)?.translate('orderCompleted') ?? 'Order completed successfully', Colors.green);
-          },
-        );
+        if (success) {
+          _showSnackBar(
+            AppLocalizations.of(context)?.translate('orderCompleted') ??
+                'Order completed successfully',
+            Colors.green,
+          );
+        } else {
+          _showSnackBar(
+            'Failed to complete order - check parts availability',
+            Colors.red,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        debugPrint('❌ Error completing order: $e');
+        _showSnackBar('Error: $e', Colors.red);
       }
     } finally {
       // Loading state'ni tozalash
@@ -589,7 +687,9 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   /// Pending order uchun qismlar ro'yxatini tahrirlash
-  Future<Map<String, int>?> _showOrderPartsDialog(Map<String, int> currentParts) async {
+  Future<Map<String, int>?> _showOrderPartsDialog(
+    Map<String, int> currentParts,
+  ) async {
     final allParts = _partService.getAllParts();
     final tempSelectedParts = Map<String, int>.from(currentParts);
     final Map<String, TextEditingController> controllers = {};
@@ -659,8 +759,10 @@ class _OrdersPageState extends State<OrdersPage> {
                                       tempSelectedParts[part.id] = 0;
                                     });
                                   } else {
-                                    final prevQty = tempSelectedParts[part.id] ?? 1;
-                                    controllers[part.id]!.text = prevQty.toString();
+                                    final prevQty =
+                                        tempSelectedParts[part.id] ?? 1;
+                                    controllers[part.id]!.text = prevQty
+                                        .toString();
                                   }
                                 },
                               ),
@@ -704,16 +806,22 @@ class _OrdersPageState extends State<OrdersPage> {
 
     // Parts override (per order)
     Map<String, int> tempParts = Map.from(order.partsRequired ?? {});
-    
+
     // Dialog ko'rsatish
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: Text(AppLocalizations.of(context)?.translate('editOrder') ?? 'Edit Order'),
+            title: Text(
+              AppLocalizations.of(context)?.translate('editOrder') ??
+                  'Edit Order',
+            ),
             contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            actionsPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -727,7 +835,11 @@ class _OrdersPageState extends State<OrdersPage> {
                       return DropdownButtonFormField<String>(
                         value: selectedDepartmentId,
                         decoration: InputDecoration(
-                          labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
+                          labelText:
+                              AppLocalizations.of(
+                                context,
+                              )?.translate('selectDepartment') ??
+                              'Select Department',
                           hintText: 'Bo\'limni tanlang',
                           border: const OutlineInputBorder(),
                           prefixIcon: const Icon(Icons.business),
@@ -761,7 +873,8 @@ class _OrdersPageState extends State<OrdersPage> {
                         onChanged: (value) {
                           setDialogState(() {
                             selectedDepartmentId = value;
-                            selectedProductId = null; // Reset product when department changes
+                            selectedProductId =
+                                null; // Reset product when department changes
                             tempParts = {};
                           });
                         },
@@ -769,19 +882,25 @@ class _OrdersPageState extends State<OrdersPage> {
                     },
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Product dropdown
                   if (selectedDepartmentId != null)
                     ValueListenableBuilder(
                       valueListenable: _boxService.productsListenable,
                       builder: (context, Box<Product> productBox, _) {
                         final products = productBox.values
-                            .where((p) => p.departmentId == selectedDepartmentId)
+                            .where(
+                              (p) => p.departmentId == selectedDepartmentId,
+                            )
                             .toList();
                         return DropdownButtonFormField<String>(
                           value: selectedProductId,
                           decoration: InputDecoration(
-                            labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
+                            labelText:
+                                AppLocalizations.of(
+                                  context,
+                                )?.translate('selectProduct') ??
+                                'Select Product',
                             hintText: 'Mahsulotni tanlang',
                             border: const OutlineInputBorder(),
                             prefixIcon: const Icon(Icons.inventory),
@@ -827,7 +946,7 @@ class _OrdersPageState extends State<OrdersPage> {
                       },
                     ),
                   const SizedBox(height: 20),
-                  
+
                   // Parts override (optional edit)
                   if (selectedProductId != null) ...[
                     ElevatedButton.icon(
@@ -854,8 +973,12 @@ class _OrdersPageState extends State<OrdersPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                        AppLocalizations.of(context)?.translate('quantity') ??
+                            'Quantity',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       IconButton(
@@ -881,7 +1004,10 @@ class _OrdersPageState extends State<OrdersPage> {
                           ),
                           decoration: const InputDecoration(
                             isDense: true,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (value) {
@@ -909,7 +1035,7 @@ class _OrdersPageState extends State<OrdersPage> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Recipient input (Majburiy)
                   TextField(
                     controller: _soldToController,
@@ -918,7 +1044,8 @@ class _OrdersPageState extends State<OrdersPage> {
                       hintText: 'Masalan: Ahmad, Mijoz, Usta, va hokazo',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.person),
-                      helperText: 'Buyurtmani kim olib ketganini kiriting (Majburiy)',
+                      helperText:
+                          'Buyurtmani kim olib ketganini kiriting (Majburiy)',
                     ),
                     textCapitalization: TextCapitalization.words,
                   ),
@@ -928,14 +1055,22 @@ class _OrdersPageState extends State<OrdersPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, null),
-                child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+                child: Text(
+                  AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel',
+                ),
               ),
               ElevatedButton(
                 onPressed: () {
-                  if (selectedDepartmentId == null || selectedProductId == null) {
+                  if (selectedDepartmentId == null ||
+                      selectedProductId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(AppLocalizations.of(context)?.translate('pleaseSelectDepartmentAndProduct') ?? 'Please select a department and product'),
+                        content: Text(
+                          AppLocalizations.of(context)?.translate(
+                                'pleaseSelectDepartmentAndProduct',
+                              ) ??
+                              'Please select a department and product',
+                        ),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -969,22 +1104,26 @@ class _OrdersPageState extends State<OrdersPage> {
                     'partsRequired': tempParts,
                   });
                 },
-                child: Text(AppLocalizations.of(context)?.translate('save') ?? 'Save'),
+                child: Text(
+                  AppLocalizations.of(context)?.translate('save') ?? 'Save',
+                ),
               ),
             ],
           );
         },
       ),
     );
-    
+
     if (result != null && mounted) {
       // Get product name
-      final product = _productService.getProductById(result['productId'] as String);
+      final product = _productService.getProductById(
+        result['productId'] as String,
+      );
       if (product == null) {
         _showSnackBar('Product not found', Colors.red);
         return;
       }
-      
+
       // Update order
       final updatedOrder = order.copyWith(
         productId: result['productId'] as String,
@@ -994,19 +1133,23 @@ class _OrdersPageState extends State<OrdersPage> {
         soldTo: result['soldTo'] as String?,
         partsRequired: Map<String, int>.from(
           (result['partsRequired'] as Map?)?.map(
-                (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+                (key, value) =>
+                    MapEntry(key.toString(), (value as num).toInt()),
               ) ??
               {},
         ),
         updatedAt: DateTime.now(),
       );
-      
+
       final updateResult = await _orderRepository.updateOrder(updatedOrder);
-      
+
       if (mounted) {
         updateResult.fold(
           (failure) {
-            _showSnackBar('Failed to update order: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
+            _showSnackBar(
+              'Failed to update order: ${ErrorHandlerService.instance.getErrorMessage(failure)}',
+              Colors.red,
+            );
           },
           (_) {
             // Formni tozalash
@@ -1017,7 +1160,11 @@ class _OrdersPageState extends State<OrdersPage> {
               _quantityController.text = '1';
               _soldToController.clear();
             });
-            _showSnackBar(AppLocalizations.of(context)?.translate('orderUpdated') ?? 'Order updated successfully', Colors.green);
+            _showSnackBar(
+              AppLocalizations.of(context)?.translate('orderUpdated') ??
+                  'Order updated successfully',
+              Colors.green,
+            );
           },
         );
       }
@@ -1038,22 +1185,30 @@ class _OrdersPageState extends State<OrdersPage> {
   Future<void> _deleteOrder(domain.Order order) async {
     // Permission check
     if (!_canDeleteOrder(order)) {
-      _showSnackBar('Sizda order o\'chirish huquqi yo\'q. Bajarilgan orderni faqat Boss o\'chira oladi.', Colors.red);
+      _showSnackBar(
+        'Sizda order o\'chirish huquqi yo\'q. Bajarilgan orderni faqat Boss o\'chira oladi.',
+        Colors.red,
+      );
       return;
     }
-    
+
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)?.translate('deleteOrder') ?? 'Delete Order'),
+        title: Text(
+          AppLocalizations.of(context)?.translate('deleteOrder') ??
+              'Delete Order',
+        ),
         contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${AppLocalizations.of(context)?.translate('deleteOrderConfirm') ?? 'Are you sure you want to delete order for'} ${order.productName}?'),
+            Text(
+              '${AppLocalizations.of(context)?.translate('deleteOrderConfirm') ?? 'Are you sure you want to delete order for'} ${order.productName}?',
+            ),
             if (order.status == 'completed') ...[
               const SizedBox(height: 12),
               Container(
@@ -1065,12 +1220,19 @@ class _OrdersPageState extends State<OrdersPage> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.blue.shade700,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Completed order o\'chirilsa, qismlar miqdori qaytariladi.',
-                        style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade900,
+                        ),
                       ),
                     ),
                   ],
@@ -1083,12 +1245,16 @@ class _OrdersPageState extends State<OrdersPage> {
           const SizedBox(height: 4),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+            child: Text(
+              AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel',
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: Text(AppLocalizations.of(context)?.translate('delete') ?? 'Delete'),
+            child: Text(
+              AppLocalizations.of(context)?.translate('delete') ?? 'Delete',
+            ),
           ),
         ],
       ),
@@ -1099,23 +1265,28 @@ class _OrdersPageState extends State<OrdersPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
-      
+
       // Use repository to delete order
       final result = await _orderRepository.deleteOrder(order.id);
-      
+
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        
+
         result.fold(
           (failure) {
-            _showSnackBar('Order o\'chirishda xatolik: ${ErrorHandlerService.instance.getErrorMessage(failure)}', Colors.red);
+            _showSnackBar(
+              'Order o\'chirishda xatolik: ${ErrorHandlerService.instance.getErrorMessage(failure)}',
+              Colors.red,
+            );
           },
           (_) {
-            _showSnackBar(AppLocalizations.of(context)?.translate('orderDeleted') ?? 'Order deleted', Colors.orange);
+            _showSnackBar(
+              AppLocalizations.of(context)?.translate('orderDeleted') ??
+                  'Order deleted',
+              Colors.orange,
+            );
           },
         );
       }
@@ -1123,7 +1294,7 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   /// Qismlar yetishmovchiligi dialogini ko'rsatish
-  /// 
+  ///
   /// [shortages] - Yetishmovchilik ro'yxati
   /// Qaytaradi: true - davom etish, false/null - bekor qilish
   Future<bool?> _showShortageDialog(List<PartShortage> shortages) async {
@@ -1137,7 +1308,8 @@ class _OrdersPageState extends State<OrdersPage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                AppLocalizations.of(context)?.translate('partsShortage') ?? 'Parts Shortage',
+                AppLocalizations.of(context)?.translate('partsShortage') ??
+                    'Parts Shortage',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
@@ -1155,7 +1327,10 @@ class _OrdersPageState extends State<OrdersPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        AppLocalizations.of(context)?.translate('partsInsufficient') ?? 'Quyidagi qismlar yetishmayapti:',
+                        AppLocalizations.of(
+                              context,
+                            )?.translate('partsInsufficient') ??
+                            'Quyidagi qismlar yetishmayapti:',
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
@@ -1164,10 +1339,18 @@ class _OrdersPageState extends State<OrdersPage> {
                       tooltip: 'Nusxa olish',
                       color: Colors.blue,
                       onPressed: () {
-                        final text = shortages.map((s) => '- ${s.partName}: Kam: ${s.shortage} (Bor: ${s.available}, Kerak: ${s.required})').join('\n');
+                        final text = shortages
+                            .map(
+                              (s) =>
+                                  '- ${s.partName}: Kam: ${s.shortage} (Bor: ${s.available}, Kerak: ${s.required})',
+                            )
+                            .join('\n');
                         Clipboard.setData(ClipboardData(text: text));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Ro\'yxat nusxalandi!'), backgroundColor: Colors.green),
+                          const SnackBar(
+                            content: Text('Ro\'yxat nusxalandi!'),
+                            backgroundColor: Colors.green,
+                          ),
                         );
                       },
                     ),
@@ -1181,13 +1364,24 @@ class _OrdersPageState extends State<OrdersPage> {
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         title: Text(
-                          shortage.partName == 'Unknown Part' ? 'Noma\'lum qism (ID: ${shortage.partId})' : shortage.partName,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          shortage.partName == 'Unknown Part'
+                              ? 'Noma\'lum qism (ID: ${shortage.partId})'
+                              : shortage.partName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
-                        subtitle: Text('Bor: ${shortage.available}  |  Kerak: ${shortage.required}'),
+                        subtitle: Text(
+                          'Bor: ${shortage.available}  |  Kerak: ${shortage.required}',
+                        ),
                         trailing: Text(
                           'Kam: ${shortage.shortage}',
-                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16),
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                       const Divider(height: 1),
@@ -1196,7 +1390,10 @@ class _OrdersPageState extends State<OrdersPage> {
                 }),
                 const SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)?.translate('doYouWantToProceedAnyway') ?? 'Do you want to proceed anyway?',
+                  AppLocalizations.of(
+                        context,
+                      )?.translate('doYouWantToProceedAnyway') ??
+                      'Do you want to proceed anyway?',
                   style: const TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 14,
@@ -1209,12 +1406,15 @@ class _OrdersPageState extends State<OrdersPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+            child: Text(
+              AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel',
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
-              AppLocalizations.of(context)?.translate('proceedAnyway') ?? 'Proceed',
+              AppLocalizations.of(context)?.translate('proceedAnyway') ??
+                  'Proceed',
               style: TextStyle(color: Colors.orange.shade700),
             ),
           ),
@@ -1234,8 +1434,6 @@ class _OrdersPageState extends State<OrdersPage> {
     );
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Either<Failure, List<domain.Order>>>(
@@ -1247,7 +1445,7 @@ class _OrdersPageState extends State<OrdersPage> {
             body: Column(
               children: [
                 // UX: Filterlar joyini saqlab qolamizki, ekran sakramasin
-                const SizedBox(height: 100), 
+                const SizedBox(height: 100),
                 Expanded(
                   child: ListView.builder(
                     itemCount: 5,
@@ -1258,7 +1456,7 @@ class _OrdersPageState extends State<OrdersPage> {
             ),
           );
         }
-        
+
         // Handle error state
         if (snapshot.hasError) {
           return Scaffold(
@@ -1268,26 +1466,30 @@ class _OrdersPageState extends State<OrdersPage> {
             ),
           );
         }
-        
+
         // Handle data
-        final orders = snapshot.data?.fold(
-          (failure) {
-            // Show user-friendly error message
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                final message = ErrorHandlerService.instance.getErrorMessage(failure);
-                ErrorHandlerService.instance.showErrorSnackBar(context, message);
-              }
-            });
-            return <domain.Order>[];
-          },
-          (orders) => orders,
-        ) ?? <domain.Order>[];
-        
+        final orders =
+            snapshot.data?.fold((failure) {
+              // Show user-friendly error message
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  final message = ErrorHandlerService.instance.getErrorMessage(
+                    failure,
+                  );
+                  ErrorHandlerService.instance.showErrorSnackBar(
+                    context,
+                    message,
+                  );
+                }
+              });
+              return <domain.Order>[];
+            }, (orders) => orders) ??
+            <domain.Order>[];
+
         final filteredOrders = _getFilteredOrders(orders);
         final currentUser = AuthStateService().currentUser;
         final canSeeAnalytics = currentUser?.canSeeAllLogs() ?? false;
-        
+
         return Scaffold(
           body: Column(
             children: [
@@ -1310,17 +1512,18 @@ class _OrdersPageState extends State<OrdersPage> {
                               _selectedSortOption = option;
                             });
                           },
-                          itemBuilder: (context) => const [
-                            SortOption.dateDesc,
-                            SortOption.dateAsc,
-                            SortOption.nameAsc,
-                            SortOption.nameDesc,
-                          ].map((option) {
-                            return PopupMenuItem(
-                              value: option,
-                              child: Text(option.getLabel(context)),
-                            );
-                          }).toList(),
+                          itemBuilder: (context) =>
+                              const [
+                                SortOption.dateDesc,
+                                SortOption.dateAsc,
+                                SortOption.nameAsc,
+                                SortOption.nameDesc,
+                              ].map((option) {
+                                return PopupMenuItem(
+                                  value: option,
+                                  child: Text(option.getLabel(context)),
+                                );
+                              }).toList(),
                         ),
                         IconButton(
                           icon: const Icon(Icons.history),
@@ -1328,7 +1531,8 @@ class _OrdersPageState extends State<OrdersPage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => OrderHistoryPage(orders: orders),
+                                builder: (context) =>
+                                    OrderHistoryPage(orders: orders),
                               ),
                             );
                           },
@@ -1368,8 +1572,6 @@ class _OrdersPageState extends State<OrdersPage> {
                 ),
               ),
 
-
-
               // Main content - CustomScrollView + SliverList
               Expanded(
                 child: Builder(
@@ -1388,7 +1590,10 @@ class _OrdersPageState extends State<OrdersPage> {
                           // Create Order Section
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -1400,143 +1605,252 @@ class _OrdersPageState extends State<OrdersPage> {
                                         });
                                       },
                                       icon: const Icon(Icons.add),
-                                      label: Text(AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order'),
+                                      label: Text(
+                                        AppLocalizations.of(
+                                              context,
+                                            )?.translate('createNewOrder') ??
+                                            'Create New Order',
+                                      ),
                                       style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 16,
+                                        ),
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.primaryContainer,
+                                        foregroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimaryContainer,
                                       ),
                                     ),
                                   if (_showCreateOrderForm)
                                     Align(
                                       alignment: Alignment.topCenter,
                                       child: ConstrainedBox(
-                                        constraints: const BoxConstraints(maxWidth: 600),
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 600,
+                                        ),
                                         child: Card(
                                           elevation: 3,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                          ),
                                           child: Padding(
                                             padding: const EdgeInsets.all(24.0),
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
                                               children: [
                                                 Text(
-                                                  AppLocalizations.of(context)?.translate('createNewOrder') ?? 'Create New Order',
+                                                  AppLocalizations.of(
+                                                        context,
+                                                      )?.translate(
+                                                        'createNewOrder',
+                                                      ) ??
+                                                      'Create New Order',
                                                   style: const TextStyle(
                                                     fontSize: 22,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 20),
-                                                
+
                                                 // Department dropdown
                                                 ValueListenableBuilder(
-                                                  valueListenable: _boxService.departmentsListenable,
-                                                  builder: (context, Box<Department> deptBox, _) {
-                                                    final departments = deptBox.values.toList();
-                                                    return DropdownButtonFormField<String>(
-                                                      initialValue: selectedDepartmentId,
-                                                      decoration: InputDecoration(
-                                                        labelText: AppLocalizations.of(context)?.translate('selectDepartment') ?? 'Select Department',
-                                                        hintText: 'Bo\'limni tanlang',
-                                                        border: const OutlineInputBorder(),
-                                                        prefixIcon: const Icon(Icons.business),
-                                                      ),
-                                                      items: departments.isEmpty
-                                                          ? [
-                                                              DropdownMenuItem(
-                                                                value: null,
-                                                                enabled: false,
-                                                                child: Text(
-                                                                  'Bo\'limlar mavjud emas',
-                                                                  style: TextStyle(color: Colors.grey[600]),
+                                                  valueListenable: _boxService
+                                                      .departmentsListenable,
+                                                  builder:
+                                                      (
+                                                        context,
+                                                        Box<Department> deptBox,
+                                                        _,
+                                                      ) {
+                                                        final departments =
+                                                            deptBox.values
+                                                                .toList();
+                                                        return DropdownButtonFormField<
+                                                          String
+                                                        >(
+                                                          initialValue:
+                                                              selectedDepartmentId,
+                                                          decoration: InputDecoration(
+                                                            labelText:
+                                                                AppLocalizations.of(
+                                                                  context,
+                                                                )?.translate(
+                                                                  'selectDepartment',
+                                                                ) ??
+                                                                'Select Department',
+                                                            hintText:
+                                                                'Bo\'limni tanlang',
+                                                            border:
+                                                                const OutlineInputBorder(),
+                                                            prefixIcon:
+                                                                const Icon(
+                                                                  Icons
+                                                                      .business,
                                                                 ),
-                                                              ),
-                                                            ]
-                                                          : [
-                                                              DropdownMenuItem<String>(
-                                                                value: null,
-                                                                child: Text(
-                                                                  'Bo\'limni tanlang',
-                                                                  style: TextStyle(color: Colors.grey[600]),
-                                                                ),
-                                                              ),
-                                                              ...departments.map((dept) {
-                                                                return DropdownMenuItem(
-                                                                  value: dept.id,
-                                                                  child: Text(dept.name),
-                                                                );
-                                                              }).toList(),
-                                                            ],
-                                                      onChanged: (value) {
-                                                        setState(() {
-                                                          selectedDepartmentId = value;
-                                                          selectedProductId = null; // Reset product
-                                                        });
+                                                          ),
+                                                          items:
+                                                              departments
+                                                                  .isEmpty
+                                                              ? [
+                                                                  DropdownMenuItem(
+                                                                    value: null,
+                                                                    enabled:
+                                                                        false,
+                                                                    child: Text(
+                                                                      'Bo\'limlar mavjud emas',
+                                                                      style: TextStyle(
+                                                                        color: Colors
+                                                                            .grey[600],
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ]
+                                                              : [
+                                                                  DropdownMenuItem<
+                                                                    String
+                                                                  >(
+                                                                    value: null,
+                                                                    child: Text(
+                                                                      'Bo\'limni tanlang',
+                                                                      style: TextStyle(
+                                                                        color: Colors
+                                                                            .grey[600],
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                  ...departments.map((
+                                                                    dept,
+                                                                  ) {
+                                                                    return DropdownMenuItem(
+                                                                      value: dept
+                                                                          .id,
+                                                                      child: Text(
+                                                                        dept.name,
+                                                                      ),
+                                                                    );
+                                                                  }).toList(),
+                                                                ],
+                                                          onChanged: (value) {
+                                                            setState(() {
+                                                              selectedDepartmentId =
+                                                                  value;
+                                                              selectedProductId =
+                                                                  null; // Reset product
+                                                            });
+                                                          },
+                                                        );
                                                       },
-                                                    );
-                                                  },
                                                 ),
                                                 const SizedBox(height: 20),
-                                                
+
                                                 // Product dropdown (filtered by department)
                                                 ValueListenableBuilder(
-                                                  valueListenable: _boxService.productsListenable,
+                                                  valueListenable: _boxService
+                                                      .productsListenable,
                                                   builder: (context, Box<Product> prodBox, _) {
-                                                    final products = selectedDepartmentId != null
-                                                        ? _productService.getProductsByDepartment(selectedDepartmentId!)
+                                                    final products =
+                                                        selectedDepartmentId !=
+                                                            null
+                                                        ? _productService
+                                                              .getProductsByDepartment(
+                                                                selectedDepartmentId!,
+                                                              )
                                                         : <Product>[];
-                                                    
-                                                    return DropdownButtonFormField<String>(
-                                                      key: ValueKey('product_${selectedDepartmentId}_${selectedProductId}'),
-                                                      initialValue: selectedProductId,
-                                                      decoration: InputDecoration(
-                                                        labelText: AppLocalizations.of(context)?.translate('selectProduct') ?? 'Select Product',
-                                                        hintText: 'Mahsulotni tanlang',
-                                                        border: const OutlineInputBorder(),
-                                                        prefixIcon: const Icon(Icons.inventory),
+
+                                                    return DropdownButtonFormField<
+                                                      String
+                                                    >(
+                                                      key: ValueKey(
+                                                        'product_${selectedDepartmentId}_${selectedProductId}',
                                                       ),
-                                                      items: selectedDepartmentId == null
+                                                      initialValue:
+                                                          selectedProductId,
+                                                      decoration: InputDecoration(
+                                                        labelText:
+                                                            AppLocalizations.of(
+                                                              context,
+                                                            )?.translate(
+                                                              'selectProduct',
+                                                            ) ??
+                                                            'Select Product',
+                                                        hintText:
+                                                            'Mahsulotni tanlang',
+                                                        border:
+                                                            const OutlineInputBorder(),
+                                                        prefixIcon: const Icon(
+                                                          Icons.inventory,
+                                                        ),
+                                                      ),
+                                                      items:
+                                                          selectedDepartmentId ==
+                                                              null
                                                           ? [
                                                               DropdownMenuItem(
                                                                 value: null,
                                                                 enabled: false,
                                                                 child: Text(
                                                                   'Avval bo\'limni tanlang',
-                                                                  style: TextStyle(color: Colors.grey[600]),
+                                                                  style: TextStyle(
+                                                                    color: Colors
+                                                                        .grey[600],
+                                                                  ),
                                                                 ),
                                                               ),
                                                             ]
                                                           : products.isEmpty
-                                                              ? [
-                                                                  DropdownMenuItem(
-                                                                    value: null,
-                                                                    enabled: false,
-                                                                    child: Text(
-                                                                      'Bu bo\'limda mahsulotlar yo\'q',
-                                                                      style: TextStyle(color: Colors.grey[600]),
-                                                                    ),
+                                                          ? [
+                                                              DropdownMenuItem(
+                                                                value: null,
+                                                                enabled: false,
+                                                                child: Text(
+                                                                  'Bu bo\'limda mahsulotlar yo\'q',
+                                                                  style: TextStyle(
+                                                                    color: Colors
+                                                                        .grey[600],
                                                                   ),
-                                                                ]
-                                                              : [
-                                                                  DropdownMenuItem<String>(
-                                                                    value: null,
-                                                                    child: Text(
-                                                                      'Mahsulotni tanlang',
-                                                                      style: TextStyle(color: Colors.grey[600]),
-                                                                    ),
+                                                                ),
+                                                              ),
+                                                            ]
+                                                          : [
+                                                              DropdownMenuItem<
+                                                                String
+                                                              >(
+                                                                value: null,
+                                                                child: Text(
+                                                                  'Mahsulotni tanlang',
+                                                                  style: TextStyle(
+                                                                    color: Colors
+                                                                        .grey[600],
                                                                   ),
-                                                                  ...products.map((product) {
-                                                                    return DropdownMenuItem(
-                                                                      value: product.id,
-                                                                      child: Text(product.name),
-                                                                    );
-                                                                  }).toList(),
-                                                                ],
-                                                      onChanged: selectedDepartmentId != null && products.isNotEmpty
+                                                                ),
+                                                              ),
+                                                              ...products.map((
+                                                                product,
+                                                              ) {
+                                                                return DropdownMenuItem(
+                                                                  value: product
+                                                                      .id,
+                                                                  child: Text(
+                                                                    product
+                                                                        .name,
+                                                                  ),
+                                                                );
+                                                              }).toList(),
+                                                            ],
+                                                      onChanged:
+                                                          selectedDepartmentId !=
+                                                                  null &&
+                                                              products
+                                                                  .isNotEmpty
                                                           ? (value) {
                                                               setState(() {
-                                                                selectedProductId = value;
+                                                                selectedProductId =
+                                                                    value;
                                                               });
                                                             }
                                                           : null,
@@ -1544,19 +1858,30 @@ class _OrdersPageState extends State<OrdersPage> {
                                                   },
                                                 ),
                                                 const SizedBox(height: 12),
-                                                
+
                                                 // Quantity selector
                                                 Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
                                                   children: [
-                                                    Text('${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ', style: const TextStyle(fontSize: 16)),
+                                                    Text(
+                                                      '${AppLocalizations.of(context)?.translate('quantity') ?? 'Quantity'}: ',
+                                                      style: const TextStyle(
+                                                        fontSize: 16,
+                                                      ),
+                                                    ),
                                                     IconButton(
-                                                      icon: const Icon(Icons.remove_circle_outline),
+                                                      icon: const Icon(
+                                                        Icons
+                                                            .remove_circle_outline,
+                                                      ),
                                                       onPressed: () {
                                                         if (quantity > 1) {
                                                           setState(() {
                                                             quantity--;
-                                                            _quantityController.text = quantity.toString();
+                                                            _quantityController
+                                                                .text = quantity
+                                                                .toString();
                                                           });
                                                         }
                                                       },
@@ -1564,95 +1889,171 @@ class _OrdersPageState extends State<OrdersPage> {
                                                     SizedBox(
                                                       width: 80,
                                                       child: TextField(
-                                                        controller: _quantityController,
-                                                        keyboardType: TextInputType.number,
-                                                        textAlign: TextAlign.center,
+                                                        controller:
+                                                            _quantityController,
+                                                        keyboardType:
+                                                            TextInputType
+                                                                .number,
+                                                        textAlign:
+                                                            TextAlign.center,
                                                         style: const TextStyle(
                                                           fontSize: 18,
-                                                          fontWeight: FontWeight.bold,
+                                                          fontWeight:
+                                                              FontWeight.bold,
                                                         ),
                                                         decoration: const InputDecoration(
                                                           isDense: true,
-                                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                                          border: OutlineInputBorder(),
+                                                          contentPadding:
+                                                              EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 8,
+                                                              ),
+                                                          border:
+                                                              OutlineInputBorder(),
                                                         ),
                                                         onChanged: (value) {
-                                                          final newQuantity = int.tryParse(value);
-                                                          if (newQuantity != null && newQuantity > 0) {
-                                                            setState(() => quantity = newQuantity);
+                                                          final newQuantity =
+                                                              int.tryParse(
+                                                                value,
+                                                              );
+                                                          if (newQuantity !=
+                                                                  null &&
+                                                              newQuantity > 0) {
+                                                            setState(
+                                                              () => quantity =
+                                                                  newQuantity,
+                                                            );
                                                           }
                                                         },
                                                       ),
                                                     ),
                                                     IconButton(
-                                                      icon: const Icon(Icons.add_circle_outline),
+                                                      icon: const Icon(
+                                                        Icons
+                                                            .add_circle_outline,
+                                                      ),
                                                       onPressed: () {
                                                         setState(() {
                                                           quantity++;
-                                                          _quantityController.text = quantity.toString();
+                                                          _quantityController
+                                                              .text = quantity
+                                                              .toString();
                                                         });
                                                       },
                                                     ),
                                                   ],
                                                 ),
                                                 const SizedBox(height: 12),
-                                                
+
                                                 // Recipient input (Majburiy)
                                                 TextField(
                                                   controller: _soldToController,
                                                   decoration: InputDecoration(
-                                                    labelText: 'Kim olib ketdi *',
-                                                    hintText: 'Masalan: Ahmad, Mijoz, Usta, va hokazo',
-                                                    border: const OutlineInputBorder(),
-                                                    prefixIcon: const Icon(Icons.person),
-                                                    helperText: 'Buyurtmani kim olib ketganini kiriting (Majburiy)',
-                                                    errorText: _showSoldToError && _soldToController.text.trim().isEmpty
+                                                    labelText:
+                                                        'Kim olib ketdi *',
+                                                    hintText:
+                                                        'Masalan: Ahmad, Mijoz, Usta, va hokazo',
+                                                    border:
+                                                        const OutlineInputBorder(),
+                                                    prefixIcon: const Icon(
+                                                      Icons.person,
+                                                    ),
+                                                    helperText:
+                                                        'Buyurtmani kim olib ketganini kiriting (Majburiy)',
+                                                    errorText:
+                                                        _showSoldToError &&
+                                                            _soldToController
+                                                                .text
+                                                                .trim()
+                                                                .isEmpty
                                                         ? 'Kim olib ketganini kiriting'
                                                         : null,
                                                   ),
-                                                  textCapitalization: TextCapitalization.words,
+                                                  textCapitalization:
+                                                      TextCapitalization.words,
                                                   onChanged: (value) {
-                                                    if (_showSoldToError && value.trim().isNotEmpty) {
+                                                    if (_showSoldToError &&
+                                                        value
+                                                            .trim()
+                                                            .isNotEmpty) {
                                                       setState(() {
-                                                        _showSoldToError = false;
+                                                        _showSoldToError =
+                                                            false;
                                                       });
                                                     }
                                                   },
                                                 ),
                                                 const SizedBox(height: 16),
-                                                
+
                                                 Row(
                                                   children: [
                                                     Expanded(
                                                       child: TextButton(
                                                         onPressed: () {
                                                           setState(() {
-                                                            _showCreateOrderForm = false;
-                                                            selectedDepartmentId = null;
-                                                            selectedProductId = null;
+                                                            _showCreateOrderForm =
+                                                                false;
+                                                            selectedDepartmentId =
+                                                                null;
+                                                            selectedProductId =
+                                                                null;
                                                             quantity = 1;
-                                                            _quantityController.text = '1';
-                                                            _soldToController.clear();
-                                                            _showSoldToError = false;
+                                                            _quantityController
+                                                                    .text =
+                                                                '1';
+                                                            _soldToController
+                                                                .clear();
+                                                            _showSoldToError =
+                                                                false;
                                                           });
                                                         },
-                                                        child: Text(AppLocalizations.of(context)?.translate('cancel') ?? 'Cancel'),
+                                                        child: Text(
+                                                          AppLocalizations.of(
+                                                                context,
+                                                              )?.translate(
+                                                                'cancel',
+                                                              ) ??
+                                                              'Cancel',
+                                                        ),
                                                       ),
                                                     ),
                                                     const SizedBox(width: 16),
                                                     Expanded(
                                                       flex: 2,
                                                       child: ElevatedButton.icon(
-                                                        onPressed: _canCreateOrders ? () {
-                                                          _createOrder();
-                                                          if (!_showSoldToError && selectedDepartmentId != null && selectedProductId != null) {
-                                                            setState(() => _showCreateOrderForm = false);
-                                                          }
-                                                        } : null,
-                                                        icon: const Icon(Icons.add_shopping_cart),
-                                                        label: Text(AppLocalizations.of(context)?.translate('createOrder') ?? 'Create Order'),
+                                                        onPressed:
+                                                            _canCreateOrders
+                                                            ? () {
+                                                                _createOrder();
+                                                                if (!_showSoldToError &&
+                                                                    selectedDepartmentId !=
+                                                                        null &&
+                                                                    selectedProductId !=
+                                                                        null) {
+                                                                  setState(
+                                                                    () => _showCreateOrderForm =
+                                                                        false,
+                                                                  );
+                                                                }
+                                                              }
+                                                            : null,
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .add_shopping_cart,
+                                                        ),
+                                                        label: Text(
+                                                          AppLocalizations.of(
+                                                                context,
+                                                              )?.translate(
+                                                                'createOrder',
+                                                              ) ??
+                                                              'Create Order',
+                                                        ),
                                                         style: ElevatedButton.styleFrom(
-                                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                vertical: 12,
+                                                              ),
                                                         ),
                                                       ),
                                                     ),
@@ -1668,13 +2069,21 @@ class _OrdersPageState extends State<OrdersPage> {
                               ),
                             ),
                           ),
-                          
+
                           // Orders List Header
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                12,
+                                20,
+                                12,
+                              ),
                               child: Text(
-                                AppLocalizations.of(context)?.translate('ordersList') ?? 'Orders List',
+                                AppLocalizations.of(
+                                      context,
+                                    )?.translate('ordersList') ??
+                                    'Orders List',
                                 style: const TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
@@ -1682,58 +2091,91 @@ class _OrdersPageState extends State<OrdersPage> {
                               ),
                             ),
                           ),
-                          
+
                           // Orders list - SliverList
                           if (filteredOrders.isEmpty)
                             SliverFillRemaining(
                               hasScrollBody: false,
                               child: EmptyStateWidget(
                                 icon: Icons.shopping_cart_outlined,
-                                title: orders.isEmpty 
-                                    ? 'Hali buyurtmalar yo\'q' 
+                                title: orders.isEmpty
+                                    ? 'Hali buyurtmalar yo\'q'
                                     : 'Filtrga mos buyurtma topilmadi',
                                 subtitle: orders.isEmpty
                                     ? 'Yuqoridagi tugma orqali birinchi buyurtmani yarating'
                                     : 'Qidiruv shartlarini o\'zgartirib ko\'ring',
-                                actionButton: orders.isEmpty ? ElevatedButton.icon(
-                                  onPressed: () {
-                                    setState(() {
-                                      _showCreateOrderForm = true;
-                                    });
-                                  },
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Birinchi buyurtmani qo\'shish'),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                ) : null,
+                                actionButton: orders.isEmpty
+                                    ? ElevatedButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _showCreateOrderForm = true;
+                                          });
+                                        },
+                                        icon: const Icon(Icons.add),
+                                        label: const Text(
+                                          'Birinchi buyurtmani qo\'shish',
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 24,
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    : null,
                               ),
                             )
                           else
                             SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final domainOrder = filteredOrders[index];
-                                  final department = _departmentService.getDepartmentById(domainOrder.departmentId);
-                                  final dataOrder = _orderService.getOrderById(domainOrder.id);
-                                  
-                                  return OrderItemWidget(
-                                    order: domainOrder,
-                                    dataOrder: dataOrder,
-                                    department: department,
-                                    onComplete: _canCompleteOrders ? () => _completeOrder(domainOrder) : null,
-                                    onEdit: (['pending', 'in_progress', 'partially_completed'].contains(domainOrder.status) && _canEditOrders) 
-                                        ? () => _editOrder(domainOrder) 
-                                        : null,
-                                    onDelete: _canDeleteOrder(domainOrder) ? () => _deleteOrder(domainOrder) : null,
-                                    isCompleting: _completingOrderId == domainOrder.id,
-                                    onCourierAssign: () => _showCourierAssignmentDialog(domainOrder.id, domainOrder.quantity),
-                                    isCourierMode: (_currentUser?.isManager == true || _currentUser?.isBoss == true),
-                                  );
-                                },
-                                childCount: filteredOrders.length,
-                              ),
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                final domainOrder = filteredOrders[index];
+                                final department = _departmentService
+                                    .getDepartmentById(
+                                      domainOrder.departmentId,
+                                    );
+                                final dataOrder = _orderService.getOrderById(
+                                  domainOrder.id,
+                                );
+
+                                return OrderItemWidget(
+                                  order: domainOrder,
+                                  dataOrder: dataOrder,
+                                  department: department,
+                                  onComplete: _canCompleteOrders
+                                      ? () => _completeOrder(domainOrder)
+                                      : null,
+                                  onEdit:
+                                      ([
+                                            'pending',
+                                            'in_progress',
+                                            'partially_completed',
+                                          ].contains(domainOrder.status) &&
+                                          _canEditOrders)
+                                      ? () => _editOrder(domainOrder)
+                                      : null,
+                                  onDelete: _canDeleteOrder(domainOrder)
+                                      ? () => _deleteOrder(domainOrder)
+                                      : null,
+                                  isCompleting:
+                                      _completingOrderId == domainOrder.id,
+                                  onCourierAssign: () =>
+                                      _showCourierAssignmentDialog(
+                                        domainOrder.id,
+                                        domainOrder.quantity,
+                                      ),
+                                  isCourierMode:
+                                      (_currentUser?.isManager == true ||
+                                      _currentUser?.isBoss == true),
+                                );
+                              }, childCount: filteredOrders.length),
                             ),
                         ],
                       ),
