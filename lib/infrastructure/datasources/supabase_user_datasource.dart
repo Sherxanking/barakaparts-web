@@ -1,4 +1,4 @@
-/// Supabase User Datasource
+ /// Supabase User Datasource
 /// 
 /// ⚠️ MUHIM: Faqat ANON key ishlatiladi!
 /// Authentication Supabase Auth orqali amalga oshiriladi.

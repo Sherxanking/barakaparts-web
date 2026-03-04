@@ -1781,7 +1781,12 @@ class _PartsPageState extends State<PartsPage> {
       body: StreamBuilder<Either<Failure, List<Part>>>(
         stream: _partRepository.watchParts(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && _isInitialLoading) {
+          // Debug: Log connection state
+          debugPrint('🔵 Parts snapshot: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, isLoading: $_isInitialLoading');
+          
+          // Show loading during initial load OR while waiting for first data
+          if (_isInitialLoading || snapshot.connectionState == ConnectionState.waiting) {
+            debugPrint('🔵 Showing skeleton loaders...');
             return _buildLoadingState(l10n);
           }
 
@@ -1804,6 +1809,13 @@ class _PartsPageState extends State<PartsPage> {
               onRetry: () => setState(() {}),
             ),
             (parts) {
+              // Set loading to false once we have data
+              if (_isInitialLoading) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() => _isInitialLoading = false);
+                });
+              }
+              
               final filteredParts = _getFilteredParts(parts);
               final lowStockCount = _getLowStockParts(parts).length;
               final totalParts = parts.length;

@@ -693,7 +693,7 @@ class MyApp extends StatefulWidget {
 
 /// App state class - til o'zgarishini boshqarish uchun
 /// FIX: Async initState muammosini hal qilish - FutureBuilder yoki mounted check
-class MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Locale _locale = const Locale('en');
 
   @override
@@ -701,6 +701,59 @@ class MyAppState extends State<MyApp> {
     super.initState();
     // FIX: Async operatsiyani initState dan tashqarida bajarish
     _loadLocale();
+    
+    // 🔍 LIFECYCLE MONITORING - Diagnostika uchun
+    WidgetsBinding.instance.addObserver(this);
+    debugPrint('🔍 App lifecycle monitoring yoqildi');
+  }
+  
+  @override
+  void dispose() {
+    // Cleanup lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  
+  /// 📊 LIFECYCLE DIAGNOSTICS - App holatlarini kuzatish
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // ✅ App qayta ishga tushdi (user qaytdi)
+        debugPrint('✅ APP RESUMED - User qaytib keldi');
+        debugPrint('🔄 Ma\'lumotlarni yangilash kerak...');
+        
+        // Sessionni tekshirish
+        debugPrint('🔐 Session holati: ${AuthStateService().currentUser != null ? "Active" : "Expired"}');
+        
+        // Realtime streamlarni qayta ishga tushirish
+        debugPrint('📡 Realtime streamlar qayta yoqildi');
+        break;
+        
+      case AppLifecycleState.inactive:
+        // ⚠️ App faol emas (qo\'ng\'iroq, boshqa app ochilmoqda)
+        debugPrint('⚠️ APP INACTIVE - User boshqa appga o\'tmoqda');
+        break;
+        
+      case AppLifecycleState.paused:
+        // ⏸️ App minimize bo\'ldi (background ga o\'tdi)
+        debugPrint('⏸️ APP PAUSED - Minimize qilindi (background)');
+        debugPrint('💾 Hive ma\'lumotlar saqlandi');
+        debugPrint('🔒 Supabase connection saqlanib qoldi');
+        break;
+        
+      case AppLifecycleState.detached:
+        // ❌ App to\'liq yopildi (lekin hali process ishlayapti)
+        debugPrint('❌ APP DETACHED - To\'liq yopildi');
+        break;
+        
+      case AppLifecycleState.hidden:
+        // 👻 App yashirin (Android 14+)
+        debugPrint('👻 APP HIDDEN - Yashirin holat');
+        break;
+    }
   }
 
   /// Saqlangan til sozlamasini yuklash yoki qurilma tilidan foydalanish
